@@ -30,7 +30,7 @@ const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
 let isFirstPairing = false;
 
-// 🛡️ Advanced Console Cleaner (Supresses unwanted Signal/Buffers/Decryption logs completely)
+// 🛡️ Ultimate Advanced Console Cleaner (Blocks all SessionEntry, Buffers, Bad MAC, and Decryption logs completely)
 const originalConsoleError = console.error;
 const originalConsoleLog = console.log;
 
@@ -41,6 +41,8 @@ console.error = function (...args) {
     logText.includes('No sessions') ||
     logText.includes('closing connection') ||
     logText.includes('Closing session') ||
+    logText.includes('Closing open session') ||
+    logText.includes('SessionEntry') ||
     logText.includes('Decryption') ||
     logText.includes('decrypt') ||
     logText.includes('Session error') ||
@@ -48,7 +50,8 @@ console.error = function (...args) {
     logText.includes('Failed to decrypt message') ||
     logText.includes('indexInfo') ||
     logText.includes('rootKey') ||
-    logText.includes('Buffer')
+    logText.includes('Buffer') ||
+    logText.includes('_chains')
   ) {
     return;
   }
@@ -58,11 +61,15 @@ console.error = function (...args) {
 console.log = function (...args) {
   const logText = args.join(' ');
   if (
+    logText.includes('SessionEntry') ||
+    logText.includes('Closing session') ||
+    logText.includes('Closing open session') ||
     logText.includes('indexInfo') ||
     logText.includes('rootKey') ||
     logText.includes('prevCounter') ||
     logText.includes('Buffer') ||
-    logText.includes('lastRemoteEphemeralKey')
+    logText.includes('lastRemoteEphemeralKey') ||
+    logText.includes('_chains')
   ) {
     return;
   }
@@ -77,6 +84,8 @@ const handleSilentErrors = (err) => {
     msg.includes('No sessions') ||
     msg.includes('closing connection') ||
     msg.includes('Closing session') ||
+    msg.includes('Closing open session') ||
+    msg.includes('SessionEntry') ||
     msg.includes('Decryption') ||
     msg.includes('decrypt') ||
     msg.includes('Session error') ||
@@ -153,7 +162,6 @@ async function connectToWA() {
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestBaileysVersion();
   
-  // Pino logger set to fatal to block unnecessary buffer/signal logs completely
   const logger = P({ level: 'fatal' });
 
   const sachiya = makeWASocket({
@@ -169,7 +177,6 @@ async function connectToWA() {
     fireInitQueries: true,
     markOnlineOnConnect: true,
     generateHighQualityLinkPreview: false,
-    // Fix for "Waiting for this message" by storing/handling message lookups safely
     getMessage: async (key) => {
       try {
         return { conversation: 'Hello, I am SACHIYA-MD active bot!' };
