@@ -10,5 +10,5 @@ module.exports = {
     PREFIX: process.env.PREFIX || ".",
     OWNER_NUM: process.env.OWNER_NUM || "94760579211",
     MODE: process.env.MODE || "public",
-    ALIVE_IMG: process.env.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/Media/SACHIYA%20MD.png"
+    ALIVE_IMG: process.env.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/Media/SACHIYA%20MD.png?raw=true"
 };
