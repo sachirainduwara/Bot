@@ -286,7 +286,7 @@ async function connectToWA() {
 
   sachiya.ev.on('creds.update', saveCreds);
 
-  // 📞 Fixed Anti Call Handler (Ensures call is rejected and warning message is sent properly)
+  // 📞 Anti Call Handler
   sachiya.ev.on('call', async (callEvents) => {
     for (const call of callEvents) {
       if (call.status === 'offer') {
@@ -295,8 +295,8 @@ async function connectToWA() {
           await delay(1000);
           await sachiya.rejectCall(call.id, callerJid);
           await delay(500);
-          const antiCallMsg = `මොකටද අනේ කෝල් ගන්නේ? 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.`;
-          await sachiya.sendMessage(callerJid, { text: antiCallMsg });
+          const msg = `මොකටද අනේ කෝල් ගන්නේ? 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.`;
+          await sachiya.sendMessage(callerJid, { text: msg });
         } catch (err) {
           try {
             await sachiya.sendMessage(callerJid, { text: `මොකටද අනේ කෝල් ගන්නේ? 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.` });
@@ -306,10 +306,10 @@ async function connectToWA() {
     }
   });
 
-  // ✉️ Fixed Universal Messages Upsert Handler (Works smoothly in both Inbox & Groups)
+  // ✉️ Fully Fixed Universal Messages Upsert Handler (Inbox & Group Supported)
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
-      const mek = chatUpdate.messages[0];
+      const mek = chatUpdate.messages ? (chatUpdate.messages[0] || chatUpdate[0]) : chatUpdate[0];
       if (!mek || !mek.message) return;
 
       if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
