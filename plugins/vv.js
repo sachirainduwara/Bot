@@ -1,4 +1,4 @@
-const { sms, downloadMediaMessage } = require('../lib/msg');
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { cmd } = require('../command');
 
 cmd({
@@ -9,48 +9,46 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, quoted, reply }) => {
     try {
-        if (!quoted) {
-            // Reaction for error: Cross mark
+        // Check if quoted message exists using direct contextInfo or quoted parameter
+        const quot = mek.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        
+        if (!quoted && !quot) {
             await conn.sendMessage(from, { react: { text: "❌", key: mek.key } }).catch(() => {});
             return reply("❌ කරුණාකර View Once මැසේජ් එකකට `.vv` කියලා Reply කරන්න!");
         }
 
-        let mime = quoted.mtype || '';
-        let msg = quoted.message;
-
-        if (!msg) {
+        let targetMsg = quot || quoted.message;
+        if (!targetMsg) {
             await conn.sendMessage(from, { react: { text: "❌", key: mek.key } }).catch(() => {});
             return reply("❌ රිප්ලය් කළ මැසේජ් එක කියවා ගැනීමට නොහැක!");
         }
 
-        if (msg.ephemeralMessage) msg = msg.ephemeralMessage.message;
-        if (msg.viewOnceMessage) msg = msg.viewOnceMessage.message;
-        if (msg.viewOnceMessageV2) msg = msg.viewOnceMessageV2.message;
-        if (msg.viewOnceMessageV2Extension) msg = msg.viewOnceMessageV2Extension.message;
+        // Handle wrappers (Ephemeral, ViewOnce)
+        if (targetMsg.ephemeralMessage) targetMsg = targetMsg.ephemeralMessage.message;
+        if (targetMsg.viewOnceMessage) targetMsg = targetMsg.viewOnceMessage.message;
+        if (targetMsg.viewOnceMessageV2) targetMsg = targetMsg.viewOnceMessageV2.message;
+        if (targetMsg.viewOnceMessageV2Extension) targetMsg = targetMsg.viewOnceMessageV2Extension.message;
 
-        let mediaType = Object.keys(msg)[0];
+        let mediaType = Object.keys(targetMsg)[0];
 
         if (!mediaType || (!mediaType.includes('imageMessage') && !mediaType.includes('videoMessage') && !mediaType.includes('audioMessage'))) {
-            if (quoted.message && quoted.message.imageMessage) {
-                mediaType = 'imageMessage';
-                msg = quoted.message;
-            } else if (quoted.message && quoted.message.videoMessage) {
-                mediaType = 'videoMessage';
-                msg = quoted.message;
-            } else {
-                await conn.sendMessage(from, { react: { text: "⚠️", key: mek.key } }).catch(() => {});
-                return reply("⚠️ මෙය View Once හෝ නිවැරදි මීඩියා මැසේජ් එකක් නොවේ!");
-            }
+            await conn.sendMessage(from, { react: { text: "⚠️", key: mek.key } }).catch(() => {});
+            return reply("⚠️ මෙය View Once හෝ නිවැරදි මීඩියා මැසේජ් එකක් නොවේ!");
         }
 
-        // Processing Reaction (Hourglass)
+        // Processing Reaction
         await conn.sendMessage(from, { react: { text: "⏳", key: mek.key } }).catch(() => {});
-        reply("⏳ *SACHIYA MD ✨ ViewOnce Retrieving...* කරුණාකර මොහොතක් රැඳී සිටින්න...");
 
-        const mediaBuffer = await downloadMediaMessage(msg[mediaType], mediaType.replace('Message', ''));
+        // Direct stream download using Baileys built-in function
+        const stream = await downloadMediaMessage({ message: targetMsg }, 'stream');
+        const bufferArray = [];
+        for await (const chunk of stream) {
+            bufferArray.push(chunk);
+        }
+        const mediaBuffer = Buffer.concat(bufferArray);
 
-        let caption = msg[mediaType].caption || '';
-        let originalSender = quoted.sender || quoted.key?.participant || quoted.key?.remoteJid || from;
+        let caption = targetMsg[mediaType].caption || '';
+        let originalSender = mek.message?.extendedTextMessage?.contextInfo?.participant || from;
 
         const newCaption = `╭━━━〔 *SACHIYA MD ✨ ViewOnce* 〕━━━╮\n` +
                            `┃\n` +
@@ -68,10 +66,10 @@ cmd({
         } else if (mediaType === 'videoMessage') {
             await conn.sendMessage(from, { video: mediaBuffer, caption: newCaption, mentions: [originalSender] }, { quoted: mek });
         } else if (mediaType === 'audioMessage') {
-            await conn.sendMessage(from, { audio: mediaBuffer, mimetype: 'audio/mp4', ptt: msg[mediaType].ptt, mentions: [originalSender] }, { quoted: mek });
+            await conn.sendMessage(from, { audio: mediaBuffer, mimetype: 'audio/mp4', ptt: targetMsg[mediaType].ptt, mentions: [originalSender] }, { quoted: mek });
         }
 
-        // Success Reaction (Green Checkmark)
+        // Success Reaction
         await conn.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
 
     } catch (e) {
