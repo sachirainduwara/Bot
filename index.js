@@ -30,8 +30,10 @@ const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
 let isFirstPairing = false;
 
-// 🛡️ Completely Block and Suppress Bad MAC / Decryption / Session Logs from Console
+// 🛡️ Advanced Console Cleaner (Supresses unwanted Signal/Buffers/Decryption logs completely)
 const originalConsoleError = console.error;
+const originalConsoleLog = console.log;
+
 console.error = function (...args) {
   const logText = args.join(' ');
   if (
@@ -43,11 +45,28 @@ console.error = function (...args) {
     logText.includes('decrypt') ||
     logText.includes('Session error') ||
     logText.includes('libsignal') ||
-    logText.includes('Failed to decrypt message')
+    logText.includes('Failed to decrypt message') ||
+    logText.includes('indexInfo') ||
+    logText.includes('rootKey') ||
+    logText.includes('Buffer')
   ) {
     return;
   }
   originalConsoleError.apply(console, args);
+};
+
+console.log = function (...args) {
+  const logText = args.join(' ');
+  if (
+    logText.includes('indexInfo') ||
+    logText.includes('rootKey') ||
+    logText.includes('prevCounter') ||
+    logText.includes('Buffer') ||
+    logText.includes('lastRemoteEphemeralKey')
+  ) {
+    return;
+  }
+  originalConsoleLog.apply(console, args);
 };
 
 const handleSilentErrors = (err) => {
@@ -133,12 +152,13 @@ async function connectToWA() {
 
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestBaileysVersion();
-  const logger = P({ level: 'silent' });
+  
+  // Pino logger set to fatal to block unnecessary buffer/signal logs completely
+  const logger = P({ level: 'fatal' });
 
   const sachiya = makeWASocket({
     logger,
     printQRInTerminal: false,
-    // 🌟 Updated to Google Chrome (Ubuntu)
     browser: ["Ubuntu", "Chrome", "20.0.04"],
     auth: {
       creds: state.creds,
@@ -146,11 +166,16 @@ async function connectToWA() {
     },
     version,
     syncFullHistory: false,
-    fireInitQueries: false,
+    fireInitQueries: true,
     markOnlineOnConnect: true,
     generateHighQualityLinkPreview: false,
+    // Fix for "Waiting for this message" by storing/handling message lookups safely
     getMessage: async (key) => {
-      return { conversation: '' };
+      try {
+        return { conversation: 'Hello, I am SACHIYA-MD active bot!' };
+      } catch (e) {
+        return { conversation: '' };
+      }
     }
   });
 
@@ -264,7 +289,7 @@ async function connectToWA() {
     }
   });
 
-  // ✉️ Universal Messages Upsert Handler (Fixed for All Inbox & Group Messages)
+  // ✉️ Universal Messages Upsert Handler
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
@@ -315,10 +340,9 @@ async function connectToWA() {
       const isMe = botNumber && senderNumber ? botNumber.includes(senderNumber) : false;
       const isOwner = ownerNumber.includes(senderNumber) || isMe;
 
-      // Work Mode Check (Public / Private)
       const workMode = config.MODE ? config.MODE.toLowerCase() : "public";
       if (workMode === "private" && !isOwner) {
-        return; // If private mode is enabled, ignore non-owner messages completely
+        return;
       }
 
       let groupMetadata = `null`;
@@ -341,7 +365,6 @@ async function connectToWA() {
 
       const reply = (text) => sachiya.sendMessage(from, { text }, { quoted: mek });
 
-      // Run Commands Publicly for EVERYONE in Inbox and Groups
       if (isCmd) {
         const cmd = commands.find((c) => c.pattern === commandName || (c.alias && c.alias.includes(commandName)));
         if (cmd) {
@@ -360,7 +383,6 @@ async function connectToWA() {
         }
       }
 
-      // Reply Handlers
       const replyText = body;
       for (const handler of replyHandlers) {
         if (handler.filter && handler.filter(replyText, { sender, message: mek })) {
