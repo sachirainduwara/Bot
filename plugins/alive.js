@@ -44,14 +44,14 @@ async(sachiya, mek, m, { from, quoted, pushname, reply }) => {
 
         // 1. Voice Note (Audio) එක Raw Link එක හරiti යැවීම
         await sachiya.sendMessage(from, {
-            audio: { url: 'https://github.com/sachirainduwara/Bot/raw/main/Media/Welcome%20To%20SACHIYA%20MD.mp3?raw=true' },
+            audio: { url: 'https://github.com/sachirainduwara/Bot/blob/main/Media/Welcome%20To%20SACHIYA%20MD.mp3?raw=true' },
             mimetype: 'audio/mpeg',
             ptt: true
         }, { quoted: mek });
 
         // 2. Image එක සමඟ Alive Message එක යැවීම
         await sachiya.sendMessage(from, {
-            image: { url: 'https://github.com/sachirainduwara/raw/blob/main/Media/SACHIYA%20MD.png?raw=true' },
+            image: { url: 'https://github.com/sachirainduwara/Bot/blob/main/Media/SACHIYA%20MD.png?raw=true' },
             caption: aliveMsg
         }, { quoted: mek });
 
