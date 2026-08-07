@@ -9,7 +9,6 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, quoted, reply }) => {
     try {
-        // Check if quoted message exists using direct contextInfo or quoted parameter
         const quot = mek.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         
         if (!quoted && !quot) {
@@ -23,7 +22,6 @@ cmd({
             return reply("❌ රිප්ලය් කළ මැසේජ් එක කියවා ගැනීමට නොහැක!");
         }
 
-        // Handle wrappers (Ephemeral, ViewOnce)
         if (targetMsg.ephemeralMessage) targetMsg = targetMsg.ephemeralMessage.message;
         if (targetMsg.viewOnceMessage) targetMsg = targetMsg.viewOnceMessage.message;
         if (targetMsg.viewOnceMessageV2) targetMsg = targetMsg.viewOnceMessageV2.message;
@@ -36,10 +34,8 @@ cmd({
             return reply("⚠️ මෙය View Once හෝ නිවැරදි මීඩියා මැසේජ් එකක් නොවේ!");
         }
 
-        // Processing Reaction
         await conn.sendMessage(from, { react: { text: "⏳", key: mek.key } }).catch(() => {});
 
-        // Direct stream download using Baileys built-in function
         const stream = await downloadMediaMessage({ message: targetMsg }, 'stream');
         const bufferArray = [];
         for await (const chunk of stream) {
@@ -50,11 +46,15 @@ cmd({
         let caption = targetMsg[mediaType].caption || '';
         let originalSender = mek.message?.extendedTextMessage?.contextInfo?.participant || from;
 
+        // Corrected Time & Date for Sri Lanka (Asia/Colombo Timezone)
+        const currentDate = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' });
+        const currentTime = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
         const newCaption = `╭━━━〔 *SACHIYA MD ✨ ViewOnce* 〕━━━╮\n` +
                            `┃\n` +
                            `┃ 👤 *Sender:* @${originalSender.split('@')[0]}\n` +
-                           `┃ 📅 *Date:* ${new Date().toLocaleDateString('en-GB')}\n` +
-                           `┃ ⏰ *Time:* ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}\n` +
+                           `┃ 📅 *Date:* ${currentDate}\n` +
+                           `┃ ⏰ *Time:* ${currentTime}\n` +
                            `┃ 🏷️ *Type:* ${mediaType === 'imageMessage' ? '📷 Image' : mediaType === 'videoMessage' ? '🎥 Video' : '🎵 Audio'}\n` +
                            `┃\n` +
                            `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n` +
@@ -69,12 +69,11 @@ cmd({
             await conn.sendMessage(from, { audio: mediaBuffer, mimetype: 'audio/mp4', ptt: targetMsg[mediaType].ptt, mentions: [originalSender] }, { quoted: mek });
         }
 
-        // Success Reaction
         await conn.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
 
     } catch (e) {
         console.error("[SACHIYA MD VV ERROR]:", e);
         await conn.sendMessage(from, { react: { text: "❌", key: mek.key } }).catch(() => {});
-        reply("❌ *SACHIYA MD ✨ අසාර්ථකයි!* \n\nසමාවන්න, View Once මාධ්‍යය ලබා ගැනීමේදී දෝෂයක් සිදු විය.");
+        reply("❌ *අසාර්ථකයි!* \n\nසමාවන්න, View Once මාධ්‍යය ලබා ගැනීමේදී දෝෂයක් සිදු විය.");
     }
 });
