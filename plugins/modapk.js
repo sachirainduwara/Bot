@@ -1,7 +1,7 @@
 const axios = require('axios');
-const { command } = require('../command');
+const { cmd } = require('../command'); // මෙතැන command වෙනුවට cmd පාවිච්චි කර ඇත
 
-command({
+cmd({
     pattern: "modapk",
     alias: ["mod", "apkdl"],
     desc: "Search and download Mod APKs using Zanta Mini API.",
@@ -22,16 +22,14 @@ async (conn, mek, m, { from, q, reply }) => {
         const encodedQuery = encodeURIComponent(q);
         const apiUrl = `https://api.zanta-mini.store/api/modapk/dl?apiKey=${apiKey}&url=${encodedQuery}`;
 
-        // API එකට ඉල්ලීමක් යැවීම (Axios හරහා)
+        // API එකට ඉල්ලීමක් යැවීම
         const response = await axios.get(apiUrl);
         const resData = response.data;
 
-        // API එකෙන් ප්‍රතිඵල නිවැරදිව ලැබී ඇද්දැයි පරීක්ෂා කිරීම
         if (!resData || (!resData.status && !resData.result && !resData.data)) {
             return await reply("❌ අදාළ නමින් කිසිදු Mod APK එකක් හමු නොවීය. කරුණාකර නම වෙනස් කර නැවත උත්සාහ කරන්න.");
         }
 
-        // API එකේ එන data structure එකට අනුව රිසල්ට් එක ලබා ගැනීම (සමහර විට resData.result හෝ resData විය හැක)
         const data = resData.result || resData.data || resData;
 
         const appName = data.title || data.name || q;
@@ -45,7 +43,6 @@ async (conn, mek, m, { from, q, reply }) => {
             return await reply("❌ මෙම ඇප් එක සඳහා ඩවුන්ඩෝන ලින්ක් එකක් සොයාගත නොහැකි විය.");
         }
 
-        // WhatsApp එකට යැවිය යුතු පණිවිඩය හැඩගැස්වීම
         let msgCaption = `╭━━━〔 *SACHIYA MOD APK DL* 〕━━━\n` +
                          `┃\n` +
                          `┃ 📱 *App Name:* ${appName}\n` +
@@ -57,14 +54,12 @@ async (conn, mek, m, { from, q, reply }) => {
                          `⬇️ *Download Link:* \n${downloadLink}\n\n` +
                          `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-        // පින්තූරය සමඟ හෝ නැතහොත් ටෙස්ට් මැසේජ් එකක් ලෙස යැවීම
         try {
             await conn.sendMessage(from, {
                 image: { url: appImage },
                 caption: msgCaption
             }, { quoted: mek });
         } catch (imgErr) {
-            // පින්තූරය ලෝඩ් වීමේ ගැටළුවක් වුවහොත් ටෙක්ස්ට් එක மட்டும் යැවීම
             await conn.sendMessage(from, { text: msgCaption }, { quoted: mek });
         }
 
