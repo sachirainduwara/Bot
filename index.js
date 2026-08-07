@@ -30,7 +30,7 @@ const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
 let isFirstPairing = false;
 
-// 🛡️ Ultimate Advanced Console Cleaner (Blocks all SessionEntry, Buffers, Bad MAC, and Decryption logs completely)
+// 🛡️ Ultimate Advanced Console Cleaner
 const originalConsoleError = console.error;
 const originalConsoleLog = console.log;
 
@@ -286,35 +286,32 @@ async function connectToWA() {
 
   sachiya.ev.on('creds.update', saveCreds);
 
-  // 📞 Anti Call Handler
+  // 📞 Bulletproof Anti-Call Handler (Cuts call and sends warning message reliably with a proper safe delay)
   sachiya.ev.on('call', async (callEvents) => {
     for (const call of callEvents) {
       if (call.status === 'offer') {
         const callerJid = call.from;
         try {
-          await delay(1000);
           await sachiya.rejectCall(call.id, callerJid);
-          await delay(500);
-          const msg = `මොකටද අනේ කෝල් ගන්නේ? 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.`;
-          await sachiya.sendMessage(callerJid, { text: msg });
-        } catch (err) {
-          try {
-            await sachiya.sendMessage(callerJid, { text: `මොකටද අනේ කෝල් ගන්නේ? 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.` });
-          } catch (e) {}
-        }
+        } catch (e) {}
+
+        try {
+          await delay(1500); // Safe delay to clear socket queue
+          const antiCallMsg = `මොකටද අනේ කෝල් ගන්නේ? 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.`;
+          await sachiya.sendMessage(callerJid, { text: antiCallMsg });
+        } catch (err) {}
       }
     }
   });
 
-  // ✉️ Fully Updated Universal Messages Upsert Handler (Inbox & Group 100% Fix)
+  // ✉️ 100% Robust Universal Messages Upsert Handler (Inbox & Groups Fully Fixed)
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
-      const mek = chatUpdate.messages[0];
+      const mek = chatUpdate.messages && chatUpdate.messages[0] ? chatUpdate.messages[0] : null;
       if (!mek || !mek.message) return;
 
       if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
-
-      if (mek.key.fromMe) return;
+      if (mek.key.fromMe) return; // Prevent bot from replying to its own messages
 
       let msgType = getContentType(mek.message);
       if (msgType === 'ephemeralMessage') {
