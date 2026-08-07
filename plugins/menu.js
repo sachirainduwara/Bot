@@ -60,7 +60,7 @@ async(sachiya, mek, m, { from, quoted, pushname, reply }) => {
         await sachiya.sendMessage(
             from,
             {
-                image: { url: config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/Media/SACHIYA%20MD.png" },
+                image: { url: config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/Media/SACHIYA%20MD.png?raw=true" },
                 caption: menuMsg
             },
             { quoted: mek }
