@@ -10,7 +10,7 @@
     "restart": "pm2 restart SACHIYA-MINI-BOT"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.18",
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
     "@xaviabot/fb-downloader": "^1.0.14",
     "@distube/ytdl-core": "^4.15.8",
     "sadaslk-dlcore": "latest",
