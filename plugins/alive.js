@@ -44,7 +44,7 @@ async(sachiya, mek, m, { from, quoted, pushname, reply }) => {
 
         // 1. Voice Note (Audio) එක Raw Link එක හරiti යැවීම
         await sachiya.sendMessage(from, {
-            audio: { url: 'https://raw.githubusercontent.com/sachirainduwara/Bot/main/images/Welcome%20Ti%20Sachiya%20Md.mp3' },
+            audio: { url: 'https://raw.githubusercontent.com/sachirainduwara/Bot/main/images/Welcome%20To%20Sachiya%20Md.mp3' },
             mimetype: 'audio/mpeg',
             ptt: true
         }, { quoted: mek });
