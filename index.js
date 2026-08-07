@@ -43,6 +43,7 @@ console.error = function (...args) {
     logText.includes('Closing session') ||
     logText.includes('Closing open session') ||
     logText.includes('SessionEntry') ||
+    logText.includes('Decrypted message') ||
     logText.includes('Decryption') ||
     logText.includes('decrypt') ||
     logText.includes('Session error') ||
@@ -64,6 +65,7 @@ console.log = function (...args) {
     logText.includes('SessionEntry') ||
     logText.includes('Closing session') ||
     logText.includes('Closing open session') ||
+    logText.includes('Decrypted message') ||
     logText.includes('indexInfo') ||
     logText.includes('rootKey') ||
     logText.includes('prevCounter') ||
@@ -86,6 +88,7 @@ const handleSilentErrors = (err) => {
     msg.includes('Closing session') ||
     msg.includes('Closing open session') ||
     msg.includes('SessionEntry') ||
+    msg.includes('Decrypted message') ||
     msg.includes('Decryption') ||
     msg.includes('decrypt') ||
     msg.includes('Session error') ||
@@ -210,15 +213,17 @@ async function connectToWA() {
     console.log("⚡ Active Session Found! Connecting directly without Pairing Code...");
   }
 
+  let isConnectedOnce = false;
+
   sachiya.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect } = update;
     
     if (connection === 'close') {
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      if (statusCode === 515) {
-        setTimeout(() => connectToWA(), 2000);
-        return;
+      if (isConnectedOnce) {
+        return; 
       }
+
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
       if (statusCode === DisconnectReason.loggedOut) {
         console.error("❌ Session logged out! Resetting session folder...");
         if (fs.existsSync(authFolder)) {
@@ -229,6 +234,9 @@ async function connectToWA() {
         setTimeout(() => connectToWA(), 3000);
       }
     } else if (connection === 'open') {
+      if (isConnectedOnce) return;
+      isConnectedOnce = true;
+
       console.log('\n╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮');
       console.log('┃ 🎉 SACHIYA MD CONNECTED SUCCESSFULLY!  ');
       console.log('╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n');
