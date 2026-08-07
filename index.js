@@ -286,15 +286,17 @@ async function connectToWA() {
 
   sachiya.ev.on('creds.update', saveCreds);
 
-  // 📞 Anti Call Handler
+  // 📞 Fixed Anti Call Handler (Ensures call is rejected and warning message is sent properly)
   sachiya.ev.on('call', async (callEvents) => {
     for (const call of callEvents) {
       if (call.status === 'offer') {
         const callerJid = call.from;
         try {
+          await delay(1000);
           await sachiya.rejectCall(call.id, callerJid);
-          const msg = `මොකටද අනේ කෝල් ගන්නේ? 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.`;
-          await sachiya.sendMessage(callerJid, { text: msg });
+          await delay(500);
+          const antiCallMsg = `මොකටද අනේ කෝල් ගන්නේ? 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.`;
+          await sachiya.sendMessage(callerJid, { text: antiCallMsg });
         } catch (err) {
           try {
             await sachiya.sendMessage(callerJid, { text: `මොකටද අනේ කෝල් ගන්නේ? 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.` });
@@ -304,10 +306,10 @@ async function connectToWA() {
     }
   });
 
-  // ✉️ Universal Messages Upsert Handler
+  // ✉️ Fixed Universal Messages Upsert Handler (Works smoothly in both Inbox & Groups)
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
-      const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
+      const mek = chatUpdate.messages[0];
       if (!mek || !mek.message) return;
 
       if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
@@ -360,7 +362,7 @@ async function connectToWA() {
         return;
       }
 
-      let groupMetadata = `null`;
+      let groupMetadata = null;
       let groupName = '';
       let participants = [];
       let groupAdmins = [];
