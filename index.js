@@ -221,7 +221,7 @@ async function connectToWA() {
         isFirstPairing = false;
       }
 
-      const aliveImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/raw/main/Media/SACHIYA%20MD.png?raw=true";
+      const aliveImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/Media/SACHIYA%20MD.png?raw=true";
       
       const connectedSuccessMsg = `╭━━━〔 *SACHIYA-MD CONNECTED* 〕━━━\n` +
                                    `┃\n` +
