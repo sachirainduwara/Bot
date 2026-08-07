@@ -1,57 +1,49 @@
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { cmd } = require('../command');
-const fs = require('fs');
-const path = require('path');
 
 cmd({
     pattern: "vv",
-    alias: ["viewonce", "retrive"],
+    alias: ["viewonce", "retrieve"],
     desc: "Get View Once media",
     category: "download",
     filename: __filename
-}, async (conn, mek, m, { from, quoted, reply, pushname }) => {
+}, async (conn, mek, m, { from, quoted, reply }) => {
     try {
-        // 1. පරීක්ෂා කිරීම: රිප්ලය් කර ඇත්ද?
         if (!quoted) {
             return reply("❌ කරුණාකර View Once මැසේජ් එකකට `.vv` කියලා Reply කරන්න!");
         }
 
-        // 2. පරීක්ෂා කිරීම: එය View Once මැසේජ් එකක්ද?
-        let mime = quoted.mtype || '';
-        if (!mime.includes('viewOnce')) {
-            return reply("⚠️ මෙය View Once මැසේජ් එකක් නොවේ. කරුණාකර 1-time (ඡායාරූපයක් හෝ වීඩියෝවක්) මැසේජ් එකකට Reply කරන්න!");
+        let msg = quoted.message;
+        if (!msg) {
+            return reply("❌ රිප්ලය් කළ මැසේජ් එක කියවා ගැනීමට නොහැක!");
+        }
+
+        // Handle wrapped messages (Ephemerals, ViewOnce v1/v2)
+        if (msg.ephemeralMessage) msg = msg.ephemeralMessage.message;
+        if (msg.viewOnceMessage) msg = msg.viewOnceMessage.message;
+        if (msg.viewOnceMessageV2) msg = msg.viewOnceMessageV2.message;
+        if (msg.viewOnceMessageV2Extension) msg = msg.viewOnceMessageV2Extension.message;
+
+        let mediaType = Object.keys(msg)[0];
+        
+        // Check if media itself has viewOnce flag set to true or is a viewOnce type
+        let isViewOnce = msg[mediaType]?.viewOnce || 
+                         mediaType.includes('viewOnce') || 
+                         quoted.mtype?.includes('viewOnce');
+
+        // Fallback: If it's an image/video/audio message inside quoted, let's check deeper
+        if (!mediaType || (!['imageMessage', 'videoMessage', 'audioMessage'].includes(mediaType))) {
+            // Try extracting from quoted directly if mtype is standard
+            if (quoted.mtype === 'imageMessage' || quoted.mtype === 'videoMessage' || quoted.mtype === 'audioMessage') {
+                mediaType = quoted.mtype;
+                msg = { [mediaType]: quoted.message[mediaType] };
+            } else {
+                return reply("⚠️ මෙය View Once මැසේජ් එකක් හෝ නිවැරදි මීඩියා මැසේජ් එකක් නොවේ!");
+            }
         }
 
         reply("⏳ *SACHIYA MD ✨ ViewOnce Retrieving...* කරුණාකර මොහොතක් රැඳී සිටින්න...");
 
-        // 3. මීඩියා එක ලබා ගැනීම (Extracting Media Content)
-        let msg = quoted.message;
-        let mediaType = Object.keys(msg)[0];
-        
-        // Handle different wrappers (e.g., viewOnceMessage, viewOnceMessageV2, etc.)
-        if (mediaType === 'ephemeralMessage') {
-            msg = msg.ephemeralMessage.message;
-            mediaType = Object.keys(msg)[0];
-        }
-        
-        if (mediaType === 'viewOnceMessage') {
-            msg = msg.viewOnceMessage.message;
-            mediaType = Object.keys(msg)[0];
-        } else if (mediaType === 'viewOnceMessageV2') {
-            msg = msg.viewOnceMessageV2.message;
-            mediaType = Object.keys(msg)[0];
-        } else if (mediaType === 'viewOnceMessageV2Extension') {
-            msg = msg.viewOnceMessageV2Extension.message;
-            mediaType = Object.keys(msg)[0];
-        }
-
-        // අදාළ මීඩියා වර්ගය තහවුරු කර ගැනීම
-        const validMediaTypes = ['imageMessage', 'videoMessage', 'audioMessage'];
-        if (!validMediaTypes.includes(mediaType)) {
-             return reply(`❌ සමාවන්න, මෙම වර්ගයේ View Once මාධ්‍යය බාගත කළ නොහැක. (Detected: ${mediaType})`);
-        }
-
-        // 4. මීඩියා එක ඩවුන්ලෝඩ් කිරීම (Downloading Media Stream)
         const stream = await downloadMediaMessage(msg[mediaType], 'stream');
         const buffer = [];
         for await (const chunk of stream) {
@@ -60,9 +52,8 @@ cmd({
         const mediaBuffer = Buffer.concat(buffer);
 
         let caption = msg[mediaType].caption || '';
-        const originalSender = quoted.key.participant || quoted.key.remoteJid; // Original sender JID
+        const originalSender = quoted.key.participant || quoted.key.remoteJid;
 
-        // 5. ලස්සන කැප්ෂන් එකක් එක්ක යැවීම (Sending with SACHIYA MD Styling)
         const newCaption = `╭━━━〔 *SACHIYA MD ✨ ViewOnce* 〕━━━╮\n` +
                            `┃\n` +
                            `┃ 👤 *Sender:* @${originalSender.split('@')[0]}\n` +
@@ -79,11 +70,11 @@ cmd({
         } else if (mediaType === 'videoMessage') {
             await conn.sendMessage(from, { video: mediaBuffer, caption: newCaption, mentions: [originalSender] }, { quoted: mek });
         } else if (mediaType === 'audioMessage') {
-             await conn.sendMessage(from, { audio: mediaBuffer, mimetype: 'audio/mp4', ptt: msg[mediaType].ptt, mentions: [originalSender] }, { quoted: mek });
+            await conn.sendMessage(from, { audio: mediaBuffer, mimetype: 'audio/mp4', ptt: msg[mediaType].ptt, mentions: [originalSender] }, { quoted: mek });
         }
 
     } catch (e) {
         console.error("[SACHIYA MD VV ERROR]:", e);
-        reply("❌ *SACHIYA MD ✨ අසාර්ථකයි!* \n\nසමාවන්න, View Once මාධ්‍යය ලබා ගැනීමේදී දෝෂයක් සිදු විය. එය කල් ඉකුත් වී (Expired) තිබෙන්නට පුළුවන.");
+        reply("*අසාර්ථකයි!* \n\nසමාවන්න, View Once මාධ්‍යය ලබා ගැනීමේදී දෝෂයක් සිදු විය.");
     }
 });
