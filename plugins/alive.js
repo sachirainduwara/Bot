@@ -51,7 +51,7 @@ async(sachiya, mek, m, { from, quoted, pushname, reply }) => {
 
         // 2. Image එක සමඟ Alive Message එක යැවීම
         await sachiya.sendMessage(from, {
-            image: { url: 'https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true' },
+            image: { url: 'https://github.com/sachirainduwara/Bot/blob/main/Media/SACHIYA%20MD.png' },
             caption: aliveMsg
         }, { quoted: mek });
 
