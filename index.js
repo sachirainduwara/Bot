@@ -306,13 +306,15 @@ async function connectToWA() {
     }
   });
 
-  // ✉️ Fully Fixed Universal Messages Upsert Handler (Inbox & Group Supported)
+  // ✉️ Fully Updated Universal Messages Upsert Handler (Inbox & Group 100% Fix)
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
-      const mek = chatUpdate.messages ? (chatUpdate.messages[0] || chatUpdate[0]) : chatUpdate[0];
+      const mek = chatUpdate.messages[0];
       if (!mek || !mek.message) return;
 
       if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
+
+      if (mek.key.fromMe) return;
 
       let msgType = getContentType(mek.message);
       if (msgType === 'ephemeralMessage') {
