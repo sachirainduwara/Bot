@@ -4,7 +4,7 @@ const {
   DisconnectReason,
   jidNormalizedUser,
   getContentType,
-  fetchLatestBaileysVersion,
+  fetchLatestWaWebVersion,
   makeCacheableSignalKeyStore,
   delay
 } = require('@whiskeysockets/baileys');
@@ -153,7 +153,9 @@ async function connectToWA() {
   const credsPath = path.join(authFolder, 'creds.json');
 
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
-  const { version } = await fetchLatestBaileysVersion();
+  
+  // Fix version fetching issue that causes "Couldn't link device" error
+  const { version } = await fetchLatestWaWebVersion();
   
   const logger = P({ level: 'fatal' });
 
@@ -197,7 +199,7 @@ async function connectToWA() {
         } catch (err) {
           console.error("❌ Pairing Code generation error:", err.message || err);
         }
-      }, 4000);
+      }, 5000);
     }
   } else {
     console.log("⚡ Active Session Found! Connecting directly without Pairing Code...");
@@ -221,6 +223,7 @@ async function connectToWA() {
         }
         process.exit(1);
       } else {
+        // Auto-reconnect on status code 515 or other minor drops
         setTimeout(() => connectToWA(), 3000);
       }
     } else if (connection === 'open') {
