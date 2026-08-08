@@ -1,11 +1,12 @@
 /*
   * Project: SACHIYA-MD WhatsApp Bot
-  * Plugin: Group Management (Clean Number View for Kick/Add)
+  * Plugin: Group Management (Fixed Admin & Owner Check Bug)
   * Author: SACHIYA
 */
 
 const { cmd } = require("../command");
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const config = require("../config");
 
 // 🎯 Safe JID Extractor Helper Function
 function getTargetUser(mek, quoted, args) {
@@ -20,8 +21,21 @@ function getTargetUser(mek, quoted, args) {
   return null;
 }
 
+// 🛡️ Helper to check if user is Admin or Owner
+async function checkAdminOrOwner(sachiya, from, sender, isOwner) {
+  if (isOwner) return true;
+  try {
+    const metadata = await sachiya.groupMetadata(from);
+    const participants = metadata.participants || [];
+    const senderObj = participants.find(p => p.id === sender);
+    return senderObj && (senderObj.admin === 'admin' || senderObj.admin === 'superadmin');
+  } catch (e) {
+    return false;
+  }
+}
+
 // ==========================================
-// 1. KICK COMMAND (Clean Number Display)
+// 1. KICK COMMAND
 // ==========================================
 cmd({
   pattern: "kick",
@@ -30,10 +44,12 @@ cmd({
   desc: "Kick user from group",
   category: "group",
   filename: __filename,
-}, async (sachiya, mek, m, { from, isGroup, isAdmins, isOwner, reply, quoted, args }) => {
+}, async (sachiya, mek, m, { from, isGroup, isOwner, sender, reply, quoted, args }) => {
   try {
     if (!isGroup) return reply("⚠️ *This command can only be used in groups!*");
-    if (!isAdmins && !isOwner) return reply("❌ *You must be a group admin to use this command!*");
+    
+    const isAdminOrOwner = await checkAdminOrOwner(sachiya, from, sender, isOwner);
+    if (!isAdminOrOwner) return reply("❌ *You must be a group admin to use this command!*");
 
     const target = getTargetUser(mek, quoted, args);
     if (!target) return reply("⚠️ *Please mention, reply, or provide the number of the user to kick!*");
@@ -44,7 +60,7 @@ cmd({
     return reply(`✅ *Successfully kicked:* +${userNumber}`, { mentions: [target] });
   } catch (e) {
     console.error("KICK ERROR:", e);
-    return reply("❌ *Failed to kick user! Check if Bot has Admin rights or target is Group Creator.*");
+    return reply("❌ *Failed to kick user! Check if Bot has Admin rights.*");
   }
 });
 
@@ -58,10 +74,12 @@ cmd({
   desc: "Promote user to admin",
   category: "group",
   filename: __filename,
-}, async (sachiya, mek, m, { from, isGroup, isAdmins, isOwner, reply, quoted, args }) => {
+}, async (sachiya, mek, m, { from, isGroup, isOwner, sender, reply, quoted, args }) => {
   try {
     if (!isGroup) return reply("⚠️ *This command can only be used in groups!*");
-    if (!isAdmins && !isOwner) return reply("❌ *You must be a group admin to use this command!*");
+    
+    const isAdminOrOwner = await checkAdminOrOwner(sachiya, from, sender, isOwner);
+    if (!isAdminOrOwner) return reply("❌ *You must be a group admin to use this command!*");
 
     const target = getTargetUser(mek, quoted, args);
     if (!target) return reply("⚠️ *Please mention or reply to a user to promote!*");
@@ -86,10 +104,12 @@ cmd({
   desc: "Demote admin to member",
   category: "group",
   filename: __filename,
-}, async (sachiya, mek, m, { from, isGroup, isAdmins, isOwner, reply, quoted, args }) => {
+}, async (sachiya, mek, m, { from, isGroup, isOwner, sender, reply, quoted, args }) => {
   try {
     if (!isGroup) return reply("⚠️ *This command can only be used in groups!*");
-    if (!isAdmins && !isOwner) return reply("❌ *You must be a group admin to use this command!*");
+    
+    const isAdminOrOwner = await checkAdminOrOwner(sachiya, from, sender, isOwner);
+    if (!isAdminOrOwner) return reply("❌ *You must be a group admin to use this command!*");
 
     const target = getTargetUser(mek, quoted, args);
     if (!target) return reply("⚠️ *Please mention or reply to an admin to demote!*");
@@ -105,7 +125,7 @@ cmd({
 });
 
 // ==========================================
-// 4. ADD / INVITE USER (Clean Number Display)
+// 4. ADD / INVITE USER
 // ==========================================
 cmd({
   pattern: "add",
@@ -114,10 +134,13 @@ cmd({
   desc: "Add a user to the group",
   category: "group",
   filename: __filename
-}, async (sachiya, mek, m, { from, isGroup, isAdmins, isOwner, reply, args }) => {
+}, async (sachiya, mek, m, { from, isGroup, isOwner, sender, reply, args }) => {
   try {
     if (!isGroup) return reply("⚠️ *This command can only be used in groups!*");
-    if (!isAdmins && !isOwner) return reply("❌ *You must be a group admin to use this command!*");
+    
+    const isAdminOrOwner = await checkAdminOrOwner(sachiya, from, sender, isOwner);
+    if (!isAdminOrOwner) return reply("❌ *You must be a group admin to use this command!*");
+    
     if (!args[0]) return reply("⚠️ *Please provide the phone number to add! (e.g: .add 9476xxxxxxx)*");
 
     const cleanNum = args[0].replace(/[^0-9]/g, "");
@@ -141,12 +164,16 @@ cmd({
   desc: "Tag all group members with a custom message",
   category: "group",
   filename: __filename,
-}, async (sachiya, mek, m, { from, isGroup, isAdmins, isOwner, reply, participants, q }) => {
+}, async (sachiya, mek, m, { from, isGroup, isOwner, sender, reply, q }) => {
   try {
     if (!isGroup) return reply("⚠️ *This command can only be used in groups!*");
-    if (!isAdmins && !isOwner) return reply("❌ *Only group admins can use tagall!*");
+    
+    const isAdminOrOwner = await checkAdminOrOwner(sachiya, from, sender, isOwner);
+    if (!isAdminOrOwner) return reply("❌ *Only group admins can use tagall!*");
 
-    if (!participants || participants.length === 0) return reply("⚠️ *No members found!*");
+    const metadata = await sachiya.groupMetadata(from);
+    const participants = metadata.participants || [];
+    if (participants.length === 0) return reply("⚠️ *No members found!*");
 
     let mentions = participants.map(p => p.id);
     let customMessage = q ? q : "Attention everyone!";
@@ -176,11 +203,12 @@ cmd({
   desc: "List all group admins",
   category: "group",
   filename: __filename,
-}, async (sachiya, mek, m, { from, isGroup, reply, participants }) => {
+}, async (sachiya, mek, m, { from, isGroup, reply }) => {
   try {
     if (!isGroup) return reply("⚠️ *This command is for groups only!*");
 
-    const adminList = participants.filter(p => p.admin);
+    const metadata = await sachiya.groupMetadata(from);
+    const adminList = metadata.participants.filter(p => p.admin);
     const mentions = adminList.map(a => a.id);
 
     let text = `╭━━━〔 *GROUP ADMINS* 〕━━━\n┃\n`;
@@ -205,10 +233,12 @@ cmd({
   desc: "Set group chat to admin-only messages",
   category: "group",
   filename: __filename
-}, async (sachiya, mek, m, { from, isGroup, isAdmins, isOwner, reply }) => {
+}, async (sachiya, mek, m, { from, isGroup, isOwner, sender, reply }) => {
   try {
     if (!isGroup) return reply("⚠️ *This command can only be used in groups!*");
-    if (!isAdmins && !isOwner) return reply("❌ *Only group admins can lock the group!*");
+    
+    const isAdminOrOwner = await checkAdminOrOwner(sachiya, from, sender, isOwner);
+    if (!isAdminOrOwner) return reply("❌ *Only group admins can lock the group!*");
 
     await sachiya.groupSettingUpdate(from, "announcement");
     return reply("🔒 *Group has been muted. Only admins can send messages now!*");
@@ -228,10 +258,12 @@ cmd({
   desc: "Allow everyone to send messages in the group",
   category: "group",
   filename: __filename
-}, async (sachiya, mek, m, { from, isGroup, isAdmins, isOwner, reply }) => {
+}, async (sachiya, mek, m, { from, isGroup, isOwner, sender, reply }) => {
   try {
     if (!isGroup) return reply("⚠️ *This command can only be used in groups!*");
-    if (!isAdmins && !isOwner) return reply("❌ *Only group admins can unlock the group!*");
+    
+    const isAdminOrOwner = await checkAdminOrOwner(sachiya, from, sender, isOwner);
+    if (!isAdminOrOwner) return reply("❌ *Only group admins can unlock the group!*");
 
     await sachiya.groupSettingUpdate(from, "not_announcement");
     return reply("🔓 *Group has been unmuted. Everyone can send messages now!*");
@@ -274,10 +306,12 @@ cmd({
   desc: "Reset group invite link",
   category: "group",
   filename: __filename,
-}, async (sachiya, mek, m, { from, isGroup, isAdmins, isOwner, reply }) => {
+}, async (sachiya, mek, m, { from, isGroup, isOwner, sender, reply }) => {
   try {
     if (!isGroup) return reply("⚠️ *This command is for groups only!*");
-    if (!isAdmins && !isOwner) return reply("❌ *Only admins can revoke the group link!*");
+    
+    const isAdminOrOwner = await checkAdminOrOwner(sachiya, from, sender, isOwner);
+    if (!isAdminOrOwner) return reply("❌ *Only admins can revoke the group link!*");
 
     await sachiya.groupRevokeInvite(from);
     return reply("♻️ *Group invite link has been successfully reset!*");
@@ -287,7 +321,7 @@ cmd({
 });
 
 // ==========================================
-// 10. UPDATE GROUP DETAILS
+# 10. UPDATE GROUP DETAILS
 // ==========================================
 cmd({
   pattern: "setsubject",
@@ -296,10 +330,13 @@ cmd({
   desc: "Change group name",
   category: "group",
   filename: __filename,
-}, async (sachiya, mek, m, { from, isGroup, isAdmins, isOwner, args, reply }) => {
+}, async (sachiya, mek, m, { from, isGroup, isOwner, sender, args, reply }) => {
   try {
     if (!isGroup) return reply("⚠️ *This command is for groups only!*");
-    if (!isAdmins && !isOwner) return reply("❌ *Only admins can change group name!*");
+    
+    const isAdminOrOwner = await checkAdminOrOwner(sachiya, from, sender, isOwner);
+    if (!isAdminOrOwner) return reply("❌ *Only admins can change group name!*");
+    
     if (!args[0]) return reply("⚠️ *Please provide a new group name!*");
 
     await sachiya.groupUpdateSubject(from, args.join(" "));
@@ -315,10 +352,13 @@ cmd({
   desc: "Change group description",
   category: "group",
   filename: __filename,
-}, async (sachiya, mek, m, { from, isGroup, isAdmins, isOwner, args, reply }) => {
+}, async (sachiya, mek, m, { from, isGroup, isOwner, sender, args, reply }) => {
   try {
     if (!isGroup) return reply("⚠️ *This command is for groups only!*");
-    if (!isAdmins && !isOwner) return reply("❌ *Only admins can change group description!*");
+    
+    const isAdminOrOwner = await checkAdminOrOwner(sachiya, from, sender, isOwner);
+    if (!isAdminOrOwner) return reply("❌ *Only admins can change group description!*");
+    
     if (!args[0]) return reply("⚠️ *Please provide a new group description!*");
 
     await sachiya.groupUpdateDescription(from, args.join(" "));
@@ -335,10 +375,13 @@ cmd({
   desc: "Set group profile picture",
   category: "group",
   filename: __filename
-}, async (sachiya, mek, m, { from, isGroup, isAdmins, isOwner, reply, quoted }) => {
+}, async (sachiya, mek, m, { from, isGroup, isOwner, sender, reply, quoted }) => {
   try {
     if (!isGroup) return reply("⚠️ *This command is for groups only!*");
-    if (!isAdmins && !isOwner) return reply("❌ *Only admins can change group profile photo!*");
+    
+    const isAdminOrOwner = await checkAdminOrOwner(sachiya, from, sender, isOwner);
+    if (!isAdminOrOwner) return reply("❌ *Only admins can change group profile photo!*");
+    
     if (!quoted?.message?.imageMessage) return reply("🖼️ *Please reply to an image to set as group icon!*");
 
     const media = await downloadMediaMessage(quoted, 'buffer');
@@ -372,7 +415,7 @@ cmd({
 
     const infoCard = `╭━━━〔 *GROUP INFORMATION* 〕━━━\n` +
                       `┃\n` +
-                      `┃ 👥 *Group:* ${metadata.subject}\n` +
+                      `┃ 👥 *Group:* metadata.subject\n` +
                       `┃ 🆔 *ID:* ${metadata.id}\n` +
                       `┃ 🧑‍💼 *Owner:* ${owner ? `@${owner.split("@")[0]}` : "Not found"}\n` +
                       `┃ 📅 *Created:* ${creation}\n` +
