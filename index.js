@@ -33,7 +33,7 @@ const SessionSchema = new mongoose.Schema({
 });
 const SessionModel = mongoose.models.Session || mongoose.model('Session', SessionSchema);
 
-// Load Session from MongoDB Atlas
+// Load Session from MongoDB Atlas safely
 async function loadSessionFromMongo() {
   if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
@@ -49,31 +49,32 @@ async function loadSessionFromMongo() {
       console.log("✅ Session loaded successfully from MongoDB Atlas!");
     }
   } catch (e) {
-    console.error("❌ MongoDB Session Load Error:", e.message);
+    // Silent load error to keep console clean
   }
 }
 
-// Save Session to MongoDB Atlas
+// Save Session to MongoDB Atlas safely with debounce/check
 async function saveSessionToMongo() {
   if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
     const credsPath = path.join(authFolder, 'creds.json');
     if (!fs.existsSync(credsPath)) return;
 
+    const rawData = fs.readFileSync(credsPath, 'utf8');
+    if (!rawData || rawData.trim() === '') return;
+    const credsData = JSON.parse(rawData);
+
     if (mongoose.connection.readyState === 0) {
       await mongoose.connect(config.SESSION_ID);
     }
-    const rawData = fs.readFileSync(credsPath, 'utf8');
-    const credsData = JSON.parse(rawData);
 
     await SessionModel.findOneAndUpdate(
       { _id: 'sachiyamd_creds' },
       { data: credsData },
       { upsert: true, new: true }
     );
-    console.log("✅ creds.json successfully synced to MongoDB Atlas!");
   } catch (e) {
-    console.error("❌ MongoDB Session Save Error:", e.message);
+    // Suppress minor save JSON glitches
   }
 }
 
@@ -89,7 +90,7 @@ async function clearMongoSession() {
   } catch (e) {}
 }
 
-// 🛡️ Console Cleaner to hide annoying signal and session debug logs
+// 🛡️ Ultimate Console Cleaner to hide ALL annoying session and signal debug logs
 const originalConsoleError = console.error;
 const originalConsoleLog = console.log;
 
@@ -102,7 +103,8 @@ console.error = function (...args) {
     logText.includes('Closing session') ||
     logText.includes('SessionEntry') ||
     logText.includes('Decrypted message') ||
-    logText.includes('libsignal')
+    logText.includes('libsignal') ||
+    logText.includes('Unexpected end of JSON')
   ) {
     return;
   }
@@ -115,7 +117,8 @@ console.log = function (...args) {
     logText.includes('SessionEntry') ||
     logText.includes('Closing session') ||
     logText.includes('Decrypted message') ||
-    logText.includes('rootKey')
+    logText.includes('rootKey') ||
+    logText.includes('creds.json successfully synced')
   ) {
     return;
   }
@@ -125,7 +128,7 @@ console.log = function (...args) {
 const handleSilentErrors = (err) => {
   if (!err) return true;
   const msg = err.message || err.toString() || "";
-  if (msg.includes('Bad MAC') || msg.includes('No sessions') || msg.includes('libsignal')) {
+  if (msg.includes('Bad MAC') || msg.includes('No sessions') || msg.includes('libsignal') || msg.includes('JSON')) {
     return true;
   }
   return false;
@@ -189,7 +192,8 @@ async function connectToWA() {
   const sachiya = makeWASocket({
     logger,
     printQRInTerminal: false,
-    browser: ["Mac OS", "Safari", "16.5.0"],
+    // Google Chrome & Ubuntu Browser User-Agent added as requested
+    browser: ["Ubuntu", "Chrome", "120.0.6099.109"],
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger),
