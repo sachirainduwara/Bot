@@ -2,7 +2,7 @@ const { cmd } = require("../command");
 const { ytmp3, ytmp4, tiktok } = require("sadaslk-dlcore");
 const yts = require("yt-search");
 
-// 🔍 YouTube Helper Function
+// 🔍 Advanced & Safe YouTube Helper Function
 async function getYoutube(query) {
   try {
     let cleanedQuery = query.trim();
@@ -16,9 +16,10 @@ async function getYoutube(query) {
     }
 
     const search = await yts(cleanedQuery);
-    if (!search || !search.videos.length) return null;
+    if (!search || !search.videos || search.videos.length === 0) return null;
     return search.videos[0];
   } catch (e) {
+    console.log("YouTube Search Error:", e);
     return null;
   }
 }
@@ -51,9 +52,9 @@ cmd(
       const caption = `╭━━━〔 *YOUTUBE AUDIO* 〕━━━\n` +
                       `┃\n` +
                       `┃ 🎵 *Title:* ${video.title}\n` +
-                      `┃ 👤 *Channel:* ${video.author.name}\n` +
-                      `┃ ⏱ *Duration:* ${video.timestamp}\n` +
-                      `┃ 👀 *Views:* ${video.views.toLocaleString()}\n` +
+                      `┃ 👤 *Channel:* ${video.author?.name || "Unknown"}\n` +
+                      `┃ ⏱ *Duration:* ${video.timestamp || "N/A"}\n` +
+                      `┃ 👀 *Views:* ${(video.views || 0).toLocaleString()}\n` +
                       `┃\n` +
                       `╰━━━━━━━━━━━━━━━━━━━\n\n` +
                       `> Powered by SACHIYA MD 💫`;
@@ -78,7 +79,7 @@ cmd(
         {
           audio: { url: data.url },
           mimetype: "audio/mpeg",
-          fileName: `${video.title}.mp3`
+          fileName: `${video.title.replace(/[^\w\s]/gi, '')}.mp3`
         },
         { quoted: mek }
       );
@@ -121,10 +122,10 @@ cmd(
       const caption = `╭━━━〔 *YOUTUBE VIDEO* 〕━━━\n` +
                       `┃\n` +
                       `┃ 🎬 *Title:* ${video.title}\n` +
-                      `┃ 👤 *Channel:* ${video.author.name}\n` +
-                      `┃ ⏱ *Duration:* ${video.timestamp}\n` +
-                      `┃ 👀 *Views:* ${video.views.toLocaleString()}\n` +
-                      `┃ 📅 *Uploaded:* ${video.ago}\n` +
+                      `┃ 👤 *Channel:* ${video.author?.name || "Unknown"}\n` +
+                      `┃ ⏱ *Duration:* ${video.timestamp || "N/A"}\n` +
+                      `┃ 👀 *Views:* ${(video.views || 0).toLocaleString()}\n` +
+                      `┃ 📅 *Uploaded:* ${video.ago || "N/A"}\n` +
                       `┃\n` +
                       `╰━━━━━━━━━━━━━━━━━━━\n\n` +
                       `> Powered by SACHIYA MD 💫`;
@@ -153,7 +154,7 @@ cmd(
         {
           video: { url: data.url },
           mimetype: "video/mp4",
-          fileName: data.filename || `${video.title}.mp4`,
+          fileName: data.filename || `${video.title.replace(/[^\w\s]/gi, '')}.mp4`,
           caption: `🎬 *${video.title}*\n\n> Powered by SACHIYA MD`,
           gifPlayback: false,
         },
@@ -189,10 +190,12 @@ cmd(
       await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
       const data = await tiktok(q);
-      if (!data?.no_watermark) {
+      if (!data || (!data.no_watermark && !data.url)) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
         return reply("❌ *Failed to download TikTok video! Make sure link is public.*");
       }
+
+      const videoUrl = data.no_watermark || data.url;
 
       // 🎨 SACHIYA-MD TIKTOK CARD
       const caption = `╭━━━〔 *TIKTOK DOWNLOADER* 〕━━━\n` +
@@ -207,7 +210,7 @@ cmd(
       await sachiya.sendMessage(
         from,
         {
-          video: { url: data.no_watermark },
+          video: { url: videoUrl },
           caption,
           mimetype: "video/mp4"
         },
