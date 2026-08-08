@@ -16,7 +16,10 @@ const path = require('path');
 const { Storage } = require('megajs');
 
 const config = require('./config');
-const { sms } = require('./lib/msg');
+const { sms, downloadMediaMessage } = require('./lib/msg');
+const {
+  getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson
+} = require('./lib/functions');
 const { commands, replyHandlers } = require('./command');
 
 const app = express();
@@ -26,7 +29,7 @@ const prefix = config.PREFIX || '.';
 const ownerNumber = [config.OWNER_NUM || '94771081150'];
 const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
-// --- Mega.nz Session Store Helper ---
+// --- Mega.nz Session Store Helper (Fixed & Optimized) ---
 async function uploadCredsToMega(authDir) {
   if (!config.MEGA_EMAIL || !config.MEGA_PASSWORD) return;
   try {
@@ -37,13 +40,21 @@ async function uploadCredsToMega(authDir) {
     await storage.ready;
 
     let folder = storage.root.children.find(f => f.name === 'sachiyamd_session' && f.directory);
-    if (!folder) { folder = await storage.root.mkdir('sachiyamd_session'); }
+    if (!folder) {
+      folder = await storage.root.mkdir('sachiyamd_session');
+    }
 
     const existingFile = folder.children.find(f => f.name === 'creds.json');
-    if (existingFile) { await existingFile.delete(); }
+    if (existingFile) {
+      await existingFile.delete();
+    }
 
-    await folder.upload('creds.json', fs.createReadStream(credsPath)).complete;
-  } catch (e) { console.error("Mega Upload Error:", e); }
+    const fileStream = fs.createReadStream(credsPath);
+    await folder.upload('creds.json', fileStream).complete;
+    console.log("✅ creds.json successfully uploaded to Mega.nz!");
+  } catch (e) {
+    console.error("❌ Mega Upload Error:", e);
+  }
 }
 
 async function downloadCredsFromMega(authDir) {
@@ -51,92 +62,419 @@ async function downloadCredsFromMega(authDir) {
   try {
     const storage = new Storage({ email: config.MEGA_EMAIL, password: config.MEGA_PASSWORD });
     await storage.ready;
+
     const folder = storage.root.children.find(f => f.name === 'sachiyamd_session' && f.directory);
     if (!folder) return false;
+
     const file = folder.children.find(f => f.name === 'creds.json');
     if (!file) return false;
-    if (!fs.existsSync(authDir)) { fs.mkdirSync(authFolder, { recursive: true }); }
+
+    if (!fs.existsSync(authDir)) {
+      fs.mkdirSync(authFolder, { recursive: true });
+    }
+
     const data = await file.downloadBuffer();
     fs.writeFileSync(path.join(authFolder, 'creds.json'), data);
+    console.log("✅ creds.json successfully downloaded from Mega.nz!");
     return true;
-  } catch (e) { return false; }
+  } catch (e) {
+    console.error("❌ Mega Download Error:", e);
+    return false;
+  }
+}
+
+async function clearMegaSession() {
+  if (!config.MEGA_EMAIL || !config.MEGA_PASSWORD) return;
+  try {
+    const storage = new Storage({ email: config.MEGA_EMAIL, password: config.MEGA_PASSWORD });
+    await storage.ready;
+    const folder = storage.root.children.find(f => f.name === 'sachiyamd_session' && f.directory);
+    if (folder) {
+      const file = folder.children.find(f => f.name === 'creds.json');
+      if (file) await file.delete();
+      console.log("🗑️ Mega session cleared due to logout.");
+    }
+  } catch (e) {}
+}
+
+// 🛡️ Console Cleaner to hide annoying signal and session debug logs
+const originalConsoleError = console.error;
+const originalConsoleLog = console.log;
+
+console.error = function (...args) {
+  const logText = args.join(' ');
+  if (
+    logText.includes('Bad MAC') ||
+    logText.includes('No sessions') ||
+    logText.includes('closing connection') ||
+    logText.includes('Closing session') ||
+    logText.includes('Closing open session') ||
+    logText.includes('SessionEntry') ||
+    logText.includes('Decrypted message') ||
+    logText.includes('Decryption') ||
+    logText.includes('decrypt') ||
+    logText.includes('Session error') ||
+    logText.includes('libsignal') ||
+    logText.includes('Failed to decrypt message') ||
+    logText.includes('indexInfo') ||
+    logText.includes('rootKey') ||
+    logText.includes('Buffer') ||
+    logText.includes('_chains') ||
+    logText.includes('currentRatchet')
+  ) {
+    return;
+  }
+  originalConsoleError.apply(console, args);
+};
+
+console.log = function (...args) {
+  const logText = args.join(' ');
+  if (
+    logText.includes('SessionEntry') ||
+    logText.includes('Closing session') ||
+    logText.includes('Closing open session') ||
+    logText.includes('Decrypted message') ||
+    logText.includes('indexInfo') ||
+    logText.includes('rootKey') ||
+    logText.includes('prevCounter') ||
+    logText.includes('Buffer') ||
+    logText.includes('lastRemoteEphemeralKey') ||
+    logText.includes('_chains') ||
+    logText.includes('currentRatchet')
+  ) {
+    return;
+  }
+  originalConsoleLog.apply(console, args);
+};
+
+const handleSilentErrors = (err) => {
+  if (!err) return true;
+  const msg = err.message || err.toString() || "";
+  if (
+    msg.includes('Bad MAC') ||
+    msg.includes('No sessions') ||
+    msg.includes('closing connection') ||
+    msg.includes('Closing session') ||
+    msg.includes('Closing open session') ||
+    msg.includes('SessionEntry') ||
+    msg.includes('Decrypted message') ||
+    msg.includes('Decryption') ||
+    msg.includes('decrypt') ||
+    msg.includes('Session error') ||
+    msg.includes('libsignal')
+  ) {
+    return true;
+  }
+  return false;
+};
+
+process.on('uncaughtException', (err) => {
+  if (handleSilentErrors(err)) return;
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (err) => {
+  if (handleSilentErrors(err)) return;
+  console.error('Unhandled Rejection:', err);
+});
+
+function extractGroupAdmins(participants) {
+  if (!participants || !Array.isArray(participants)) return [];
+  return participants
+    .filter((p) => p.admin === 'admin' || p.admin === 'superadmin')
+    .map((p) => jidNormalizedUser(p.id));
+}
+
+// 1. Load Plugins Safely
+function loadPlugins() {
+  let pluginsPath = path.join(__dirname, "plugins");
+  
+  if (!fs.existsSync(pluginsPath)) {
+    pluginsPath = path.join(__dirname, "Plugins");
+  }
+
+  if (fs.existsSync(pluginsPath)) {
+    fs.readdirSync(pluginsPath).forEach((plugin) => {
+      if (path.extname(plugin).toLowerCase() === ".js") {
+        try {
+          require(path.join(pluginsPath, plugin));
+        } catch (e) {
+          console.error(`❌ Error loading plugin ${plugin}:`, e.message);
+        }
+      }
+    });
+    console.log(`✅ Loaded ${commands.length} Commands Successfully!`);
+  } else {
+    console.error("❌ Plugins folder not found!");
+  }
 }
 
 // 2. WhatsApp Connection Logic
 async function connectToWA() {
-  console.log("\n⏳ Connecting SACHIYA MD...");
+  console.log("\n⏳ Connecting SACHIYA MD ✨...");
 
-  if (!fs.existsSync(authFolder)) { fs.mkdirSync(authFolder, { recursive: true }); }
-  await downloadCredsFromMega(authFolder);
+  if (!fs.existsSync(authFolder)) {
+    fs.mkdirSync(authFolder, { recursive: true });
+  }
+
+  // Download session from Mega.nz before starting socket if local creds don't exist
+  if (!fs.existsSync(path.join(authFolder, 'creds.json'))) {
+    await downloadCredsFromMega(authFolder);
+  }
 
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestWaWebVersion();
   
+  const logger = P({ level: 'fatal' });
+
   const sachiya = makeWASocket({
-    logger: P({ level: 'silent' }),
+    logger,
     printQRInTerminal: false,
-    // Google Chrome on Ubuntu Browser String
-    browser: ["Chrome", "Chrome", "116.0.0.0"], 
+    browser: ["Mac OS", "Safari", "16.5.0"], // Fixed browser user-agent to prevent linking errors
     auth: {
       creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, P({ level: 'silent' })),
+      keys: makeCacheableSignalKeyStore(state.keys, logger),
     },
     version,
     syncFullHistory: false,
-    generateHighQualityLinkPreview: true
-  });
-
-  // Pairing Code Logic
-  if (!sachiya.authState.creds.registered) {
-    let targetNumber = (config.OWNER_NUM || ownerNumber[0]).replace(/[^0-9]/g, '');
-    
-    // Delay requesting pairing code to ensure Socket is fully ready
-    setTimeout(async () => {
+    fireInitQueries: true,
+    markOnlineOnConnect: true,
+    generateHighQualityLinkPreview: false,
+    getMessage: async (key) => {
       try {
-        let code = await sachiya.requestPairingCode(targetNumber);
-        code = code?.match(/.{1,4}/g)?.join("-") || code;
-        console.log("\n========================================");
-        console.log(`🔥 PAIRING CODE: [  ${code}  ]`);
-        console.log("========================================");
-      } catch (err) {
-        console.error("Pairing Code Error:", err.message);
+        return { conversation: 'Hello, I am SACHIYA-MD active bot!' };
+      } catch (e) {
+        return { conversation: '' };
       }
-    }, 8000); 
-  }
-
-  sachiya.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update;
-    if (connection === 'close') {
-      if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
-        connectToWA();
-      }
-    } else if (connection === 'open') {
-      console.log('✅ Connected!');
-      await uploadCredsToMega(authFolder);
     }
   });
 
-  sachiya.ev.on('creds.update', saveCreds);
+  // Pairing Code Generation ONLY IF NOT REGISTERED (with optimized 10s stabilization delay)
+  if (!sachiya.authState.creds.registered) {
+    let targetNumber = (config.OWNER_NUM || ownerNumber[0]).replace(/[^0-9]/g, '');
+    
+    if (!targetNumber) {
+      console.log("❌ OWNER_NUM / Phone Number is missing in config.js!");
+    } else {
+      console.log(`⚠️ Waiting for socket connection to stabilize before requesting Pairing Code...`);
+      setTimeout(async () => {
+        try {
+          console.log(`⚠️ Requesting Pairing Code for number: ${targetNumber}`);
+          let code = await sachiya.requestPairingCode(targetNumber);
+          code = code?.match(/.{1,4}/g)?.join("-") || code;
+          console.log("\n========================================");
+          console.log(`🔥 YOUR PAIRING CODE:  [  ${code}  ]`);
+          console.log("========================================");
+        } catch (err) {
+          console.error("❌ Pairing Code generation error:", err.message || err);
+        }
+      }, 10000); // 10 seconds delay for stable connection
+    }
+  } else {
+    console.log("⚡ Active Session Found! Connecting directly without Pairing Code...");
+  }
 
-  // Message Handler
-  sachiya.ev.on('messages.upsert', async (chatUpdate) => {
-    try {
-      const mek = chatUpdate.messages[0];
-      if (!mek || !mek.message) return;
-      const m = sms(sachiya, mek);
-      const from = mek.key.remoteJid;
-      const isCmd = (m.body || '').startsWith(prefix);
+  let isConnectedOnce = false;
+
+  sachiya.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect } = update;
+    
+    if (connection === 'close') {
+      if (isConnectedOnce) {
+        return; 
+      }
+
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      if (statusCode === DisconnectReason.loggedOut) {
+        console.error("❌ Session logged out from WhatsApp! Clearing Mega session...");
+        await clearMegaSession();
+        if (fs.existsSync(authFolder)) {
+          fs.rmSync(authFolder, { recursive: true, force: true });
+        }
+        process.exit(1);
+      } else {
+        setTimeout(() => connectToWA(), 3000);
+      }
+    } else if (connection === 'open') {
+      if (isConnectedOnce) return;
+      isConnectedOnce = true;
+
+      console.log('\n╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮');
+      console.log('┃ 🎉 SACHIYA MD CONNECTED SUCCESSFULLY!  ');
+      console.log('╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n');
+
+      // Upload session to Mega.nz automatically upon successful connection
+      await uploadCredsToMega(authFolder);
+
+      const ownerJid = ownerNumber[0] + "@s.whatsapp.net";
+      const date = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' });
+      const time = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      const aliveImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
       
-      if (isCmd) {
-        const commandName = m.body.slice(prefix.length).trim().split(" ")[0].toLowerCase();
-        const cmd = commands.find((c) => c.pattern === commandName || (c.alias && c.alias.includes(commandName)));
-        if (cmd) {
-          await cmd.function(sachiya, mek, m, { reply: (t) => sachiya.sendMessage(from, { text: t }, { quoted: mek }) });
+      const connectedSuccessMsg = `╭━━━〔 *SACHIYA-MD CONNECTED* 〕━━━\n` +
+                                   `┃\n` +
+                                   `┃ 🤖 *Bot Status:* Online & Active ✅\n` +
+                                   `┃ ⚙️ *Prefix:* [ ${prefix} ]\n` +
+                                   `┃ 📅 *Date:* ${date}\n` +
+                                   `┃ ⏰ *Time:* ${time}\n` +
+                                   `┃\n` +
+                                   `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                                   `> *⚡ Powered by SACHIYA-MD 💫*`;
+
+      try {
+        await sachiya.sendMessage(ownerJid, {
+          image: { url: aliveImg },
+          caption: connectedSuccessMsg
+        });
+      } catch (err) {
+        await sachiya.sendMessage(ownerJid, { text: connectedSuccessMsg }).catch(() => {});
+      }
+    }
+  });
+
+  sachiya.ev.on('creds.update', async () => {
+    await saveCreds();
+    await uploadCredsToMega(authFolder);
+  });
+
+  // 📞 Anti Call Handler (Auto reject calls and send Sinhala message)
+  sachiya.ev.on('call', async (callEvents) => {
+    for (const call of callEvents) {
+      if (call.status === 'offer') {
+        const callerJid = call.from;
+        try {
+          await sachiya.rejectCall(call.id, callerJid);
+          const msg = `කෝල් ගන්න එපා අනේ! 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.`;
+          await sachiya.sendMessage(callerJid, { text: msg });
+        } catch (err) {
+          try {
+            await sachiya.sendMessage(callerJid, { text: `කෝල් ගන්න එපා අනේ! 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.` });
+          } catch (e) {}
         }
       }
-    } catch (err) { console.error(err); }
+    }
+  });
+
+  // ✉️ Universal Messages Upsert Handler (Both Inbox and Groups Support)
+  sachiya.ev.on('messages.upsert', async (chatUpdate) => {
+    try {
+      const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
+      if (!mek || !mek.message) return;
+
+      if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
+
+      let msgType = getContentType(mek.message);
+      if (msgType === 'ephemeralMessage') {
+        mek.message = mek.message.ephemeralMessage.message;
+        msgType = getContentType(mek.message);
+      } else if (msgType === 'viewOnceMessage') {
+        mek.message = mek.message.viewOnceMessage.message;
+        msgType = getContentType(mek.message);
+      } else if (msgType === 'viewOnceMessageV2') {
+        mek.message = mek.message.viewOnceMessageV2.message;
+        msgType = getContentType(mek.message);
+      }
+
+      const m = sms(sachiya, mek);
+      const from = mek.key.remoteJid;
+      const quoted = m.quoted ? m.quoted : null;
+
+      const rawBody = msgType === 'conversation' ? mek.message.conversation :
+                      msgType === 'extendedTextMessage' ? mek.message.extendedTextMessage.text :
+                      msgType === 'imageMessage' ? mek.message.imageMessage.caption :
+                      msgType === 'videoMessage' ? mek.message.videoMessage.caption : 
+                      msgType === 'documentMessage' ? mek.message.documentMessage.caption :
+                      mek.text || m.body || '';
+      
+      const body = rawBody ? String(rawBody) : '';
+
+      const isCmd = body.startsWith(prefix);
+      const commandName = isCmd ? body.slice(prefix.length).trim().split(" ")[0].toLowerCase() : '';
+      const args = body.trim().split(/ +/).slice(1);
+      const q = args.join(' ');
+
+      const rawBotJid = sachiya.user ? sachiya.user.id : '';
+      const botJid = jidNormalizedUser(rawBotJid);
+      const botNumber = botJid ? botJid.split('@')[0] : '';
+      
+      const isGroup = from.endsWith('@g.us');
+      const rawSender = isGroup ? (mek.key.participant || mek.participant) : from;
+      const sender = jidNormalizedUser(rawSender || from);
+      const senderNumber = sender ? sender.split('@')[0] : '';
+
+      const pushname = mek.pushName || 'User';
+      const isMe = botNumber && senderNumber ? botNumber.includes(senderNumber) : false;
+      const isOwner = ownerNumber.includes(senderNumber) || isMe;
+
+      const workMode = config.MODE ? config.MODE.toLowerCase() : "public";
+      if (workMode === "private" && !isOwner) {
+        return;
+      }
+
+      let groupMetadata = null;
+      let groupName = '';
+      let participants = [];
+      let groupAdmins = [];
+      let isBotAdmins = false;
+      let isAdmins = isOwner;
+
+      if (isGroup) {
+        groupMetadata = await sachiya.groupMetadata(from).catch(() => null);
+        if (groupMetadata) {
+          groupName = groupMetadata.subject || '';
+          participants = groupMetadata.participants || [];
+          groupAdmins = extractGroupAdmins(participants);
+          isBotAdmins = groupAdmins.includes(botJid);
+          isAdmins = groupAdmins.includes(sender) || isOwner;
+        }
+      }
+
+      const reply = (text) => sachiya.sendMessage(from, { text }, { quoted: mek });
+
+      if (isCmd) {
+        const cmd = commands.find((c) => c.pattern === commandName || (c.alias && c.alias.includes(commandName)));
+        if (cmd) {
+          if (cmd.react) await sachiya.sendMessage(from, { react: { text: cmd.react, key: mek.key } }).catch(() => {});
+          try {
+            await cmd.function(sachiya, mek, m, {
+              from, quoted, body, isCmd, command: commandName, args, q,
+              isGroup, sender, senderNumber, botNumber2: botJid, botNumber, pushname,
+              isMe, isOwner, groupMetadata, groupName, participants, groupAdmins,
+              isBotAdmins, isAdmins, reply,
+            });
+          } catch (e) {
+            console.error("[PLUGIN ERROR]", e);
+          }
+          return;
+        }
+      }
+
+      const replyText = body;
+      for (const handler of replyHandlers) {
+        if (handler.filter && handler.filter(replyText, { sender, message: mek })) {
+          try {
+            await handler.function(sachiya, mek, m, {
+              from, quoted, body: replyText, sender, reply,
+            });
+            return;
+          } catch (e) {}
+        }
+      }
+
+    } catch (err) {
+      if (!handleSilentErrors(err)) {
+        console.error("Message Upsert Error:", err);
+      }
+    }
   });
 }
 
+loadPlugins();
 connectToWA();
-app.listen(port, () => console.log(`🚀 Server on ${port}`));
+
+app.get("/", (req, res) => {
+  res.send("Hey, SACHIYA MD started successfully with Mega.nz! ✅");
+});
+
+app.listen(port, () => console.log(`🚀 Server listening on http://localhost:${port}`));
