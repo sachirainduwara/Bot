@@ -150,27 +150,17 @@ async function connectToWA() {
     fs.mkdirSync(authFolder, { recursive: true });
   }
 
-  // Robust Session ID Restorer for both config.js and auth folder
-  if (config.SESSION_ID && !fs.existsSync(path.join(authFolder, 'creds.json'))) {
+  const credsPath = path.join(authFolder, 'creds.json');
+
+  // Stable Session ID Restorer
+  if (config.SESSION_ID && !fs.existsSync(credsPath)) {
     try {
       let sessData = config.SESSION_ID.trim();
       if (sessData.includes('~')) {
         sessData = sessData.split('~')[1];
       }
-      const decodedData = Buffer.from(sessData, 'base64').toString('utf-8');
-      
-      try {
-        const parsedJson = JSON.parse(decodedData);
-        // If it's a full session object or multi-file mapping
-        if (typeof parsedJson === 'object' && parsedJson !== null) {
-          for (let key of Object.keys(parsedJson)) {
-            fs.writeFileSync(path.join(authFolder, key), JSON.stringify(parsedJson[key]));
-          }
-        }
-      } catch (err) {
-        // Fallback if it's strictly creds content
-        fs.writeFileSync(path.join(authFolder, 'creds.json'), decodedData);
-      }
+      const pasteData = Buffer.from(sessData, 'base64').toString('utf-8');
+      fs.writeFileSync(credsPath, pasteData);
       console.log("✅ SESSION_ID Restored Successfully!");
     } catch (e) {
       console.error("❌ Invalid SESSION_ID Format provided in config!", e);
@@ -265,24 +255,15 @@ async function connectToWA() {
       if (isFirstPairing) {
         try {
           await delay(3000);
-          // Pack all files in auth_info_baileys into a secure session JSON/Base64 string
-          const authFiles = fs.readdirSync(authFolder);
-          let sessionObj = {};
-          for (let file of authFiles) {
-            const fileContent = fs.readFileSync(path.join(authFolder, file));
-            try {
-              sessionObj[file] = JSON.parse(fileContent);
-            } catch (err) {
-              sessionObj[file] = fileContent.toString('utf-8');
-            }
+          if (fs.existsSync(credsPath)) {
+            const credsRaw = fs.readFileSync(credsPath);
+            const sessB64 = Buffer.from(credsRaw).toString('base64');
+            const cleanSessionId = `SACHIYA-MD~${sessB64}`;
+            
+            await sachiya.sendMessage(ownerJid, { 
+              text: `📂 *YOUR SESSION ID:* \n\n\`\`\`${cleanSessionId}\`\`\`\n\n> *⚠️ කවදාවත් මේ සෙෂන් අයිඩී එක වෙනත් අය සමඟ షෙයාර් කරන්න එපා!*` 
+            });
           }
-
-          const sessB64 = Buffer.from(JSON.stringify(sessionObj)).toString('base64');
-          const cleanSessionId = `SACHIYA-MD~${sessB64}`;
-          
-          await sachiya.sendMessage(ownerJid, { 
-            text: `📂 *YOUR SESSION ID:* \n\n\`\`\`${cleanSessionId}\`\`\`\n\n> *⚠️ කවදාවත් මේ සෙෂන් අයිඩී එක වෙනත් අය සමඟ షෙයාර් කරන්න එපා!*` 
-          });
         } catch (e) {
           console.log("Session ID send error:", e);
         }
