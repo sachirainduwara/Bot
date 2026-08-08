@@ -1,6 +1,6 @@
 /*
   * Project: SACHIYA-MD WhatsApp Bot
-  * Plugin: Group Management (Clean & Bug-free)
+  * Plugin: Group Management (Fixed Add & Clean UI)
   * Author: SACHIYA
 */
 
@@ -124,7 +124,7 @@ cmd({
 });
 
 // ==========================================
-// 4. ADD / INVITE USER
+// 4. ADD / INVITE USER (With Invite Link Fallback)
 // ==========================================
 cmd({
   pattern: "add",
@@ -145,8 +145,29 @@ cmd({
     const cleanNum = args[0].replace(/[^0-9]/g, "");
     const target = `${cleanNum}@s.whatsapp.net`;
 
-    await sachiya.groupParticipantsUpdate(from, [target], "add");
-    return reply(`✅ *Successfully added:* +${cleanNum}`, { mentions: [target] });
+    try {
+      // 1. Try direct add
+      await sachiya.groupParticipantsUpdate(from, [target], "add");
+      return reply(`✅ *Successfully added:* +${cleanNum}`, { mentions: [target] });
+    } catch (directError) {
+      // 2. Fallback to Invite Link if restricted by WhatsApp
+      const code = await sachiya.groupInviteCode(from);
+      const inviteLink = `https://chat.whatsapp.com/${code}`;
+      
+      const inviteMsg = `╭━━━〔 *GROUP INVITATION* 〕━━━\n` +
+                        `┃\n` +
+                        `┃ 👋 Hello @${cleanNum},\n` +
+                        `┃ Direct add restricted by WhatsApp!\n` +
+                        `┃\n` +
+                        `┃ 🔗 *Invite Link:* ${inviteLink}\n` +
+                        `┃\n` +
+                        `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                        `> *Powered by SACHIYA MD 💫*`;
+
+      await sachiya.sendMessage(from, { text: inviteMsg, mentions: [target] });
+      return reply(`⚠️ *Direct add restricted!* An invite link has been sent for +${cleanNum}.`);
+    }
+
   } catch (e) {
     console.error("ADD ERROR:", e);
     return reply(`❌ *Failed to add user! Error: ${e.message}*`);
