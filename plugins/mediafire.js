@@ -17,10 +17,10 @@ cmd(
         return reply("❌ *Please provide a valid Mediafire link!*");
       }
 
-      reply("⏳ *Fetching Mediafire File... Please wait!*");
+      await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
-      // Link Clean කර ගැනීම
-      let cleanUrl = q.trim().split(" ")[0].split("?")[0]; 
+      // Safe URL Cleaning (keeping necessary parts if any)
+      let cleanUrl = q.trim().split(" ")[0]; 
 
       let fileName = "Mediafire_File";
       let fileSize = "Unknown Size";
@@ -30,7 +30,7 @@ cmd(
       try {
         const pageRes = await axios.get(cleanUrl, {
           headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
           }
         });
         const $ = cheerio.load(pageRes.data);
@@ -62,19 +62,22 @@ cmd(
         }
       }
 
-      // ඡේදය සොයාගත නොහැකි වූයේ නම්
+      // ඩවුන්ලෝඩ් ලින්ක් එක සොයාගත නොහැකි වූයේ නම්
       if (!downloadUrl) {
+        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
         return reply("❌ *Failed to fetch Mediafire file! Make sure the link is valid and file is public.*");
       }
 
+      const safeFileName = fileName.replace(/[^\w\s.-]/gi, '');
+
       let desc = `*─── ｢ 📁 MEDIAFIRE DOWNLOADER ｣ ───*
 
-📂 *File Name:* ${fileName}
+📂 *File Name:* ${safeFileName}
 📦 *Size:* ${fileSize}
 
-> *SACHIYA WHATSAPP MINI BOT* 🧬`;
+> *SACHIYA-MD BOT* 💫`;
 
-      // 1. Send Banner
+      // 1. Send Banner / Info Card
       await sachiya.sendMessage(
         from,
         {
@@ -89,15 +92,18 @@ cmd(
         from,
         {
           document: { url: downloadUrl },
-          mimetype: "application/zip",
-          fileName: fileName,
-          caption: `📂 *${fileName}*\n\n> Downloaded by SACHIYA-MD`,
+          mimetype: "application/octet-stream",
+          fileName: safeFileName,
+          caption: `📂 *${safeFileName}*\n\n> Downloaded by SACHIYA-MD 💫`,
         },
         { quoted: mek }
       );
 
+      await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } });
+
     } catch (e) {
-      console.error(e);
+      console.error("Mediafire Error:", e);
+      await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
       reply(`❌ *Error:* ${e.message || "Failed to download file!"}`);
     }
   }
