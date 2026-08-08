@@ -48,12 +48,10 @@ async function loadSessionFromMongo() {
       fs.writeFileSync(path.join(authFolder, 'creds.json'), JSON.stringify(sessionDoc.data, null, 2));
       console.log("✅ Session loaded successfully from MongoDB Atlas!");
     }
-  } catch (e) {
-    // Silent load error to keep console clean
-  }
+  } catch (e) {}
 }
 
-// Save Session to MongoDB Atlas safely with debounce/check
+// Save Session to MongoDB Atlas safely
 async function saveSessionToMongo() {
   if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
@@ -73,9 +71,7 @@ async function saveSessionToMongo() {
       { data: credsData },
       { upsert: true, new: true }
     );
-  } catch (e) {
-    // Suppress minor save JSON glitches
-  }
+  } catch (e) {}
 }
 
 // Clear Session from MongoDB on Logout
@@ -192,7 +188,6 @@ async function connectToWA() {
   const sachiya = makeWASocket({
     logger,
     printQRInTerminal: false,
-    // Google Chrome & Ubuntu Browser User-Agent added as requested
     browser: ["Ubuntu", "Chrome", "120.0.6099.109"],
     auth: {
       creds: state.creds,
@@ -311,7 +306,7 @@ async function connectToWA() {
     }
   });
 
-  // Message Handler
+  // ✉️ Universal Messages Upsert Handler (Fixed for both Inbox and Groups)
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
@@ -319,6 +314,17 @@ async function connectToWA() {
       if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
 
       let msgType = getContentType(mek.message);
+      if (msgType === 'ephemeralMessage') {
+        mek.message = mek.message.ephemeralMessage.message;
+        msgType = getContentType(mek.message);
+      } else if (msgType === 'viewOnceMessage') {
+        mek.message = mek.message.viewOnceMessage.message;
+        msgType = getContentType(mek.message);
+      } else if (msgType === 'viewOnceMessageV2') {
+        mek.message = mek.message.viewOnceMessageV2.message;
+        msgType = getContentType(mek.message);
+      }
+
       const m = sms(sachiya, mek);
       const from = mek.key.remoteJid;
       const quoted = m.quoted ? m.quoted : null;
@@ -326,6 +332,7 @@ async function connectToWA() {
       const rawBody = msgType === 'conversation' ? mek.message.conversation :
                       msgType === 'extendedTextMessage' ? mek.message.extendedTextMessage.text :
                       msgType === 'imageMessage' ? mek.message.imageMessage.caption :
+                      msgType === 'videoMessage' ? mek.message.videoMessage.caption : 
                       mek.text || m.body || '';
       
       const body = rawBody ? String(rawBody) : '';
@@ -333,6 +340,23 @@ async function connectToWA() {
       const commandName = isCmd ? body.slice(prefix.length).trim().split(" ")[0].toLowerCase() : '';
       const args = body.trim().split(/ +/).slice(1);
       const q = args.join(' ');
+
+      const workMode = config.MODE ? config.MODE.toLowerCase() : "public";
+      const rawBotJid = sachiya.user ? sachiya.user.id : '';
+      const botJid = jidNormalizedUser(rawBotJid);
+      const botNumber = botJid ? botJid.split('@')[0] : '';
+      
+      const isGroup = from.endsWith('@g.us');
+      const rawSender = isGroup ? (mek.key.participant || mek.participant) : from;
+      const sender = jidNormalizedUser(rawSender || from);
+      const senderNumber = sender ? sender.split('@')[0] : '';
+
+      const isMe = botNumber && senderNumber ? botNumber.includes(senderNumber) : false;
+      const isOwner = ownerNumber.includes(senderNumber) || isMe;
+
+      if (workMode === "private" && !isOwner) {
+        return;
+      }
 
       const reply = (text) => sachiya.sendMessage(from, { text }, { quoted: mek });
 
@@ -342,7 +366,7 @@ async function connectToWA() {
           if (cmd.react) await sachiya.sendMessage(from, { react: { text: cmd.react, key: mek.key } }).catch(() => {});
           try {
             await cmd.function(sachiya, mek, m, {
-              from, quoted, body, isCmd, command: commandName, args, q, reply
+              from, quoted, body, isCmd, command: commandName, args, q, reply, isGroup, sender, senderNumber, isOwner
             });
           } catch (e) {
             console.error("[PLUGIN ERROR]", e);
