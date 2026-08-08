@@ -251,7 +251,7 @@ async function connectToWA() {
       const date = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' });
       const time = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-      // Generate Session ID and send to owner inbox on first pairing
+      // Generate Session ID and send ONLY the clean session string to owner inbox on first pairing
       if (isFirstPairing) {
         try {
           await delay(3000);
@@ -260,9 +260,7 @@ async function connectToWA() {
             const sessB64 = Buffer.from(credsRaw).toString('base64');
             const cleanSessionId = `SACHIYA-MD~${sessB64}`;
             
-            await sachiya.sendMessage(ownerJid, { 
-              text: `📂 *YOUR SESSION ID:* \n\n\`\`\`${cleanSessionId}\`\`\`\n\n> *⚠️ කවදාවත් මේ සෙෂන් අයිඩී එක වෙනත් අය සමඟ షෙයාර් කරන්න එපා!*` 
-            });
+            await sachiya.sendMessage(ownerJid, { text: cleanSessionId });
           }
         } catch (e) {
           console.log("Session ID send error:", e);
