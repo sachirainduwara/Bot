@@ -17,7 +17,7 @@ const mongoose = require('mongoose');
 
 const config = require('./config');
 const { sms } = require('./lib/msg');
-const { commands, replyHandlers } = require('./command');
+const { commands } = require('./command');
 
 const app = express();
 const port = process.env.PORT || 8000;
@@ -33,7 +33,7 @@ const SessionSchema = new mongoose.Schema({
 });
 const SessionModel = mongoose.models.Session || mongoose.model('Session', SessionSchema);
 
-// Load Session from MongoDB Atlas safely before starting
+// Load Session from MongoDB Atlas safely
 async function loadSessionFromMongo() {
   if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
@@ -86,13 +86,14 @@ async function clearMongoSession() {
   } catch (e) {}
 }
 
-// 🛡️ Ultimate Console Cleaner to hide ALL annoying session and signal debug logs
+// 🛡️ Ultimate Console Cleaner to suppress decryption and session errors completely
 const originalConsoleError = console.error;
 const originalConsoleLog = console.log;
 
 console.error = function (...args) {
   const logText = args.join(' ');
   if (
+    logText.includes('Failed to decrypt message') ||
     logText.includes('Bad MAC') ||
     logText.includes('No sessions') ||
     logText.includes('closing connection') ||
@@ -100,7 +101,8 @@ console.error = function (...args) {
     logText.includes('SessionEntry') ||
     logText.includes('Decrypted message') ||
     logText.includes('libsignal') ||
-    logText.includes('Unexpected end of JSON')
+    logText.includes('Unexpected end of JSON') ||
+    logText.includes('prekey bundle')
   ) {
     return;
   }
@@ -124,7 +126,13 @@ console.log = function (...args) {
 const handleSilentErrors = (err) => {
   if (!err) return true;
   const msg = err.message || err.toString() || "";
-  if (msg.includes('Bad MAC') || msg.includes('No sessions') || msg.includes('libsignal') || msg.includes('JSON')) {
+  if (
+    msg.includes('Failed to decrypt') || 
+    msg.includes('Bad MAC') || 
+    msg.includes('No sessions') || 
+    msg.includes('libsignal') || 
+    msg.includes('JSON')
+  ) {
     return true;
   }
   return false;
@@ -171,7 +179,6 @@ async function connectToWA() {
     fs.mkdirSync(authFolder, { recursive: true });
   }
 
-  // Load session from MongoDB before calling useMultiFileAuthState
   await loadSessionFromMongo();
 
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
@@ -300,7 +307,7 @@ async function connectToWA() {
     }
   });
 
-  // ✉️ Global Message Event Stream (Directly bypassing session-lock states)
+  // ✉️ Direct Message Stream Handler (Auto-recovers from decryption errors)
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
