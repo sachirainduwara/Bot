@@ -1,4 +1,4 @@
-const { cmd, commands } = require("../command");
+const { cmd } = require("../command");
 const getFbVideoInfo = require("@xaviabot/fb-downloader");
 const config = require("../config");
 
@@ -26,49 +26,44 @@ cmd(
       isGroup,
       sender,
       senderNumber,
-      botNumber2,
-      botNumber,
       pushname,
-      isMe,
-      isOwner,
-      groupMetadata,
-      groupName,
-      participants,
-      groupAdmins,
-      isBotAdmins,
-      isAdmins,
       reply,
     }
   ) => {
     try {
       if (!q) return reply("⚠️ *Please provide a valid Facebook video URL!*");
 
-      const fbRegex = /(https?:\/\/)?(www\.|m\.)?(facebook|fb)\.(com|watch)\/.+/;
+      // 🔍 Enhanced Facebook URL Validation Regex
+      const fbRegex = /(https?:\/\/)?(www\.|m\.)?(facebook|fb)\.(com|watch|share|reel)\/.+/;
       if (!fbRegex.test(q)) {
         return reply("❌ *Invalid Facebook URL! Please check and try again.*");
       }
 
-      reply("⏳ *Downloading your Facebook video...*");
+      // Fix for User Name
+      const userName = pushname || m.pushName || mek.pushName || 'User';
 
-      const result = await getFbVideoInfo(q);
+      await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
+
+      const result = await getFbVideoInfo(q).catch(() => null);
       if (!result || (!result.sd && !result.hd)) {
-        return reply("❌ *Failed to download video. Video might be private or invalid!*");
+        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
+        return reply("❌ *Failed to download video. Video might be private, deleted, or invalid!*");
       }
 
       const { title, sd, hd } = result;
       const bestQualityUrl = hd || sd;
-      const qualityText = hd ? "HD 4K" : "SD Standard";
+      const qualityText = hd ? "HD High Quality" : "SD Standard Quality";
 
       const captionMsg = `╭━━━〔 *FACEBOOK DOWNLOADER* 〕━━━\n` +
                          `┃\n` +
                          `┃ 🎬 *Title:* ${title || "Facebook Video"}\n` +
                          `┃ 📊 *Quality:* ${qualityText}\n` +
-                         `┃ 👤 *User:* ${pushname || "User"}\n` +
+                         `┃ 👤 *User:* ${userName}\n` +
                          `┃\n` +
                          `╰━━━━━━━━━━━━━━━━━━━\n\n` +
-                         `> Powered by SACHIYA MD`;
+                         `> Powered by SACHIYA MD 💫`;
 
-      // 1. Send Preview Image with Info
+      // 1. Send Preview Card with Info
       await sachiya.sendMessage(
         from,
         {
@@ -80,19 +75,22 @@ cmd(
         { quoted: mek }
       );
 
-      // 2. Send the Video
+      // 2. Send the Actual Video File
       await sachiya.sendMessage(
         from,
         {
           video: { url: bestQualityUrl },
-          caption: `📥 *Downloaded in ${qualityText} Quality*\n\n> Powered by SACHIYA MD`,
+          caption: `📥 *Downloaded in ${qualityText}*\n\n> Powered by SACHIYA MD 💫`,
         },
         { quoted: mek }
       );
 
+      await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } });
+
     } catch (e) {
       console.error("FB Downloader Error:", e);
-      reply(`❌ *Error:* ${e.message || e}`);
+      await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
+      reply(`❌ *Error:* ${e.message || "An unexpected error occurred!"}`);
     }
   }
 );
