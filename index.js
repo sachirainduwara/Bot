@@ -13,13 +13,10 @@ const fs = require('fs');
 const P = require('pino');
 const express = require('express');
 const path = require('path');
-const { Storage } = require('megajs');
+const mongoose = require('mongoose');
 
 const config = require('./config');
-const { sms, downloadMediaMessage } = require('./lib/msg');
-const {
-  getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson
-} = require('./lib/functions');
+const { sms } = require('./lib/msg');
 const { commands, replyHandlers } = require('./command');
 
 const app = express();
@@ -29,71 +26,66 @@ const prefix = config.PREFIX || '.';
 const ownerNumber = [config.OWNER_NUM || '94771081150'];
 const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
-// --- Mega.nz Session Store Helper (Fixed & Optimized) ---
-async function uploadCredsToMega(authDir) {
-  if (!config.MEGA_EMAIL || !config.MEGA_PASSWORD) return;
+// --- MongoDB Session Database Schema ---
+const SessionSchema = new mongoose.Schema({
+  _id: { type: String, required: true },
+  data: { type: Object, required: true }
+});
+const SessionModel = mongoose.models.Session || mongoose.model('Session', SessionSchema);
+
+// Load Session from MongoDB Atlas
+async function loadSessionFromMongo() {
+  if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
-    const credsPath = path.join(authDir, 'creds.json');
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(config.SESSION_ID);
+    }
+    const sessionDoc = await SessionModel.findOne({ _id: 'sachiyamd_creds' });
+    if (sessionDoc && sessionDoc.data) {
+      if (!fs.existsSync(authFolder)) {
+        fs.mkdirSync(authFolder, { recursive: true });
+      }
+      fs.writeFileSync(path.join(authFolder, 'creds.json'), JSON.stringify(sessionDoc.data, null, 2));
+      console.log("✅ Session loaded successfully from MongoDB Atlas!");
+    }
+  } catch (e) {
+    console.error("❌ MongoDB Session Load Error:", e.message);
+  }
+}
+
+// Save Session to MongoDB Atlas
+async function saveSessionToMongo() {
+  if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
+  try {
+    const credsPath = path.join(authFolder, 'creds.json');
     if (!fs.existsSync(credsPath)) return;
 
-    const storage = new Storage({ email: config.MEGA_EMAIL, password: config.MEGA_PASSWORD });
-    await storage.ready;
-
-    let folder = storage.root.children.find(f => f.name === 'sachiyamd_session' && f.directory);
-    if (!folder) {
-      folder = await storage.root.mkdir('sachiyamd_session');
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(config.SESSION_ID);
     }
+    const rawData = fs.readFileSync(credsPath, 'utf8');
+    const credsData = JSON.parse(rawData);
 
-    const existingFile = folder.children.find(f => f.name === 'creds.json');
-    if (existingFile) {
-      await existingFile.delete();
-    }
-
-    const fileStream = fs.createReadStream(credsPath);
-    await folder.upload('creds.json', fileStream).complete;
-    console.log("✅ creds.json successfully uploaded to Mega.nz!");
+    await SessionModel.findOneAndUpdate(
+      { _id: 'sachiyamd_creds' },
+      { data: credsData },
+      { upsert: true, new: true }
+    );
+    console.log("✅ creds.json successfully synced to MongoDB Atlas!");
   } catch (e) {
-    console.error("❌ Mega Upload Error:", e);
+    console.error("❌ MongoDB Session Save Error:", e.message);
   }
 }
 
-async function downloadCredsFromMega(authDir) {
-  if (!config.MEGA_EMAIL || !config.MEGA_PASSWORD) return false;
+// Clear Session from MongoDB on Logout
+async function clearMongoSession() {
+  if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
-    const storage = new Storage({ email: config.MEGA_EMAIL, password: config.MEGA_PASSWORD });
-    await storage.ready;
-
-    const folder = storage.root.children.find(f => f.name === 'sachiyamd_session' && f.directory);
-    if (!folder) return false;
-
-    const file = folder.children.find(f => f.name === 'creds.json');
-    if (!file) return false;
-
-    if (!fs.existsSync(authDir)) {
-      fs.mkdirSync(authFolder, { recursive: true });
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(config.SESSION_ID);
     }
-
-    const data = await file.downloadBuffer();
-    fs.writeFileSync(path.join(authFolder, 'creds.json'), data);
-    console.log("✅ creds.json successfully downloaded from Mega.nz!");
-    return true;
-  } catch (e) {
-    console.error("❌ Mega Download Error:", e);
-    return false;
-  }
-}
-
-async function clearMegaSession() {
-  if (!config.MEGA_EMAIL || !config.MEGA_PASSWORD) return;
-  try {
-    const storage = new Storage({ email: config.MEGA_EMAIL, password: config.MEGA_PASSWORD });
-    await storage.ready;
-    const folder = storage.root.children.find(f => f.name === 'sachiyamd_session' && f.directory);
-    if (folder) {
-      const file = folder.children.find(f => f.name === 'creds.json');
-      if (file) await file.delete();
-      console.log("🗑️ Mega session cleared due to logout.");
-    }
+    await SessionModel.deleteOne({ _id: 'sachiyamd_creds' });
+    console.log("🗑️ MongoDB session cleared due to logout.");
   } catch (e) {}
 }
 
@@ -108,19 +100,9 @@ console.error = function (...args) {
     logText.includes('No sessions') ||
     logText.includes('closing connection') ||
     logText.includes('Closing session') ||
-    logText.includes('Closing open session') ||
     logText.includes('SessionEntry') ||
     logText.includes('Decrypted message') ||
-    logText.includes('Decryption') ||
-    logText.includes('decrypt') ||
-    logText.includes('Session error') ||
-    logText.includes('libsignal') ||
-    logText.includes('Failed to decrypt message') ||
-    logText.includes('indexInfo') ||
-    logText.includes('rootKey') ||
-    logText.includes('Buffer') ||
-    logText.includes('_chains') ||
-    logText.includes('currentRatchet')
+    logText.includes('libsignal')
   ) {
     return;
   }
@@ -132,15 +114,8 @@ console.log = function (...args) {
   if (
     logText.includes('SessionEntry') ||
     logText.includes('Closing session') ||
-    logText.includes('Closing open session') ||
     logText.includes('Decrypted message') ||
-    logText.includes('indexInfo') ||
-    logText.includes('rootKey') ||
-    logText.includes('prevCounter') ||
-    logText.includes('Buffer') ||
-    logText.includes('lastRemoteEphemeralKey') ||
-    logText.includes('_chains') ||
-    logText.includes('currentRatchet')
+    logText.includes('rootKey')
   ) {
     return;
   }
@@ -150,19 +125,7 @@ console.log = function (...args) {
 const handleSilentErrors = (err) => {
   if (!err) return true;
   const msg = err.message || err.toString() || "";
-  if (
-    msg.includes('Bad MAC') ||
-    msg.includes('No sessions') ||
-    msg.includes('closing connection') ||
-    msg.includes('Closing session') ||
-    msg.includes('Closing open session') ||
-    msg.includes('SessionEntry') ||
-    msg.includes('Decrypted message') ||
-    msg.includes('Decryption') ||
-    msg.includes('decrypt') ||
-    msg.includes('Session error') ||
-    msg.includes('libsignal')
-  ) {
+  if (msg.includes('Bad MAC') || msg.includes('No sessions') || msg.includes('libsignal')) {
     return true;
   }
   return false;
@@ -188,7 +151,6 @@ function extractGroupAdmins(participants) {
 // 1. Load Plugins Safely
 function loadPlugins() {
   let pluginsPath = path.join(__dirname, "plugins");
-  
   if (!fs.existsSync(pluginsPath)) {
     pluginsPath = path.join(__dirname, "Plugins");
   }
@@ -217,10 +179,7 @@ async function connectToWA() {
     fs.mkdirSync(authFolder, { recursive: true });
   }
 
-  // Download session from Mega.nz before starting socket if local creds don't exist
-  if (!fs.existsSync(path.join(authFolder, 'creds.json'))) {
-    await downloadCredsFromMega(authFolder);
-  }
+  await loadSessionFromMongo();
 
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestWaWebVersion();
@@ -230,7 +189,7 @@ async function connectToWA() {
   const sachiya = makeWASocket({
     logger,
     printQRInTerminal: false,
-    browser: ["Mac OS", "Safari", "16.5.0"], // Fixed browser user-agent to prevent linking errors
+    browser: ["Mac OS", "Safari", "16.5.0"],
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger),
@@ -249,7 +208,7 @@ async function connectToWA() {
     }
   });
 
-  // Pairing Code Generation ONLY IF NOT REGISTERED (with optimized 10s stabilization delay)
+  // Pairing Code Generation ONLY IF NOT REGISTERED
   if (!sachiya.authState.creds.registered) {
     let targetNumber = (config.OWNER_NUM || ownerNumber[0]).replace(/[^0-9]/g, '');
     
@@ -268,7 +227,7 @@ async function connectToWA() {
         } catch (err) {
           console.error("❌ Pairing Code generation error:", err.message || err);
         }
-      }, 10000); // 10 seconds delay for stable connection
+      }, 10000);
     }
   } else {
     console.log("⚡ Active Session Found! Connecting directly without Pairing Code...");
@@ -280,14 +239,12 @@ async function connectToWA() {
     const { connection, lastDisconnect } = update;
     
     if (connection === 'close') {
-      if (isConnectedOnce) {
-        return; 
-      }
+      if (isConnectedOnce) return; 
 
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       if (statusCode === DisconnectReason.loggedOut) {
-        console.error("❌ Session logged out from WhatsApp! Clearing Mega session...");
-        await clearMegaSession();
+        console.error("❌ Session logged out from WhatsApp! Clearing MongoDB session...");
+        await clearMongoSession();
         if (fs.existsSync(authFolder)) {
           fs.rmSync(authFolder, { recursive: true, force: true });
         }
@@ -303,8 +260,7 @@ async function connectToWA() {
       console.log('┃ 🎉 SACHIYA MD CONNECTED SUCCESSFULLY!  ');
       console.log('╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n');
 
-      // Upload session to Mega.nz automatically upon successful connection
-      await uploadCredsToMega(authFolder);
+      await saveSessionToMongo();
 
       const ownerJid = ownerNumber[0] + "@s.whatsapp.net";
       const date = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' });
@@ -335,47 +291,30 @@ async function connectToWA() {
 
   sachiya.ev.on('creds.update', async () => {
     await saveCreds();
-    await uploadCredsToMega(authFolder);
+    await saveSessionToMongo();
   });
 
-  // 📞 Anti Call Handler (Auto reject calls and send Sinhala message)
+  // Call Reject Handler
   sachiya.ev.on('call', async (callEvents) => {
     for (const call of callEvents) {
       if (call.status === 'offer') {
         const callerJid = call.from;
         try {
           await sachiya.rejectCall(call.id, callerJid);
-          const msg = `කෝල් ගන්න එපා අනේ! 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.`;
-          await sachiya.sendMessage(callerJid, { text: msg });
-        } catch (err) {
-          try {
-            await sachiya.sendMessage(callerJid, { text: `කෝල් ගන්න එපා අනේ! 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.` });
-          } catch (e) {}
-        }
+          await sachiya.sendMessage(callerJid, { text: `කෝල් ගන්න එපා අනේ! 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.` });
+        } catch (e) {}
       }
     }
   });
 
-  // ✉️ Universal Messages Upsert Handler (Both Inbox and Groups Support)
+  // Message Handler
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
       if (!mek || !mek.message) return;
-
       if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
 
       let msgType = getContentType(mek.message);
-      if (msgType === 'ephemeralMessage') {
-        mek.message = mek.message.ephemeralMessage.message;
-        msgType = getContentType(mek.message);
-      } else if (msgType === 'viewOnceMessage') {
-        mek.message = mek.message.viewOnceMessage.message;
-        msgType = getContentType(mek.message);
-      } else if (msgType === 'viewOnceMessageV2') {
-        mek.message = mek.message.viewOnceMessageV2.message;
-        msgType = getContentType(mek.message);
-      }
-
       const m = sms(sachiya, mek);
       const from = mek.key.remoteJid;
       const quoted = m.quoted ? m.quoted : null;
@@ -383,52 +322,13 @@ async function connectToWA() {
       const rawBody = msgType === 'conversation' ? mek.message.conversation :
                       msgType === 'extendedTextMessage' ? mek.message.extendedTextMessage.text :
                       msgType === 'imageMessage' ? mek.message.imageMessage.caption :
-                      msgType === 'videoMessage' ? mek.message.videoMessage.caption : 
-                      msgType === 'documentMessage' ? mek.message.documentMessage.caption :
                       mek.text || m.body || '';
       
       const body = rawBody ? String(rawBody) : '';
-
       const isCmd = body.startsWith(prefix);
       const commandName = isCmd ? body.slice(prefix.length).trim().split(" ")[0].toLowerCase() : '';
       const args = body.trim().split(/ +/).slice(1);
       const q = args.join(' ');
-
-      const rawBotJid = sachiya.user ? sachiya.user.id : '';
-      const botJid = jidNormalizedUser(rawBotJid);
-      const botNumber = botJid ? botJid.split('@')[0] : '';
-      
-      const isGroup = from.endsWith('@g.us');
-      const rawSender = isGroup ? (mek.key.participant || mek.participant) : from;
-      const sender = jidNormalizedUser(rawSender || from);
-      const senderNumber = sender ? sender.split('@')[0] : '';
-
-      const pushname = mek.pushName || 'User';
-      const isMe = botNumber && senderNumber ? botNumber.includes(senderNumber) : false;
-      const isOwner = ownerNumber.includes(senderNumber) || isMe;
-
-      const workMode = config.MODE ? config.MODE.toLowerCase() : "public";
-      if (workMode === "private" && !isOwner) {
-        return;
-      }
-
-      let groupMetadata = null;
-      let groupName = '';
-      let participants = [];
-      let groupAdmins = [];
-      let isBotAdmins = false;
-      let isAdmins = isOwner;
-
-      if (isGroup) {
-        groupMetadata = await sachiya.groupMetadata(from).catch(() => null);
-        if (groupMetadata) {
-          groupName = groupMetadata.subject || '';
-          participants = groupMetadata.participants || [];
-          groupAdmins = extractGroupAdmins(participants);
-          isBotAdmins = groupAdmins.includes(botJid);
-          isAdmins = groupAdmins.includes(sender) || isOwner;
-        }
-      }
 
       const reply = (text) => sachiya.sendMessage(from, { text }, { quoted: mek });
 
@@ -438,10 +338,7 @@ async function connectToWA() {
           if (cmd.react) await sachiya.sendMessage(from, { react: { text: cmd.react, key: mek.key } }).catch(() => {});
           try {
             await cmd.function(sachiya, mek, m, {
-              from, quoted, body, isCmd, command: commandName, args, q,
-              isGroup, sender, senderNumber, botNumber2: botJid, botNumber, pushname,
-              isMe, isOwner, groupMetadata, groupName, participants, groupAdmins,
-              isBotAdmins, isAdmins, reply,
+              from, quoted, body, isCmd, command: commandName, args, q, reply
             });
           } catch (e) {
             console.error("[PLUGIN ERROR]", e);
@@ -449,19 +346,6 @@ async function connectToWA() {
           return;
         }
       }
-
-      const replyText = body;
-      for (const handler of replyHandlers) {
-        if (handler.filter && handler.filter(replyText, { sender, message: mek })) {
-          try {
-            await handler.function(sachiya, mek, m, {
-              from, quoted, body: replyText, sender, reply,
-            });
-            return;
-          } catch (e) {}
-        }
-      }
-
     } catch (err) {
       if (!handleSilentErrors(err)) {
         console.error("Message Upsert Error:", err);
@@ -474,7 +358,7 @@ loadPlugins();
 connectToWA();
 
 app.get("/", (req, res) => {
-  res.send("Hey, SACHIYA MD started successfully with Mega.nz! ✅");
+  res.send("Hey, SACHIYA MD started successfully with MongoDB! ✅");
 });
 
 app.listen(port, () => console.log(`🚀 Server listening on http://localhost:${port}`));
