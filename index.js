@@ -4,7 +4,7 @@ const {
   DisconnectReason,
   jidNormalizedUser,
   getContentType,
-  fetchLatestBaileysVersion,
+  fetchLatestWaWebVersion,
   makeCacheableSignalKeyStore,
   delay
 } = require('@whiskeysockets/baileys');
@@ -13,6 +13,7 @@ const fs = require('fs');
 const P = require('pino');
 const express = require('express');
 const path = require('path');
+const { Storage } = require('megajs');
 
 const config = require('./config');
 const { sms, downloadMediaMessage } = require('./lib/msg');
@@ -27,6 +28,74 @@ const port = process.env.PORT || 8000;
 const prefix = config.PREFIX || '.';
 const ownerNumber = [config.OWNER_NUM || '94760579211'];
 const authFolder = path.join(__dirname, '/auth_info_baileys/');
+
+// --- Mega.nz Session Store Helper ---
+async function uploadCredsToMega(authDir) {
+  if (!config.MEGA_EMAIL || !config.MEGA_PASSWORD) return;
+  try {
+    const credsPath = path.join(authDir, 'creds.json');
+    if (!fs.existsSync(credsPath)) return;
+
+    const storage = new Storage({ email: config.MEGA_EMAIL, password: config.MEGA_PASSWORD });
+    await storage.ready;
+
+    let folder = storage.files.find(f => f.name === 'sachiyamd_session' && f.directory);
+    if (!folder) {
+      folder = await storage.mkdir('sachiyamd_session');
+    }
+
+    const existingFile = folder.children.find(f => f.name === 'creds.json');
+    if (existingFile) {
+      await existingFile.delete();
+    }
+
+    const fileStream = fs.createReadStream(credsPath);
+    await folder.upload('creds.json', fileStream).complete;
+    console.log("✅ creds.json successfully uploaded to Mega.nz!");
+  } catch (e) {
+    console.error("❌ Mega Upload Error:", e);
+  }
+}
+
+async function downloadCredsFromMega(authDir) {
+  if (!config.MEGA_EMAIL || !config.MEGA_PASSWORD) return false;
+  try {
+    const storage = new Storage({ email: config.MEGA_EMAIL, password: config.MEGA_PASSWORD });
+    await storage.ready;
+
+    const folder = storage.files.find(f => f.name === 'sachiyamd_session' && f.directory);
+    if (!folder) return false;
+
+    const file = folder.children.find(f => f.name === 'creds.json');
+    if (!file) return false;
+
+    if (!fs.existsSync(authDir)) {
+      fs.mkdirSync(authDir, { recursive: true });
+    }
+
+    const data = await file.downloadBuffer();
+    fs.writeFileSync(path.join(authFolder, 'creds.json'), data);
+    console.log("✅ creds.json successfully downloaded from Mega.nz!");
+    return true;
+  } catch (e) {
+    console.error("❌ Mega Download Error:", e);
+    return false;
+  }
+}
+
+async function clearMegaSession() {
+  if (!config.MEGA_EMAIL || !config.MEGA_PASSWORD) return;
+  try {
+    const storage = new Storage({ email: config.MEGA_EMAIL, password: config.MEGA_PASSWORD });
+    await storage.ready;
+    const folder = storage.files.find(f => f.name === 'sachiyamd_session' && f.directory);
+    if (folder) {
+      const file = folder.children.find(f => f.name === 'creds.json');
+      if (file) await file.delete();
+      console.log("🗑️ Mega session cleared due to logout.");
+    }
+  } catch (e) {}
+}
 
 // 🛡️ Console Cleaner to hide annoying signal and session debug logs
 const originalConsoleError = console.error;
@@ -148,15 +217,20 @@ async function connectToWA() {
     fs.mkdirSync(authFolder, { recursive: true });
   }
 
+  // Download session from Mega.nz before starting socket if local creds don't exist
+  if (!fs.existsSync(path.join(authFolder, 'creds.json'))) {
+    await downloadCredsFromMega(authFolder);
+  }
+
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
-  const { version } = await fetchLatestBaileysVersion();
+  const { version } = await fetchLatestWaWebVersion();
   
   const logger = P({ level: 'fatal' });
 
   const sachiya = makeWASocket({
     logger,
     printQRInTerminal: false,
-    browser: ["Ubuntu", "Chrome", "20.0.04"],
+    browser: ["Chrome", "Desktop", "Windows"],
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger),
@@ -175,14 +249,14 @@ async function connectToWA() {
     }
   });
 
-  // Pairing Code Generation ONLY IF NOT REGISTERED (Permanently saved in auth_info_baileys)
+  // Pairing Code Generation ONLY IF NOT REGISTERED
   if (!sachiya.authState.creds.registered) {
     let targetNumber = (config.OWNER_NUM || ownerNumber[0]).replace(/[^0-9]/g, '');
     
     if (!targetNumber) {
       console.log("❌ OWNER_NUM / Phone Number is missing in config.js!");
     } else {
-      console.log(`⚠️ No active session detected in auth folder! Preparing Pairing Code...`);
+      console.log(`⚠️ No active session detected! Preparing Pairing Code...`);
       setTimeout(async () => {
         try {
           let code = await sachiya.requestPairingCode(targetNumber);
@@ -196,7 +270,7 @@ async function connectToWA() {
       }, 5000);
     }
   } else {
-    console.log("⚡ Active Session Found in auth folder! Connecting directly without Pairing Code...");
+    console.log("⚡ Active Session Found! Connecting directly without Pairing Code...");
   }
 
   let isConnectedOnce = false;
@@ -211,7 +285,8 @@ async function connectToWA() {
 
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       if (statusCode === DisconnectReason.loggedOut) {
-        console.error("❌ Session logged out! Resetting session folder...");
+        console.error("❌ Session logged out from WhatsApp! Clearing Mega session...");
+        await clearMegaSession();
         if (fs.existsSync(authFolder)) {
           fs.rmSync(authFolder, { recursive: true, force: true });
         }
@@ -226,6 +301,9 @@ async function connectToWA() {
       console.log('\n╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮');
       console.log('┃ 🎉 SACHIYA MD CONNECTED SUCCESSFULLY!  ');
       console.log('╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n');
+
+      // Upload session to Mega.nz automatically upon successful connection
+      await uploadCredsToMega(authFolder);
 
       const ownerJid = ownerNumber[0] + "@s.whatsapp.net";
       const date = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' });
@@ -254,7 +332,10 @@ async function connectToWA() {
     }
   });
 
-  sachiya.ev.on('creds.update', saveCreds);
+  sachiya.ev.on('creds.update', async () => {
+    await saveCreds();
+    await uploadCredsToMega(authFolder);
+  });
 
   // 📞 Anti Call Handler (Auto reject calls and send Sinhala message)
   sachiya.ev.on('call', async (callEvents) => {
@@ -392,7 +473,7 @@ loadPlugins();
 connectToWA();
 
 app.get("/", (req, res) => {
-  res.send("Hey, SACHIYA MD started successfully! ✅");
+  res.send("Hey, SACHIYA MD started successfully with Mega.nz! ✅");
 });
 
 app.listen(port, () => console.log(`🚀 Server listening on http://localhost:${port}`));
