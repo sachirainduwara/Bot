@@ -28,6 +28,8 @@ const prefix = config.PREFIX || '.';
 const ownerNumber = [config.OWNER_NUM || '94760579211'];
 const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
+let isFirstPairing = false;
+
 // 🛡️ Console Cleaner to hide annoying signal and session debug logs
 const originalConsoleError = console.error;
 const originalConsoleLog = console.log;
@@ -148,6 +150,8 @@ async function connectToWA() {
     fs.mkdirSync(authFolder, { recursive: true });
   }
 
+  const credsPath = path.join(authFolder, 'creds.json');
+
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestBaileysVersion();
   
@@ -156,7 +160,7 @@ async function connectToWA() {
   const sachiya = makeWASocket({
     logger,
     printQRInTerminal: false,
-    browser: ["Ubuntu", "Chrome", "20.0.04"],
+    browser: ["Chrome", "Desktop", "Windows"],
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger),
@@ -175,14 +179,14 @@ async function connectToWA() {
     }
   });
 
-  // Pairing Code Generation ONLY IF NOT REGISTERED (Permanently saved in auth_info_baileys)
   if (!sachiya.authState.creds.registered) {
+    isFirstPairing = true;
     let targetNumber = (config.OWNER_NUM || ownerNumber[0]).replace(/[^0-9]/g, '');
     
     if (!targetNumber) {
       console.log("❌ OWNER_NUM / Phone Number is missing in config.js!");
     } else {
-      console.log(`⚠️ No active session detected in auth folder! Preparing Pairing Code...`);
+      console.log(`⚠️ Preparing Pairing Code for ${targetNumber}...`);
       setTimeout(async () => {
         try {
           let code = await sachiya.requestPairingCode(targetNumber);
@@ -193,10 +197,10 @@ async function connectToWA() {
         } catch (err) {
           console.error("❌ Pairing Code generation error:", err.message || err);
         }
-      }, 5000);
+      }, 4000);
     }
   } else {
-    console.log("⚡ Active Session Found in auth folder! Connecting directly without Pairing Code...");
+    console.log("⚡ Active Session Found! Connecting directly without Pairing Code...");
   }
 
   let isConnectedOnce = false;
@@ -230,6 +234,22 @@ async function connectToWA() {
       const ownerJid = ownerNumber[0] + "@s.whatsapp.net";
       const date = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' });
       const time = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      if (isFirstPairing) {
+        try {
+          await delay(3000);
+          if (fs.existsSync(credsPath)) {
+            const credsRaw = fs.readFileSync(credsPath);
+            const sessB64 = Buffer.from(credsRaw).toString('base64');
+            const cleanSessionId = `SACHIYA-MD~${sessB64}`;
+            
+            await sachiya.sendMessage(ownerJid, { text: cleanSessionId });
+          }
+        } catch (e) {
+          console.log("Session ID send error:", e);
+        }
+        isFirstPairing = false;
+      }
 
       const aliveImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
       
