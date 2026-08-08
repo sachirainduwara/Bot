@@ -9,6 +9,7 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, quoted, reply }) => {
     try {
+        // Safe check for quoted message structure
         const quot = mek.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         
         if (!quoted && !quot) {
@@ -22,6 +23,7 @@ cmd({
             return reply("❌ රිප්ලය් කළ මැසේජ් එක කියවා ගැනීමට නොහැක!");
         }
 
+        // Unwrapping ephemeral & view once wrappers safely
         if (targetMsg.ephemeralMessage) targetMsg = targetMsg.ephemeralMessage.message;
         if (targetMsg.viewOnceMessage) targetMsg = targetMsg.viewOnceMessage.message;
         if (targetMsg.viewOnceMessageV2) targetMsg = targetMsg.viewOnceMessageV2.message;
@@ -36,7 +38,14 @@ cmd({
 
         await conn.sendMessage(from, { react: { text: "⏳", key: mek.key } }).catch(() => {});
 
-        const stream = await downloadMediaMessage({ message: targetMsg }, 'stream');
+        // Safe Media Downloading using Baileys stream
+        const stream = await downloadMediaMessage({ message: targetMsg }, 'stream').catch(() => null);
+        
+        if (!stream) {
+            await conn.sendMessage(from, { react: { text: "❌", key: mek.key } }).catch(() => {});
+            return reply("❌ *Failed to download media stream!*");
+        }
+
         const bufferArray = [];
         for await (const chunk of stream) {
             bufferArray.push(chunk);
@@ -44,9 +53,9 @@ cmd({
         const mediaBuffer = Buffer.concat(bufferArray);
 
         let caption = targetMsg[mediaType].caption || '';
-        let originalSender = mek.message?.extendedTextMessage?.contextInfo?.participant || from;
+        let originalSender = mek.message?.extendedTextMessage?.contextInfo?.participant || quoted?.sender || from;
 
-        // Corrected Time & Date for Sri Lanka (Asia/Colombo Timezone)
+        // Sri Lanka Timezone Date & Time
         const currentDate = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' });
         const currentTime = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
