@@ -29,7 +29,7 @@ const prefix = config.PREFIX || '.';
 const ownerNumber = [config.OWNER_NUM || '94760579211'];
 const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
-// --- Mega.nz Session Store Helper ---
+// --- Mega.nz Session Store Helper (Fixed & Optimized) ---
 async function uploadCredsToMega(authDir) {
   if (!config.MEGA_EMAIL || !config.MEGA_PASSWORD) return;
   try {
@@ -39,9 +39,9 @@ async function uploadCredsToMega(authDir) {
     const storage = new Storage({ email: config.MEGA_EMAIL, password: config.MEGA_PASSWORD });
     await storage.ready;
 
-    let folder = storage.files.find(f => f.name === 'sachiyamd_session' && f.directory);
+    let folder = storage.root.children.find(f => f.name === 'sachiyamd_session' && f.directory);
     if (!folder) {
-      folder = await storage.mkdir('sachiyamd_session');
+      folder = await storage.root.mkdir('sachiyamd_session');
     }
 
     const existingFile = folder.children.find(f => f.name === 'creds.json');
@@ -63,14 +63,14 @@ async function downloadCredsFromMega(authDir) {
     const storage = new Storage({ email: config.MEGA_EMAIL, password: config.MEGA_PASSWORD });
     await storage.ready;
 
-    const folder = storage.files.find(f => f.name === 'sachiyamd_session' && f.directory);
+    const folder = storage.root.children.find(f => f.name === 'sachiyamd_session' && f.directory);
     if (!folder) return false;
 
     const file = folder.children.find(f => f.name === 'creds.json');
     if (!file) return false;
 
     if (!fs.existsSync(authDir)) {
-      fs.mkdirSync(authDir, { recursive: true });
+      fs.mkdirSync(authFolder, { recursive: true });
     }
 
     const data = await file.downloadBuffer();
@@ -88,7 +88,7 @@ async function clearMegaSession() {
   try {
     const storage = new Storage({ email: config.MEGA_EMAIL, password: config.MEGA_PASSWORD });
     await storage.ready;
-    const folder = storage.files.find(f => f.name === 'sachiyamd_session' && f.directory);
+    const folder = storage.root.children.find(f => f.name === 'sachiyamd_session' && f.directory);
     if (folder) {
       const file = folder.children.find(f => f.name === 'creds.json');
       if (file) await file.delete();
