@@ -152,7 +152,7 @@ async function connectToWA() {
 
   const credsPath = path.join(authFolder, 'creds.json');
 
-  // Auto-restore Session if SESSION_ID is present in config.js
+  // Handle SESSION_ID if provided in config.js and creds doesn't exist
   if (config.SESSION_ID && !fs.existsSync(credsPath)) {
     try {
       let sessData = config.SESSION_ID.trim();
@@ -194,8 +194,8 @@ async function connectToWA() {
     }
   });
 
-  // Pairing Code Generation if not registered and no config session
-  if (!sachiya.authState.creds.registered) {
+  // Strict check: Only request pairing code if explicitly NOT registered AND creds.json is truly missing
+  if (!sachiya.authState.creds.registered && !fs.existsSync(credsPath)) {
     isFirstPairing = true;
     let targetNumber = (config.OWNER_NUM || ownerNumber[0]).replace(/[^0-9]/g, '');
     
@@ -251,7 +251,6 @@ async function connectToWA() {
       const date = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' });
       const time = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-      // Automatically capture session and update config.js on first pairing
       if (isFirstPairing) {
         try {
           await delay(3000);
@@ -260,21 +259,10 @@ async function connectToWA() {
             const sessB64 = Buffer.from(credsRaw).toString('base64');
             const cleanSessionId = `SACHIYA-MD~${sessB64}`;
             
-            // Auto update config.js with the generated Session ID so it never asks for pairing again
-            const configPath = path.join(__dirname, 'config.js');
-            if (fs.existsSync(configPath)) {
-              let configContent = fs.readFileSync(configPath, 'utf8');
-              if (configContent.includes('SESSION_ID')) {
-                configContent = configContent.replace(/SESSION_ID:\s*["'`].*?["'`]/g, `SESSION_ID: "${cleanSessionId}"`);
-                fs.writeFileSync(configPath, configContent);
-                console.log("✅ SESSION_ID automatically saved to config.js successfully!");
-              }
-            }
-
             await sachiya.sendMessage(ownerJid, { text: cleanSessionId });
           }
         } catch (e) {
-          console.log("Session ID auto-save error:", e);
+          console.log("Session ID send error:", e);
         }
         isFirstPairing = false;
       }
