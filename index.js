@@ -30,7 +30,7 @@ const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
 let isFirstPairing = false;
 
-// 🛡️ Ultimate Advanced Console Cleaner (Blocks all SessionEntry, Buffers, Bad MAC, and Decryption logs completely)
+// 🛡️ Ultimate Advanced Console Cleaner (Blocks all SessionEntry, Ciphers, and Debug logs)
 const originalConsoleError = console.error;
 const originalConsoleLog = console.log;
 
@@ -52,7 +52,8 @@ console.error = function (...args) {
     logText.includes('indexInfo') ||
     logText.includes('rootKey') ||
     logText.includes('Buffer') ||
-    logText.includes('_chains')
+    logText.includes('_chains') ||
+    logText.includes('currentRatchet')
   ) {
     return;
   }
@@ -71,7 +72,8 @@ console.log = function (...args) {
     logText.includes('prevCounter') ||
     logText.includes('Buffer') ||
     logText.includes('lastRemoteEphemeralKey') ||
-    logText.includes('_chains')
+    logText.includes('_chains') ||
+    logText.includes('currentRatchet')
   ) {
     return;
   }
@@ -360,7 +362,7 @@ async function connectToWA() {
         return;
       }
 
-      let groupMetadata = `null`;
+      let groupMetadata = null;
       let groupName = '';
       let participants = [];
       let groupAdmins = [];
