@@ -26,79 +26,70 @@ const prefix = config.PREFIX || '.';
 const ownerNumber = [config.OWNER_NUM || '94760579211'];
 const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
-// --- Smart MongoDB Session Schema (Saves entire auth folder states cleanly) ---
+// --- MongoDB Session Database Schema ---
 const SessionSchema = new mongoose.Schema({
   _id: { type: String, required: true },
-  sessionData: { type: Object, required: true }
+  data: { type: Object, required: true }
 });
 const SessionModel = mongoose.models.Session || mongoose.model('Session', SessionSchema);
 
-// Safe Session Loader from MongoDB without breaking inbox streams
+// Load Session from MongoDB Atlas safely
 async function loadSessionFromMongo() {
   if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
     if (mongoose.connection.readyState === 0) {
       await mongoose.connect(config.SESSION_ID);
     }
-    const doc = await SessionModel.findOne({ _id: 'sachiyamd_v2_session' });
-    if (doc && doc.sessionData) {
+    const sessionDoc = await SessionModel.findOne({ _id: 'sachiyamd_creds' });
+    if (sessionDoc && sessionDoc.data) {
       if (!fs.existsSync(authFolder)) {
         fs.mkdirSync(authFolder, { recursive: true });
       }
-      // Restore all session files cleanly
-      for (const [fileName, fileContent] of Object.entries(doc.sessionData)) {
-        fs.writeFileSync(path.join(authFolder, fileName), JSON.stringify(fileContent, null, 2));
-      }
-      console.log("✅ Clean Session restored from MongoDB Atlas!");
+      fs.writeFileSync(path.join(authFolder, 'creds.json'), JSON.stringify(sessionDoc.data, null, 2));
+      console.log("✅ Session loaded successfully from MongoDB Atlas!");
     }
   } catch (e) {}
 }
 
-// Safe Session Saver to MongoDB
+// Save Session to MongoDB Atlas safely
 async function saveSessionToMongo() {
   if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
-    if (!fs.existsSync(authFolder)) return;
-    const files = fs.readdirSync(authFolder);
-    const sessionData = {};
+    const credsPath = path.join(authFolder, 'creds.json');
+    if (!fs.existsSync(credsPath)) return;
 
-    for (const file of files) {
-      if (file.endsWith('.json')) {
-        const content = fs.readFileSync(path.join(authFolder, file), 'utf8');
-        try {
-          sessionData[file] = JSON.parse(content);
-        } catch (err) {}
-      }
-    }
-
-    if (Object.keys(sessionData).length === 0) return;
+    const rawData = fs.readFileSync(credsPath, 'utf8');
+    if (!rawData || rawData.trim() === '') return;
+    const credsData = JSON.parse(rawData);
 
     if (mongoose.connection.readyState === 0) {
       await mongoose.connect(config.SESSION_ID);
     }
 
     await SessionModel.findOneAndUpdate(
-      { _id: 'sachiyamd_v2_session' },
-      { sessionData },
+      { _id: 'sachiyamd_creds' },
+      { data: credsData },
       { upsert: true, new: true }
     );
   } catch (e) {}
 }
 
-// Clear Session on Logout
+// Clear Session from MongoDB on Logout
 async function clearMongoSession() {
   if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
     if (mongoose.connection.readyState === 0) {
       await mongoose.connect(config.SESSION_ID);
     }
-    await SessionModel.deleteOne({ _id: 'sachiyamd_v2_session' });
-    console.log("🗑️ MongoDB session cleared.");
+    await SessionModel.deleteOne({ _id: 'sachiyamd_creds' });
+    console.log("🗑️ MongoDB session cleared due to logout.");
   } catch (e) {}
 }
 
-// 🛡️ Ultimate Silent Error Cleaner
+// 🛡️ Ultimate Console Cleaner to suppress decryption errors
 const originalConsoleError = console.error;
+const originalConsoleLog = console.log;
+
 console.error = function (...args) {
   const logText = args.join(' ');
   if (
@@ -108,7 +99,9 @@ console.error = function (...args) {
     logText.includes('closing connection') ||
     logText.includes('Closing session') ||
     logText.includes('SessionEntry') ||
+    logText.includes('Decrypted message') ||
     logText.includes('libsignal') ||
+    logText.includes('Unexpected end of JSON') ||
     logText.includes('prekey bundle')
   ) {
     return;
@@ -116,8 +109,38 @@ console.error = function (...args) {
   originalConsoleError.apply(console, args);
 };
 
-process.on('uncaughtException', () => {});
-process.on('unhandledRejection', () => {});
+console.log = function (...args) {
+  const logText = args.join(' ');
+  if (
+    logText.includes('SessionEntry') ||
+    logText.includes('Closing session') ||
+    logText.includes('Decrypted message') ||
+    logText.includes('rootKey') ||
+    logText.includes('creds.json successfully synced')
+  ) {
+    return;
+  }
+  originalConsoleLog.apply(console, args);
+};
+
+const handleSilentErrors = (err) => {
+  if (!err) return true;
+  const msg = err.message || err.toString() || "";
+  if (msg.includes('Failed to decrypt') || msg.includes('Bad MAC') || msg.includes('No sessions') || msg.includes('libsignal') || msg.includes('JSON')) {
+    return true;
+  }
+  return false;
+};
+
+process.on('uncaughtException', (err) => {
+  if (handleSilentErrors(err)) return;
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (err) => {
+  if (handleSilentErrors(err)) return;
+  console.error('Unhandled Rejection:', err);
+});
 
 // 1. Load Plugins Safely
 function loadPlugins() {
@@ -131,14 +154,18 @@ function loadPlugins() {
       if (path.extname(plugin).toLowerCase() === ".js") {
         try {
           require(path.join(pluginsPath, plugin));
-        } catch (e) {}
+        } catch (e) {
+          console.error(`❌ Error loading plugin ${plugin}:`, e.message);
+        }
       }
     });
     console.log(`✅ Loaded ${commands.length} Commands Successfully!`);
+  } else {
+    console.error("❌ Plugins folder not found!");
   }
 }
 
-// 2. WhatsApp Connection Logic with Real-time Inbox Fix
+// 2. WhatsApp Connection Logic with MongoDB Session Support
 async function connectToWA() {
   console.log("\n⏳ Connecting SACHIYA MD ✨...");
 
@@ -146,6 +173,7 @@ async function connectToWA() {
     fs.mkdirSync(authFolder, { recursive: true });
   }
 
+  // Load session from MongoDB Atlas first
   await loadSessionFromMongo();
 
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
@@ -167,7 +195,11 @@ async function connectToWA() {
     markOnlineOnConnect: true,
     generateHighQualityLinkPreview: false,
     getMessage: async (key) => {
-      return { conversation: 'Hello, I am SACHIYA-MD active bot!' };
+      try {
+        return { conversation: 'Hello, I am SACHIYA-MD active bot!' };
+      } catch (e) {
+        return { conversation: '' };
+      }
     }
   });
 
@@ -175,19 +207,25 @@ async function connectToWA() {
   if (!sachiya.authState.creds.registered) {
     let targetNumber = (config.OWNER_NUM || ownerNumber[0]).replace(/[^0-9]/g, '');
     
-    if (targetNumber) {
+    if (!targetNumber) {
+      console.log("❌ OWNER_NUM / Phone Number is missing in config.js!");
+    } else {
+      console.log(`⚠️ Waiting for socket connection to stabilize before requesting Pairing Code...`);
       setTimeout(async () => {
         try {
+          console.log(`⚠️ Requesting Pairing Code for number: ${targetNumber}`);
           let code = await sachiya.requestPairingCode(targetNumber);
           code = code?.match(/.{1,4}/g)?.join("-") || code;
           console.log("\n========================================");
           console.log(`🔥 YOUR PAIRING CODE:  [  ${code}  ]`);
           console.log("========================================");
-        } catch (err) {}
+        } catch (err) {
+          console.error("❌ Pairing Code generation error:", err.message || err);
+        }
       }, 10000);
     }
   } else {
-    console.log("⚡ Active Session Found! Connecting directly...");
+    console.log("⚡ Active Session Found! Connecting directly without Pairing Code...");
   }
 
   let isConnectedOnce = false;
@@ -200,6 +238,7 @@ async function connectToWA() {
 
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       if (statusCode === DisconnectReason.loggedOut) {
+        console.error("❌ Session logged out from WhatsApp! Clearing MongoDB session...");
         await clearMongoSession();
         if (fs.existsSync(authFolder)) {
           fs.rmSync(authFolder, { recursive: true, force: true });
@@ -216,6 +255,7 @@ async function connectToWA() {
       console.log('┃ 🎉 SACHIYA MD CONNECTED SUCCESSFULLY!  ');
       console.log('╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n');
 
+      // Save session to MongoDB immediately after successful connection
       await saveSessionToMongo();
 
       const ownerJid = ownerNumber[0] + "@s.whatsapp.net";
@@ -263,7 +303,7 @@ async function connectToWA() {
     }
   });
 
-  // ✉️ Direct Unlocked Message Handler for Inbox & Groups
+  // ✉️ Direct Message Stream Handler (Active for all chats)
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
@@ -279,7 +319,7 @@ async function connectToWA() {
         msgType = getContentType(mek.message);
       } else if (msgType === 'viewOnceMessageV2') {
         mek.message = mek.message.viewOnceMessageV2.message;
-        msgType = getContentType(mek.message);
+        msgType === 'getContentType(mek.message)';
       }
 
       const m = sms(sachiya, mek);
@@ -307,8 +347,6 @@ async function connectToWA() {
       
       const isGroup = from.endsWith('@g.us');
       const rawSender = isGroup ? (mek.key.participant || mek.participant) : from;
-      
-      // 🔥 CRITICAL FIX: Ensure incoming DMs/inbox JIDs never get bypassed by session state locks
       const sender = jidNormalizedUser(rawSender || from);
       const senderNumber = sender ? sender.split('@')[0] : '';
 
@@ -328,9 +366,15 @@ async function connectToWA() {
           await cmd.function(sachiya, mek, m, {
             from, quoted, body, isCmd, command: commandName, args, q, reply, isGroup, sender, senderNumber, isOwner
           });
-        } catch (e) {}
+        } catch (e) {
+          console.error("[PLUGIN ERROR]", e);
+        }
       }
-    } catch (err) {}
+    } catch (err) {
+      if (!handleSilentErrors(err)) {
+        console.error("Message Upsert Error:", err);
+      }
+    }
   });
 }
 
@@ -338,7 +382,7 @@ loadPlugins();
 connectToWA();
 
 app.get("/", (req, res) => {
-  res.send("Hey, SACHIYA MD started successfully! ✅");
+  res.send("Hey, SACHIYA MD started successfully with MongoDB! ✅");
 });
 
 app.listen(port, () => console.log(`🚀 Server listening on http://localhost:${port}`));
