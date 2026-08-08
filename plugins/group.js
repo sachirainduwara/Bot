@@ -1,6 +1,6 @@
 /*
   * Project: SACHIYA-MD WhatsApp Bot
-  * Plugin: Group Management (With Custom Tagall Message)
+  * Plugin: Group Management (Clean Number View for Kick/Add)
   * Author: SACHIYA
 */
 
@@ -21,7 +21,7 @@ function getTargetUser(mek, quoted, args) {
 }
 
 // ==========================================
-// 1. KICK COMMAND
+// 1. KICK COMMAND (Clean Number Display)
 // ==========================================
 cmd({
   pattern: "kick",
@@ -38,8 +38,10 @@ cmd({
     const target = getTargetUser(mek, quoted, args);
     if (!target) return reply("⚠️ *Please mention, reply, or provide the number of the user to kick!*");
 
+    const userNumber = target.split("@")[0];
+
     await sachiya.groupParticipantsUpdate(from, [target], "remove");
-    return reply(`✅ *Successfully kicked:* @${target.split("@")[0]}`, { mentions: [target] });
+    return reply(`✅ *Successfully kicked:* +${userNumber}`, { mentions: [target] });
   } catch (e) {
     console.error("KICK ERROR:", e);
     return reply("❌ *Failed to kick user! Check if Bot has Admin rights or target is Group Creator.*");
@@ -64,8 +66,10 @@ cmd({
     const target = getTargetUser(mek, quoted, args);
     if (!target) return reply("⚠️ *Please mention or reply to a user to promote!*");
 
+    const userNumber = target.split("@")[0];
+
     await sachiya.groupParticipantsUpdate(from, [target], "promote");
-    return reply(`👑 *Promoted to Admin:* @${target.split("@")[0]}`, { mentions: [target] });
+    return reply(`👑 *Promoted to Admin:* +${userNumber}`, { mentions: [target] });
   } catch (e) {
     console.error("PROMOTE ERROR:", e);
     return reply("❌ *Failed to promote user!*");
@@ -90,8 +94,10 @@ cmd({
     const target = getTargetUser(mek, quoted, args);
     if (!target) return reply("⚠️ *Please mention or reply to an admin to demote!*");
 
+    const userNumber = target.split("@")[0];
+
     await sachiya.groupParticipantsUpdate(from, [target], "demote");
-    return reply(`📉 *Demoted to Member:* @${target.split("@")[0]}`, { mentions: [target] });
+    return reply(`📉 *Demoted to Member:* +${userNumber}`, { mentions: [target] });
   } catch (e) {
     console.error("DEMOTE ERROR:", e);
     return reply("❌ *Failed to demote user!*");
@@ -99,7 +105,7 @@ cmd({
 });
 
 // ==========================================
-// 4. ADD / INVITE USER
+// 4. ADD / INVITE USER (Clean Number Display)
 // ==========================================
 cmd({
   pattern: "add",
@@ -118,7 +124,7 @@ cmd({
     const target = `${cleanNum}@s.whatsapp.net`;
 
     await sachiya.groupParticipantsUpdate(from, [target], "add");
-    return reply(`✅ *Successfully added:* @${cleanNum}`, { mentions: [target] });
+    return reply(`✅ *Successfully added:* +${cleanNum}`, { mentions: [target] });
   } catch (e) {
     console.error("ADD ERROR:", e);
     return reply(`❌ *Failed to add user! Error: ${e.message}*`);
@@ -126,7 +132,7 @@ cmd({
 });
 
 // ==========================================
-// 5. TAG ALL MEMBERS (Updated with Custom Message Support)
+// 5. TAG ALL MEMBERS
 // ==========================================
 cmd({
   pattern: "tagall",
@@ -143,7 +149,7 @@ cmd({
     if (!participants || participants.length === 0) return reply("⚠️ *No members found!*");
 
     let mentions = participants.map(p => p.id);
-    let customMessage = q ? q : "Attention everyone!"; // කමෙන්ට් එකක් දීලා නැත්නම් default මැසේජ් එකක් වැටේ
+    let customMessage = q ? q : "Attention everyone!";
     
     let text = `╭━━━〔 *SACHIYA-MD TAG ALL* 〕━━━\n`;
     text += `┃ 💬 *Message:* ${customMessage}\n`;
@@ -281,7 +287,7 @@ cmd({
 });
 
 // ==========================================
-// 10. UPDATE GROUP DETAILS (Name, Desc, PP)
+// 10. UPDATE GROUP DETAILS
 // ==========================================
 cmd({
   pattern: "setsubject",
