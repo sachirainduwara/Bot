@@ -16,9 +16,10 @@ cmd(
 
       await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
-      // Search APK via Aptoide API
+      // 🔍 Search APK via Aptoide API (with encode and error handling)
       const apiUrl = `http://ws75.aptoide.com/api/7/apps/search/query=${encodeURIComponent(q)}/limit=1`;
-      const { data } = await axios.get(apiUrl).catch(() => null);
+      const response = await axios.get(apiUrl).catch(() => null);
+      const data = response?.data;
 
       if (!data || !data.datalist || !data.datalist.list || !data.datalist.list.length) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
@@ -26,14 +27,21 @@ cmd(
       }
 
       const app = data.datalist.list[0];
-      const appSize = (app.size / (1024 * 1024)).toFixed(2); // Convert bytes to MB
-      const downloadLink = app.file.path_alt || app.file.path;
+      
+      // Safe size calculation (avoid NaN if size is missing)
+      const appSize = app.size ? (app.size / (1024 * 1024)).toFixed(2) : "Unknown";
+      const downloadLink = app.file?.path_alt || app.file?.path;
+
+      if (!downloadLink) {
+        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
+        return reply("❌ *Download link not available for this app!*");
+      }
 
       // 🎨 SACHIYA-MD BEAUTIFUL UI CARD
       const caption = `╭━━━〔 *SACHIYA-MD APK DL* 〕━━━\n` +
                       `┃\n` +
-                      `┃ 📱 *App Name:* ${app.name}\n` +
-                      `┃ 📦 *Package:* ${app.package}\n` +
+                      `┃ 📱 *App Name:* ${app.name || "Unknown"}\n` +
+                      `┃ 📦 *Package:* ${app.package || "N/A"}\n` +
                       `┃ 👤 *Developer:* ${app.developer?.name || "Unknown"}\n` +
                       `┃ 📊 *Size:* ${appSize} MB\n` +
                       `┃ 🗓️ *Updated:* ${app.updated || "N/A"}\n` +
@@ -42,22 +50,23 @@ cmd(
                       `> *Downloading APK File... Please wait!* ⏳\n` +
                       `> Powered by SACHIYA MD 💫`;
 
-      // 1. Send Icon & App Details
+      // 1. Send Icon & App Details Card
       await sachiya.sendMessage(
         from,
         {
-          image: { url: app.icon },
+          image: { url: app.icon || config.ALIVE_IMG },
           caption: caption,
         },
         { quoted: mek }
       );
 
-      // 2. Send Actual APK Document
+      // 2. Send Actual APK Document File
+      const safeFileName = (app.name || "app").replace(/[^\w\s]/gi, '');
       await sachiya.sendMessage(
         from,
         {
           document: { url: downloadLink },
-          fileName: `${app.name}.apk`,
+          fileName: `${safeFileName}.apk`,
           mimetype: "application/vnd.android.package-archive",
         },
         { quoted: mek }
