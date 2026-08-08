@@ -13,12 +13,13 @@ cmd(
     try {
       const start = Date.now();
 
-      // Calculating Response Latency
+      // 1. Send initial ping message
       const latencyMsg = await sachiya.sendMessage(from, { text: "⚡ *Pinging SACHIYA-MD Servers...*" }, { quoted: mek });
+      
       const end = Date.now();
       const speed = end - start;
 
-      // Calculate Uptime
+      // 2. Calculate Uptime
       const uptimeSeconds = process.uptime();
       const days = Math.floor(uptimeSeconds / (3600 * 24));
       const hours = Math.floor((uptimeSeconds % (3600 * 24)) / 3600);
@@ -31,7 +32,7 @@ cmd(
       if (minutes > 0 || hours > 0 || days > 0) uptimeString += `${minutes}m `;
       uptimeString += `${seconds}s`;
 
-      // Get Current Date and Time (Sri Lanka Timezone)
+      // 3. Get Current Date and Time (Sri Lanka Timezone)
       const now = new Date();
       const timeStr = now.toLocaleTimeString('en-US', {
         timeZone: 'Asia/Colombo',
@@ -48,7 +49,7 @@ cmd(
         year: 'numeric'
       });
 
-      // 🎨 SACHIYA-MD BEAUTIFUL PING CARD (Status part removed)
+      // 🎨 SACHIYA-MD BEAUTIFUL PING CARD
       const pingCard = `╭━━━〔 *SACHIYA-MD SPEED* 〕━━━\n` +
                         `┃\n` +
                         `┃ ⚡ *Response Speed:* \`\`\`${speed} ms\`\`\`\n` +
@@ -59,8 +60,12 @@ cmd(
                         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                         `> *Powered by SACHIYA MD 💫*`;
 
-      // Edit/Update Message with Response Time
-      await sachiya.sendMessage(from, { text: pingCard, edit: latencyMsg.key });
+      // 4. Safely Edit Message with Response Time
+      if (latencyMsg && latencyMsg.key) {
+        await sachiya.sendMessage(from, { text: pingCard, edit: latencyMsg.key });
+      } else {
+        await reply(pingCard);
+      }
 
     } catch (e) {
       console.error("PING ERROR:", e);
