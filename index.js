@@ -5,16 +5,14 @@ const {
   jidNormalizedUser,
   getContentType,
   fetchLatestBaileysVersion,
-  Browsers,
+  makeCacheableSignalKeyStore,
   delay
 } = require('@whiskeysockets/baileys');
 
 const fs = require('fs');
 const P = require('pino');
 const express = require('express');
-const axios = require('axios');
 const path = require('path');
-const pino = require('pino');
 
 const config = require('./config');
 const { sms, downloadMediaMessage } = require('./lib/msg');
@@ -26,225 +24,412 @@ const { commands, replyHandlers } = require('./command');
 const app = express();
 const port = process.env.PORT || 8000;
 
-const prefix = '.';
-const ownerNumber = ['94760579211']; // Updated owner number
-const credsPath = path.join(__dirname, '/auth_info_baileys/creds.json');
+const prefix = config.PREFIX || '.';
+const ownerNumber = [config.OWNER_NUM || '94760579211'];
+const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
-// Helper to format date & time nicely
-function getDateTime() {
-  const date = new Date().toLocaleDateString('en-GB');
-  const time = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Colombo' });
-  return { date, time };
+let isFirstPairing = false;
+
+// 🛡️ Console Cleaner to hide annoying signal and session debug logs
+const originalConsoleError = console.error;
+const originalConsoleLog = console.log;
+
+console.error = function (...args) {
+  const logText = args.join(' ');
+  if (
+    logText.includes('Bad MAC') ||
+    logText.includes('No sessions') ||
+    logText.includes('closing connection') ||
+    logText.includes('Closing session') ||
+    logText.includes('Closing open session') ||
+    logText.includes('SessionEntry') ||
+    logText.includes('Decrypted message') ||
+    logText.includes('Decryption') ||
+    logText.includes('decrypt') ||
+    logText.includes('Session error') ||
+    logText.includes('libsignal') ||
+    logText.includes('Failed to decrypt message') ||
+    logText.includes('indexInfo') ||
+    logText.includes('rootKey') ||
+    logText.includes('Buffer') ||
+    logText.includes('_chains') ||
+    logText.includes('currentRatchet')
+  ) {
+    return;
+  }
+  originalConsoleError.apply(console, args);
+};
+
+console.log = function (...args) {
+  const logText = args.join(' ');
+  if (
+    logText.includes('SessionEntry') ||
+    logText.includes('Closing session') ||
+    logText.includes('Closing open session') ||
+    logText.includes('Decrypted message') ||
+    logText.includes('indexInfo') ||
+    logText.includes('rootKey') ||
+    logText.includes('prevCounter') ||
+    logText.includes('Buffer') ||
+    logText.includes('lastRemoteEphemeralKey') ||
+    logText.includes('_chains') ||
+    logText.includes('currentRatchet')
+  ) {
+    return;
+  }
+  originalConsoleLog.apply(console, args);
+};
+
+const handleSilentErrors = (err) => {
+  if (!err) return true;
+  const msg = err.message || err.toString() || "";
+  if (
+    msg.includes('Bad MAC') ||
+    msg.includes('No sessions') ||
+    msg.includes('closing connection') ||
+    msg.includes('Closing session') ||
+    msg.includes('Closing open session') ||
+    msg.includes('SessionEntry') ||
+    msg.includes('Decrypted message') ||
+    msg.includes('Decryption') ||
+    msg.includes('decrypt') ||
+    msg.includes('Session error') ||
+    msg.includes('libsignal')
+  ) {
+    return true;
+  }
+  return false;
+};
+
+process.on('uncaughtException', (err) => {
+  if (handleSilentErrors(err)) return;
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (err) => {
+  if (handleSilentErrors(err)) return;
+  console.error('Unhandled Rejection:', err);
+});
+
+function extractGroupAdmins(participants) {
+  if (!participants || !Array.isArray(participants)) return [];
+  return participants
+    .filter((p) => p.admin === 'admin' || p.admin === 'superadmin')
+    .map((p) => jidNormalizedUser(p.id));
 }
 
+// 1. Load Plugins Safely
+function loadPlugins() {
+  let pluginsPath = path.join(__dirname, "plugins");
+  
+  if (!fs.existsSync(pluginsPath)) {
+    pluginsPath = path.join(__dirname, "Plugins");
+  }
+
+  if (fs.existsSync(pluginsPath)) {
+    fs.readdirSync(pluginsPath).forEach((plugin) => {
+      if (path.extname(plugin).toLowerCase() === ".js") {
+        try {
+          require(path.join(pluginsPath, plugin));
+        } catch (e) {
+          console.error(`❌ Error loading plugin ${plugin}:`, e.message);
+        }
+      }
+    });
+    console.log(`✅ Loaded ${commands.length} Commands Successfully!`);
+  } else {
+    console.error("❌ Plugins folder not found!");
+  }
+}
+
+// 2. WhatsApp Connection Logic
 async function connectToWA() {
-  const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, '/auth_info_baileys/'));
-  const { version } = await fetchLatestBaileysVersion();
+  console.log("\n⏳ Connecting SACHIYA MD ✨...");
 
-  console.log("Connecting SACHIYA-MD 🧬...");
+  if (!fs.existsSync(authFolder)) {
+    fs.mkdirSync(authFolder, { recursive: true });
+  }
 
-  const sachiya = makeWASocket({
-    logger: pino({ level: 'silent' }),
-    printQRInTerminal: false,
-    browser: Browsers.macOS("Chrome"),
-    auth: state,
-    version,
-    syncFullHistory: true,
-    markOnlineOnConnect: true,
-    generateHighQualityLinkPreview: true,
-  });
-
-  // Pairing code logic if session is not available
-  if (!sachiya.authState.creds.registered) {
-    if (config.PHONE_NUMBER) {
-      await delay(1500);
-      let phoneNumber = config.PHONE_NUMBER.replace(/[^0-9]/g, '');
-      let code = await sachiya.requestPairingCode(phoneNumber);
-      code = code?.match(/.{1,4}/g)?.join("-") || code;
-      console.log(`\n==================================================`);
-      console.log(`✨ YOUR PAIRING CODE FOR SACHIYA-MD ✨: ${code}`);
-      console.log(`==================================================\n`);
-    } else {
-      console.log("⚠️ No PHONE_NUMBER provided in config for pairing code! Bot will try to run with existing session.");
+  // Restore SESSION_ID if provided in config.js and creds.json doesn't exist
+  if (config.SESSION_ID && !fs.existsSync(path.join(authFolder, 'creds.json'))) {
+    try {
+      let sessData = config.SESSION_ID.trim();
+      if (sessData.includes('~')) {
+        sessData = sessData.split('~')[1];
+      }
+      const pasteData = Buffer.from(sessData, 'base64').toString('utf-8');
+      fs.writeFileSync(path.join(authFolder, 'creds.json'), pasteData);
+      console.log("✅ SESSION_ID Restored Successfully!");
+    } catch (e) {
+      console.error("❌ Invalid SESSION_ID Format provided in config!");
     }
   }
+
+  const { state, saveCreds } = await useMultiFileAuthState(authFolder);
+  const { version } = await fetchLatestBaileysVersion();
+  
+  const logger = P({ level: 'fatal' });
+
+  const sachiya = makeWASocket({
+    logger,
+    printQRInTerminal: false,
+    browser: ["Ubuntu", "Chrome", "20.0.04"],
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, logger),
+    },
+    version,
+    syncFullHistory: false,
+    fireInitQueries: true,
+    markOnlineOnConnect: true,
+    generateHighQualityLinkPreview: false,
+    getMessage: async (key) => {
+      try {
+        return { conversation: 'Hello, I am SACHIYA-MD active bot!' };
+      } catch (e) {
+        return { conversation: '' };
+      }
+    }
+  });
+
+  // Pairing Code Generation if not registered
+  if (!sachiya.authState.creds.registered) {
+    isFirstPairing = true;
+    let targetNumber = (config.OWNER_NUM || ownerNumber[0]).replace(/[^0-9]/g, '');
+    
+    if (!targetNumber) {
+      console.log("❌ OWNER_NUM / Phone Number is missing in config.js!");
+    } else {
+      console.log(`⚠️ No active session detected! Preparing Pairing Code...`);
+      setTimeout(async () => {
+        try {
+          let code = await sachiya.requestPairingCode(targetNumber);
+          code = code?.match(/.{1,4}/g)?.join("-") || code;
+          console.log("\n========================================");
+          console.log(`🔥 YOUR PAIRING CODE:  [  ${code}  ]`);
+          console.log("========================================");
+        } catch (err) {
+          console.error("❌ Pairing Code generation error:", err.message || err);
+        }
+      }, 5000);
+    }
+  } else {
+    console.log("⚡ Active Session Found! Connecting directly without Pairing Code...");
+  }
+
+  let isConnectedOnce = false;
 
   sachiya.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect } = update;
     
     if (connection === 'close') {
-      const reason = lastDisconnect?.error?.output?.statusCode;
-      if (reason !== DisconnectReason.loggedOut) {
-        connectToWA();
+      if (isConnectedOnce) {
+        return; 
+      }
+
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      if (statusCode === DisconnectReason.loggedOut) {
+        console.error("❌ Session logged out! Resetting session folder...");
+        if (fs.existsSync(authFolder)) {
+          fs.rmSync(authFolder, { recursive: true, force: true });
+        }
+        process.exit(1);
       } else {
-        console.log("❌ Device logged out. Please delete auth_info_baileys and restart.");
-        if (fs.existsSync(credsPath)) fs.unlinkSync(credsPath);
+        setTimeout(() => connectToWA(), 3000);
       }
     } else if (connection === 'open') {
-      console.log('✅ SACHIYA-MD connected to WhatsApp successfully!');
-      
-      // Generate Session ID string from creds file to send to inbox
-      try {
-        if (fs.existsSync(credsPath)) {
-          const credsData = fs.readFileSync(credsPath, 'utf8');
-          // Simple base64 encoding of creds to act as a permanent Session ID
-          const encodedSession = Buffer.from(credsData).toString('base64');
-          const sessionIdFinal = `SACHIYA-MD;;;${encodedSession}`;
-          
-          const { date, time } = getDateTime();
-          const successMsg = 
-            `*✨ SACHIYA-MD CONNECTED SUCCESSFULLY! ✨*\n\n` +
-            `┏ 📂 *Bot Name:* SACHIYA MD ✨\n` +
-            `┃ 📞 *Owner Number:* 94760579211\n` +
-            `┃ 📅 *Date:* ${date}\n` +
-            `┃ ⏰ *Time:* ${time}\n` +
-            `┃ ⚡ *Prefix:* ${prefix}\n` +
-            `┗━ 🔗 *Status:* ONLINE & ACTIVE ✅\n\n` +
-            `*🔐 YOUR SESSION ID:* \n\`\`\`${sessionIdFinal}\`\`\`\n\n` +
-            `_Copy this Session ID and put it in your config.js! Keep it safe and do not share._`;
+      if (isConnectedOnce) return;
+      isConnectedOnce = true;
 
-          await sachiya.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-            image: { url: `https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true` },
-            caption: successMsg
-          });
+      console.log('\n╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮');
+      console.log('┃ 🎉 SACHIYA MD CONNECTED SUCCESSFULLY!  ');
+      console.log('╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n');
+
+      const ownerJid = ownerNumber[0] + "@s.whatsapp.net";
+      const date = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' });
+      const time = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      // Generate Session ID and send to owner inbox on first pairing
+      if (isFirstPairing) {
+        try {
+          await delay(3000);
+          if (fs.existsSync(path.join(authFolder, 'creds.json'))) {
+            const credsRaw = fs.readFileSync(path.join(authFolder, 'creds.json'));
+            const sessB64 = Buffer.from(credsRaw).toString('base64');
+            const cleanSessionId = `SACHIYA-MD~${sessB64}`;
+            
+            await sachiya.sendMessage(ownerJid, { 
+              text: `📂 *YOUR SESSION ID:* \n\n\`\`\`${cleanSessionId}\`\`\`\n\n> *⚠️ කවදාවත් මේ සෙෂන් අයිඩී එක වෙනත් අය සමඟ షෙයාර් කරන්න එපා!*` 
+            });
+          }
+        } catch (e) {
+          console.log("Session ID send error:", e);
         }
-      } catch (err) {
-        console.error("Error generating session ID on connect:", err);
+        isFirstPairing = false;
       }
 
-      // Load Plugins safely
-      if (fs.existsSync("./plugins/")) {
-        fs.readdirSync("./plugins/").forEach((plugin) => {
-          if (path.extname(plugin).toLowerCase() === ".js") {
-            try {
-              require(`./plugins/${plugin}`);
-            } catch (e) {
-              console.error(`Error loading plugin ${plugin}:`, e);
-            }
-          }
+      const aliveImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
+      
+      const connectedSuccessMsg = `╭━━━〔 *SACHIYA-MD CONNECTED* 〕━━━\n` +
+                                   `┃\n` +
+                                   `┃ 🤖 *Bot Status:* Online & Active ✅\n` +
+                                   `┃ ⚙️ *Prefix:* [ ${prefix} ]\n` +
+                                   `┃ 📅 *Date:* ${date}\n` +
+                                   `┃ ⏰ *Time:* ${time}\n` +
+                                   `┃\n` +
+                                   `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                                   `> *⚡ Powered by SACHIYA-MD 💫*`;
+
+      try {
+        await sachiya.sendMessage(ownerJid, {
+          image: { url: aliveImg },
+          caption: connectedSuccessMsg
         });
+      } catch (err) {
+        await sachiya.sendMessage(ownerJid, { text: connectedSuccessMsg }).catch(() => {});
       }
     }
   });
 
   sachiya.ev.on('creds.update', saveCreds);
 
-  // Anticall Feature Implementation
-  sachiya.ev.on('call', async (json) => {
+  // 📞 Anti Call Handler (Auto reject calls and send Sinhala message)
+  sachiya.ev.on('call', async (callEvents) => {
+    for (const call of callEvents) {
+      if (call.status === 'offer') {
+        const callerJid = call.from;
+        try {
+          await sachiya.rejectCall(call.id, callerJid);
+          const msg = `ਕෝල් ගන්න එපා අනේ! 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.`;
+          await sachiya.sendMessage(callerJid, { text: msg });
+        } catch (err) {
+          try {
+            await sachiya.sendMessage(callerJid, { text: `කෝල් ගන්න එපා අනේ! 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.` });
+          } catch (e) {}
+        }
+      }
+    }
+  });
+
+  // ✉️ Universal Messages Upsert Handler (Both Inbox and Groups Support)
+  sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
-      const anticallStatus = config.ANTICALL || 'true'; // Default enabled, can control via config
-      if (anticallStatus === 'true') {
-        for (const id of json) {
-          if (id.status === 'offer') {
-            await sachiya.rejectCall(id.id, id.from);
-            await sachiya.sendMessage(id.from, { 
-              text: '```📞 call ganna epa ane massage ekak daannako kiyal! Automatic Call Reject System 🤖```' 
+      const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
+      if (!mek || !mek.message) return;
+
+      if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
+
+      let msgType = getContentType(mek.message);
+      if (msgType === 'ephemeralMessage') {
+        mek.message = mek.message.ephemeralMessage.message;
+        msgType = getContentType(mek.message);
+      } else if (msgType === 'viewOnceMessage') {
+        mek.message = mek.message.viewOnceMessage.message;
+        msgType = getContentType(mek.message);
+      } else if (msgType === 'viewOnceMessageV2') {
+        mek.message = mek.message.viewOnceMessageV2.message;
+        msgType = getContentType(mek.message);
+      }
+
+      const m = sms(sachiya, mek);
+      const from = mek.key.remoteJid;
+      const quoted = m.quoted ? m.quoted : null;
+
+      const rawBody = msgType === 'conversation' ? mek.message.conversation :
+                      msgType === 'extendedTextMessage' ? mek.message.extendedTextMessage.text :
+                      msgType === 'imageMessage' ? mek.message.imageMessage.caption :
+                      msgType === 'videoMessage' ? mek.message.videoMessage.caption : 
+                      msgType === 'documentMessage' ? mek.message.documentMessage.caption :
+                      mek.text || m.body || '';
+      
+      const body = rawBody ? String(rawBody) : '';
+
+      const isCmd = body.startsWith(prefix);
+      const commandName = isCmd ? body.slice(prefix.length).trim().split(" ")[0].toLowerCase() : '';
+      const args = body.trim().split(/ +/).slice(1);
+      const q = args.join(' ');
+
+      const rawBotJid = sachiya.user ? sachiya.user.id : '';
+      const botJid = jidNormalizedUser(rawBotJid);
+      const botNumber = botJid ? botJid.split('@')[0] : '';
+      
+      const isGroup = from.endsWith('@g.us');
+      const rawSender = isGroup ? (mek.key.participant || mek.participant) : from;
+      const sender = jidNormalizedUser(rawSender || from);
+      const senderNumber = sender ? sender.split('@')[0] : '';
+
+      const pushname = mek.pushName || 'User';
+      const isMe = botNumber && senderNumber ? botNumber.includes(senderNumber) : false;
+      const isOwner = ownerNumber.includes(senderNumber) || isMe;
+
+      const workMode = config.MODE ? config.MODE.toLowerCase() : "public";
+      if (workMode === "private" && !isOwner) {
+        return;
+      }
+
+      let groupMetadata = null;
+      let groupName = '';
+      let participants = [];
+      let groupAdmins = [];
+      let isBotAdmins = false;
+      let isAdmins = isOwner;
+
+      if (isGroup) {
+        groupMetadata = await sachiya.groupMetadata(from).catch(() => null);
+        if (groupMetadata) {
+          groupName = groupMetadata.subject || '';
+          participants = groupMetadata.participants || [];
+          groupAdmins = extractGroupAdmins(participants);
+          isBotAdmins = groupAdmins.includes(botJid);
+          isAdmins = groupAdmins.includes(sender) || isOwner;
+        }
+      }
+
+      const reply = (text) => sachiya.sendMessage(from, { text }, { quoted: mek });
+
+      if (isCmd) {
+        const cmd = commands.find((c) => c.pattern === commandName || (c.alias && c.alias.includes(commandName)));
+        if (cmd) {
+          if (cmd.react) await sachiya.sendMessage(from, { react: { text: cmd.react, key: mek.key } }).catch(() => {});
+          try {
+            await cmd.function(sachiya, mek, m, {
+              from, quoted, body, isCmd, command: commandName, args, q,
+              isGroup, sender, senderNumber, botNumber2: botJid, botNumber, pushname,
+              isMe, isOwner, groupMetadata, groupName, participants, groupAdmins,
+              isBotAdmins, isAdmins, reply,
             });
+          } catch (e) {
+            console.error("[PLUGIN ERROR]", e);
           }
+          return;
         }
       }
-    } catch (e) {
-      console.error("Anticall error:", e);
-    }
-  });
 
-  sachiya.ev.on('messages.upsert', async ({ messages }) => {
-    for (const msg of messages) {
-      if (msg.messageStubType === 68) {
-        await sachiya.sendMessageAck(msg.key);
-      }
-    }
-
-    const mek = messages[0];
-    if (!mek || !mek.message) return;
-
-    mek.message = getContentType(mek.message) === 'ephemeralMessage' ? mek.message.ephemeralMessage.message : mek.message;
-    if (mek.key.remoteJid === 'status@broadcast') return;
-
-    const m = sms(sachiya, mek);
-    const type = getContentType(mek.message);
-    const from = mek.key.remoteJid;
-    const body = type === 'conversation' ? mek.message.conversation : mek.message[type]?.text || mek.message[type]?.caption || '';
-    const isCmd = body.startsWith(prefix);
-    const commandName = isCmd ? body.slice(prefix.length).trim().split(" ")[0].toLowerCase() : '';
-    const args = body.trim().split(/ +/).slice(1);
-    const q = args.join(' ');
-
-    const sender = mek.key.fromMe ? sachiya.user.id : (mek.key.participant || mek.key.remoteJid);
-    const senderNumber = sender.split('@')[0];
-    const isGroup = from.endsWith('@g.us');
-    const botNumber = sachiya.user.id.split(':')[0];
-    const pushname = mek.pushName || 'Sin Nombre';
-    const isMe = botNumber.includes(senderNumber);
-    const isOwner = ownerNumber.includes(senderNumber) || isMe;
-    const botNumber2 = await jidNormalizedUser(sachiya.user.id);
-
-    const groupMetadata = isGroup ? await sachiya.groupMetadata(from).catch(() => {}) : '';
-    const groupName = isGroup ? groupMetadata.subject : '';
-    const participants = isGroup ? groupMetadata.participants : '';
-    const groupAdmins = isGroup ? await getGroupAdmins(participants) : '';
-    const isBotAdmins = isGroup ? groupAdmins.includes(botNumber2) : false;
-    const isAdmins = isGroup ? groupAdmins.includes(sender) : false;
-
-    const reply = (text) => sachiya.sendMessage(from, { text }, { quoted: mek });
-
-    if (isCmd) {
-      const cmd = commands.find((c) => c.pattern === commandName || (c.alias && c.alias.includes(commandName)));
-      if (cmd) {
-        if (cmd.react) sachiya.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
-        try {
-          cmd.function(sachiya, mek, m, {
-            from, quoted: mek, body, isCmd, command: commandName, args, q,
-            isGroup, sender, senderNumber, botNumber2, botNumber, pushname,
-            isMe, isOwner, groupMetadata, groupName, participants, groupAdmins,
-            isBotAdmins, isAdmins, reply,
-          });
-        } catch (e) {
-          console.error("[PLUGIN ERROR]", e);
+      const replyText = body;
+      for (const handler of replyHandlers) {
+        if (handler.filter && handler.filter(replyText, { sender, message: mek })) {
+          try {
+            await handler.function(sachiya, mek, m, {
+              from, quoted, body: replyText, sender, reply,
+            });
+            return;
+          } catch (e) {}
         }
       }
-    }
 
-    const replyText = body;
-    for (const handler of replyHandlers) {
-      if (handler.filter(replyText, { sender, message: mek })) {
-        try {
-          await handler.function(sachiya, mek, m, {
-            from, quoted: mek, body: replyText, sender, reply,
-          });
-          break;
-        } catch (e) {
-          console.log("Reply handler error:", e);
-        }
+    } catch (err) {
+      if (!handleSilentErrors(err)) {
+        console.error("Message Upsert Error:", err);
       }
     }
   });
 }
 
-// Session string decoder support if passed via config.SESSION_ID
-function checkAndCreateSession() {
-  if (config.SESSION_ID && !fs.existsSync(credsPath)) {
-    try {
-      console.log("🔄 Restoring session from config.SESSION_ID...");
-      let sessdata = config.SESSION_ID;
-      if (sessdata.startsWith("SACHIYA-MD;;;")) {
-        sessdata = sessdata.replace("SACHIYA-MD;;;", "");
-      }
-      const decodedData = Buffer.from(sessdata, 'base64').toString('utf8');
-      fs.mkdirSync(path.join(__dirname, '/auth_info_baileys/'), { recursive: true });
-      fs.writeFileSync(credsPath, decodedData);
-      console.log("✅ Session restored successfully from config!");
-    } catch (e) {
-      console.error("❌ Failed to parse SESSION_ID from config:", e);
-    }
-  }
-  connectToWA();
-}
-
-checkAndCreateSession();
+loadPlugins();
+connectToWA();
 
 app.get("/", (req, res) => {
-  res.send("Hey, SACHIYA-MD started successfully ✅");
+  res.send("Hey, SACHIYA MD started successfully! ✅");
 });
 
-app.listen(port, () => console.log(`Server listening on http://localhost:${port}`));
+app.listen(port, () => console.log(`🚀 Server listening on http://localhost:${port}`));
