@@ -150,18 +150,30 @@ async function connectToWA() {
     fs.mkdirSync(authFolder, { recursive: true });
   }
 
-  // Restore SESSION_ID if provided in config.js and creds.json doesn't exist
+  // Robust Session ID Restorer for both config.js and auth folder
   if (config.SESSION_ID && !fs.existsSync(path.join(authFolder, 'creds.json'))) {
     try {
       let sessData = config.SESSION_ID.trim();
       if (sessData.includes('~')) {
         sessData = sessData.split('~')[1];
       }
-      const pasteData = Buffer.from(sessData, 'base64').toString('utf-8');
-      fs.writeFileSync(path.join(authFolder, 'creds.json'), pasteData);
+      const decodedData = Buffer.from(sessData, 'base64').toString('utf-8');
+      
+      try {
+        const parsedJson = JSON.parse(decodedData);
+        // If it's a full session object or multi-file mapping
+        if (typeof parsedJson === 'object' && parsedJson !== null) {
+          for (let key of Object.keys(parsedJson)) {
+            fs.writeFileSync(path.join(authFolder, key), JSON.stringify(parsedJson[key]));
+          }
+        }
+      } catch (err) {
+        // Fallback if it's strictly creds content
+        fs.writeFileSync(path.join(authFolder, 'creds.json'), decodedData);
+      }
       console.log("✅ SESSION_ID Restored Successfully!");
     } catch (e) {
-      console.error("❌ Invalid SESSION_ID Format provided in config!");
+      console.error("❌ Invalid SESSION_ID Format provided in config!", e);
     }
   }
 
@@ -253,15 +265,24 @@ async function connectToWA() {
       if (isFirstPairing) {
         try {
           await delay(3000);
-          if (fs.existsSync(path.join(authFolder, 'creds.json'))) {
-            const credsRaw = fs.readFileSync(path.join(authFolder, 'creds.json'));
-            const sessB64 = Buffer.from(credsRaw).toString('base64');
-            const cleanSessionId = `SACHIYA-MD~${sessB64}`;
-            
-            await sachiya.sendMessage(ownerJid, { 
-              text: `📂 *YOUR SESSION ID:* \n\n\`\`\`${cleanSessionId}\`\`\`\n\n> *⚠️ කවදාවත් මේ සෙෂන් අයිඩී එක වෙනත් අය සමඟ షෙයාර් කරන්න එපා!*` 
-            });
+          // Pack all files in auth_info_baileys into a secure session JSON/Base64 string
+          const authFiles = fs.readdirSync(authFolder);
+          let sessionObj = {};
+          for (let file of authFiles) {
+            const fileContent = fs.readFileSync(path.join(authFolder, file));
+            try {
+              sessionObj[file] = JSON.parse(fileContent);
+            } catch (err) {
+              sessionObj[file] = fileContent.toString('utf-8');
+            }
           }
+
+          const sessB64 = Buffer.from(JSON.stringify(sessionObj)).toString('base64');
+          const cleanSessionId = `SACHIYA-MD~${sessB64}`;
+          
+          await sachiya.sendMessage(ownerJid, { 
+            text: `📂 *YOUR SESSION ID:* \n\n\`\`\`${cleanSessionId}\`\`\`\n\n> *⚠️ කවදාවත් මේ සෙෂන් අයිඩී එක වෙනත් අය සමඟ షෙයාර් කරන්න එපා!*` 
+          });
         } catch (e) {
           console.log("Session ID send error:", e);
         }
@@ -300,7 +321,7 @@ async function connectToWA() {
         const callerJid = call.from;
         try {
           await sachiya.rejectCall(call.id, callerJid);
-          const msg = `ਕෝල් ගන්න එපා අනේ! 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.`;
+          const msg = `කෝල් ගන්න එපා අනේ! 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.`;
           await sachiya.sendMessage(callerJid, { text: msg });
         } catch (err) {
           try {
