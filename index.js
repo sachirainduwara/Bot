@@ -26,7 +26,7 @@ const app = express();
 const port = process.env.PORT || 8000;
 
 const prefix = config.PREFIX || '.';
-const ownerNumber = [config.OWNER_NUM || '94760579211'];
+const ownerNumber = [config.OWNER_NUM || '94771081150'];
 const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
 // --- Mega.nz Session Store Helper (Fixed & Optimized) ---
