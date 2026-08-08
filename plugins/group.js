@@ -1,12 +1,11 @@
 /*
   * Project: SACHIYA-MD WhatsApp Bot
-  * Plugin: Group Management (Fixed Admin & Owner Check Bug)
+  * Plugin: Group Management (Clean & Bug-free)
   * Author: SACHIYA
 */
 
 const { cmd } = require("../command");
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
-const config = require("../config");
 
 // 🎯 Safe JID Extractor Helper Function
 function getTargetUser(mek, quoted, args) {
@@ -321,7 +320,7 @@ cmd({
 });
 
 // ==========================================
-# 10. UPDATE GROUP DETAILS
+// 10. UPDATE GROUP DETAILS
 // ==========================================
 cmd({
   pattern: "setsubject",
@@ -415,7 +414,7 @@ cmd({
 
     const infoCard = `╭━━━〔 *GROUP INFORMATION* 〕━━━\n` +
                       `┃\n` +
-                      `┃ 👥 *Group:* metadata.subject\n` +
+                      `┃ 👥 *Group:* ${metadata.subject}\n` +
                       `┃ 🆔 *ID:* ${metadata.id}\n` +
                       `┃ 🧑‍💼 *Owner:* ${owner ? `@${owner.split("@")[0]}` : "Not found"}\n` +
                       `┃ 📅 *Created:* ${creation}\n` +
