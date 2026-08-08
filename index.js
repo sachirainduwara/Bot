@@ -33,7 +33,7 @@ const SessionSchema = new mongoose.Schema({
 });
 const SessionModel = mongoose.models.Session || mongoose.model('Session', SessionSchema);
 
-// Load Session from MongoDB Atlas safely
+// Load Session from MongoDB Atlas safely before starting
 async function loadSessionFromMongo() {
   if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
@@ -140,13 +140,6 @@ process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection:', err);
 });
 
-function extractGroupAdmins(participants) {
-  if (!participants || !Array.isArray(participants)) return [];
-  return participants
-    .filter((p) => p.admin === 'admin' || p.admin === 'superadmin')
-    .map((p) => jidNormalizedUser(p.id));
-}
-
 // 1. Load Plugins Safely
 function loadPlugins() {
   let pluginsPath = path.join(__dirname, "plugins");
@@ -178,6 +171,7 @@ async function connectToWA() {
     fs.mkdirSync(authFolder, { recursive: true });
   }
 
+  // Load session from MongoDB before calling useMultiFileAuthState
   await loadSessionFromMongo();
 
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
@@ -306,7 +300,7 @@ async function connectToWA() {
     }
   });
 
-  // ✉️ Unrestricted Live Messages Upsert Listener (Ensures permanent inbox & group connectivity)
+  // ✉️ Global Message Event Stream (Directly bypassing session-lock states)
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
