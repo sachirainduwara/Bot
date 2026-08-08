@@ -306,7 +306,7 @@ async function connectToWA() {
     }
   });
 
-  // ✉️ Universal Messages Upsert Handler (Fixed for both Inbox and Groups)
+  // ✉️ Universal Messages Upsert Handler (Fully open for both Inbox and Groups without type restrictions)
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
