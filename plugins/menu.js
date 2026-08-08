@@ -6,7 +6,7 @@ cmd({
     pattern: "menu",
     alias: ["help", "list", "panel"],
     react: "📜",
-    desc: "Get single list menu",
+    desc: "Get categorized list menu",
     category: "main",
     filename: __filename
 },
@@ -14,49 +14,52 @@ async(sachiya, mek, m, { from, quoted, pushname, reply }) => {
     try {
         const prefix = config.PREFIX || '.';
         
+        // 👤 Fix for User Name (যাতে undefined නොවී නම හරියට වැටේ)
+        const userName = pushname || m.pushName || mek.pushName || 'User';
+        
         // 💾 RAM Usage Calculations
         const totalRam = (os.totalmem() / 1024 / 1024 / 1024).toFixed(2);
         const freeRam = (os.freemem() / 1024 / 1024 / 1024).toFixed(2);
         const usedRam = (totalRam - freeRam).toFixed(2);
 
-        // 🗂️ දැනට තියෙන සහ Upload කරන අලුත් Commands ඔක්කොම එකතු කරගන්න Array එක
-        const otherCmds = [];
+        // 🗂️ Categories අනුව Commands වෙන් කරගැනීම සඳහා Object එකක් සකස් කිරීම
+        const categories = {};
 
         commands.forEach((command) => {
             if (command.pattern && !command.dontAddCommandList) {
-                // alive සහ menu කියන දෙක වෙනම උඩින් දාන නිසා පහළ List එකෙන් අයින් කරයි
-                if (command.pattern !== 'alive' && command.pattern !== 'menu') {
-                    otherCmds.push(command.pattern);
+                const cat = command.category ? command.category.toUpperCase() : "GENERAL";
+                if (!categories[cat]) {
+                    categories[cat] = [];
                 }
+                categories[cat].push(command.pattern);
             }
         });
 
-        // 🔤 Commands ටික පිළිවෙලට Alphabetical Order එකට Sort කිරීම
-        otherCmds.sort();
-
-        // 🎨 Top Box Structure
+        // 🎨 Top Header Structure
         let menuMsg = `╭━━━〔 *SACHIYA-MD MENU* 〕━━━\n` +
                       `┃\n` +
-                      `┃ 👤 *User:* _${pushname || 'User'}_\n` +
+                      `┃ 👤 *User:* _${userName}_\n` +
                       `┃ 🤖 *Prefix:* [ ${prefix} ]\n` +
                       `┃ 📊 *Total Commands:* ${commands.length}\n` +
                       `┃ 💾 *RAM Usage:* ${usedRam} GB / ${totalRam} GB\n` +
                       `┃\n` +
-                      `╰━━━━━━━━━━━━━━━━━━━\n\n` +
-                      `╭━━━〔 *COMMANDS LIST* 〕━━━\n` +
-                      `┃\n` +
-                      `┃ ◈ ✨ ${prefix}alive\n` +
-                      `┃ ◈ ✨ ${prefix}menu\n`;
+                      `╰━━━━━━━━━━━━━━━━━━━\n\n`;
 
-        // 🌟 දැනට තියෙන + Upload වෙන අනිත් ඕනෑම Command එකක්Auto එකතු වන කොටස
-        otherCmds.forEach((cmdName) => {
-            menuMsg += `┃ ◈ ✨ ${prefix}${cmdName}\n`;
+        // 🌟 Category එකක් පාසා Commands ටික පිළිවෙළට සකස් කිරීම
+        Object.keys(categories).sort().forEach((cat) => {
+            menuMsg += `╭───〔 *${cat}* 〕───\n`;
+            
+            // අදාළ කැටගරියට අයත් කමාන්ඩ්ස් අකාරාදී පිළිවෙළට (Alphabetical) සකස් කිරීම
+            categories[cat].sort().forEach((cmdName) => {
+                menuMsg += `┃ ◈ ✨ ${prefix}${cmdName}\n`;
+            });
+            
+            menuMsg += `╰───────────────────\n\n`;
         });
 
-        menuMsg += `╰━━━━━━━━━━━━━━━━━━━\n\n` +
-                   `> *Powered by SACHIYA-MINI-BOT 🧬*`;
+        menuMsg += `> *Powered by SACHIYA-MINI-BOT 🧬*`;
 
-        // 🖼️ Send Image + Text Message
+        // 🖼️ Send Image + Categorized Menu Message
         await sachiya.sendMessage(
             from,
             {
