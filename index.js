@@ -13,6 +13,7 @@ const fs = require('fs');
 const P = require('pino');
 const express = require('express');
 const path = require('path');
+const mongoose = require('mongoose');
 
 const config = require('./config');
 const { sms } = require('./lib/msg');
@@ -25,7 +26,67 @@ const prefix = config.PREFIX || '.';
 const ownerNumber = [config.OWNER_NUM || '94760579211'];
 const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
-// 🛡️ Ultimate Console Cleaner to suppress decryption and session errors completely
+// --- MongoDB Session Database Schema ---
+const SessionSchema = new mongoose.Schema({
+  _id: { type: String, required: true },
+  data: { type: Object, required: true }
+});
+const SessionModel = mongoose.models.Session || mongoose.model('Session', SessionSchema);
+
+// Load Session from MongoDB Atlas safely
+async function loadSessionFromMongo() {
+  if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
+  try {
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(config.SESSION_ID);
+    }
+    const sessionDoc = await SessionModel.findOne({ _id: 'sachiyamd_creds' });
+    if (sessionDoc && sessionDoc.data) {
+      if (!fs.existsSync(authFolder)) {
+        fs.mkdirSync(authFolder, { recursive: true });
+      }
+      fs.writeFileSync(path.join(authFolder, 'creds.json'), JSON.stringify(sessionDoc.data, null, 2));
+      console.log("✅ Session loaded successfully from MongoDB Atlas!");
+    }
+  } catch (e) {}
+}
+
+// Save Session to MongoDB Atlas safely
+async function saveSessionToMongo() {
+  if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
+  try {
+    const credsPath = path.join(authFolder, 'creds.json');
+    if (!fs.existsSync(credsPath)) return;
+
+    const rawData = fs.readFileSync(credsPath, 'utf8');
+    if (!rawData || rawData.trim() === '') return;
+    const credsData = JSON.parse(rawData);
+
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(config.SESSION_ID);
+    }
+
+    await SessionModel.findOneAndUpdate(
+      { _id: 'sachiyamd_creds' },
+      { data: credsData },
+      { upsert: true, new: true }
+    );
+  } catch (e) {}
+}
+
+// Clear Session from MongoDB on Logout
+async function clearMongoSession() {
+  if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
+  try {
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(config.SESSION_ID);
+    }
+    await SessionModel.deleteOne({ _id: 'sachiyamd_creds' });
+    console.log("🗑️ MongoDB session cleared due to logout.");
+  } catch (e) {}
+}
+
+// 🛡️ Ultimate Console Cleaner to suppress decryption errors
 const originalConsoleError = console.error;
 const originalConsoleLog = console.log;
 
@@ -54,7 +115,8 @@ console.log = function (...args) {
     logText.includes('SessionEntry') ||
     logText.includes('Closing session') ||
     logText.includes('Decrypted message') ||
-    logText.includes('rootKey')
+    logText.includes('rootKey') ||
+    logText.includes('creds.json successfully synced')
   ) {
     return;
   }
@@ -64,14 +126,8 @@ console.log = function (...args) {
 const handleSilentErrors = (err) => {
   if (!err) return true;
   const msg = err.message || err.toString() || "";
-  if (
-    msg.includes('Failed to decrypt') || 
-    msg.includes('Bad MAC') || 
-    msg.includes('No sessions') || 
-    msg.includes('libsignal') || 
-    msg.includes('JSON')
-  ) {
-    return;
+  if (msg.includes('Failed to decrypt') || msg.includes('Bad MAC') || msg.includes('No sessions') || msg.includes('libsignal') || msg.includes('JSON')) {
+    return true;
   }
   return false;
 };
@@ -109,13 +165,16 @@ function loadPlugins() {
   }
 }
 
-// 2. WhatsApp Connection Logic (Pure Local Pairing Code Mode)
+// 2. WhatsApp Connection Logic with MongoDB Session Support
 async function connectToWA() {
   console.log("\n⏳ Connecting SACHIYA MD ✨...");
 
   if (!fs.existsSync(authFolder)) {
     fs.mkdirSync(authFolder, { recursive: true });
   }
+
+  // Load session from MongoDB Atlas first
+  await loadSessionFromMongo();
 
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestWaWebVersion();
@@ -166,7 +225,7 @@ async function connectToWA() {
       }, 10000);
     }
   } else {
-    console.log("⚡ Active Session Found in Local Storage! Connecting directly...");
+    console.log("⚡ Active Session Found! Connecting directly without Pairing Code...");
   }
 
   let isConnectedOnce = false;
@@ -179,7 +238,8 @@ async function connectToWA() {
 
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       if (statusCode === DisconnectReason.loggedOut) {
-        console.error("❌ Session logged out from WhatsApp! Clearing local session folder...");
+        console.error("❌ Session logged out from WhatsApp! Clearing MongoDB session...");
+        await clearMongoSession();
         if (fs.existsSync(authFolder)) {
           fs.rmSync(authFolder, { recursive: true, force: true });
         }
@@ -194,6 +254,9 @@ async function connectToWA() {
       console.log('\n╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮');
       console.log('┃ 🎉 SACHIYA MD CONNECTED SUCCESSFULLY!  ');
       console.log('╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n');
+
+      // Save session to MongoDB immediately after successful connection
+      await saveSessionToMongo();
 
       const ownerJid = ownerNumber[0] + "@s.whatsapp.net";
       const date = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' });
@@ -224,6 +287,7 @@ async function connectToWA() {
 
   sachiya.ev.on('creds.update', async () => {
     await saveCreds();
+    await saveSessionToMongo();
   });
 
   // Call Reject Handler
@@ -239,7 +303,7 @@ async function connectToWA() {
     }
   });
 
-  // ✉️ Direct Message Stream Handler (Fully active for all chats)
+  // ✉️ Direct Message Stream Handler (Active for all chats)
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
@@ -255,7 +319,7 @@ async function connectToWA() {
         msgType = getContentType(mek.message);
       } else if (msgType === 'viewOnceMessageV2') {
         mek.message = mek.message.viewOnceMessageV2.message;
-        msgType = getContentType(mek.message);
+        msgType === 'getContentType(mek.message)';
       }
 
       const m = sms(sachiya, mek);
@@ -318,7 +382,7 @@ loadPlugins();
 connectToWA();
 
 app.get("/", (req, res) => {
-  res.send("Hey, SACHIYA MD started successfully with Local Auth! ✅");
+  res.send("Hey, SACHIYA MD started successfully with MongoDB! ✅");
 });
 
 app.listen(port, () => console.log(`🚀 Server listening on http://localhost:${port}`));
