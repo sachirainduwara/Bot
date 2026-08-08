@@ -12,6 +12,9 @@ cmd({
 },
 async(sachiya, mek, m, { from, quoted, pushname, reply }) => {
     try {
+        // Fix for User Name
+        const userName = pushname || m.pushName || mek.pushName || 'User';
+
         // System Information
         const totalRam = (os.totalmem() / 1024 / 1024 / 1024).toFixed(2);
         const freeRam = (os.freemem() / 1024 / 1024 / 1024).toFixed(2);
@@ -19,7 +22,7 @@ async(sachiya, mek, m, { from, quoted, pushname, reply }) => {
 
         let aliveMsg = `*─── ｢ SACHIYA MD ALIVE ｣ ───*
 
-👋 *Hii,* _${pushname || 'User'}_
+👋 *Hii,* _${userName}_
 
 *🤖 BOT STATUS:*
 ▸ *Status:* Online ✅
@@ -42,7 +45,7 @@ async(sachiya, mek, m, { from, quoted, pushname, reply }) => {
 *────────────────────────*
 *Powered by SACHIYA-MD 💫*`;
 
-        // 1. Voice Note (Audio) එක Raw Link එක හරiti යැවීම
+        // 1. Voice Note (Audio) එක Raw Link එක හරහා යැවීම
         await sachiya.sendMessage(from, {
             audio: { url: 'https://github.com/sachirainduwara/Bot/raw/refs/heads/main/images/Welcome%20To%20SACHIYA%20MD.mp3' },
             mimetype: 'audio/mpeg',
