@@ -306,7 +306,7 @@ async function connectToWA() {
     }
   });
 
-  // ✉️ Universal Messages Upsert Handler (Fully open for both Inbox and Groups without type restrictions)
+  // ✉️ Unrestricted Live Messages Upsert Listener (Ensures permanent inbox & group connectivity)
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
@@ -337,7 +337,9 @@ async function connectToWA() {
       
       const body = rawBody ? String(rawBody) : '';
       const isCmd = body.startsWith(prefix);
-      const commandName = isCmd ? body.slice(prefix.length).trim().split(" ")[0].toLowerCase() : '';
+      if (!isCmd) return;
+
+      const commandName = body.slice(prefix.length).trim().split(" ")[0].toLowerCase();
       const args = body.trim().split(/ +/).slice(1);
       const q = args.join(' ');
 
@@ -360,18 +362,15 @@ async function connectToWA() {
 
       const reply = (text) => sachiya.sendMessage(from, { text }, { quoted: mek });
 
-      if (isCmd) {
-        const cmd = commands.find((c) => c.pattern === commandName || (c.alias && c.alias.includes(commandName)));
-        if (cmd) {
-          if (cmd.react) await sachiya.sendMessage(from, { react: { text: cmd.react, key: mek.key } }).catch(() => {});
-          try {
-            await cmd.function(sachiya, mek, m, {
-              from, quoted, body, isCmd, command: commandName, args, q, reply, isGroup, sender, senderNumber, isOwner
-            });
-          } catch (e) {
-            console.error("[PLUGIN ERROR]", e);
-          }
-          return;
+      const cmd = commands.find((c) => c.pattern === commandName || (c.alias && c.alias.includes(commandName)));
+      if (cmd) {
+        if (cmd.react) await sachiya.sendMessage(from, { react: { text: cmd.react, key: mek.key } }).catch(() => {});
+        try {
+          await cmd.function(sachiya, mek, m, {
+            from, quoted, body, isCmd, command: commandName, args, q, reply, isGroup, sender, senderNumber, isOwner
+          });
+        } catch (e) {
+          console.error("[PLUGIN ERROR]", e);
         }
       }
     } catch (err) {
