@@ -1,8 +1,7 @@
-
 # 💫 SACHIYA MD
 
 <p align="center">
-  <img src="https://github.com/sachirainduwara/Bot/blob/main/media/SACHIYA%20MD.png?raw=true" alt="SACHIYA MD" width="300">
+  <img src="https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true" alt="SACHIYA MD" width="300">
 </p>
 
 <p align="center">
