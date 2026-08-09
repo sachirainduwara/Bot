@@ -1,0 +1,40 @@
+{
+  "name": "SACHIYA-MINI-BOT",
+  "version": "1.0.0",
+  "description": "A Powerful Whatsapp Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "pm2-start": "pm2 start index.js --deep-monitoring --attach --name SACHIYA-MINI-BOT",
+    "stop": "pm2 stop SACHIYA-MINI-BOT",
+    "restart": "pm2 restart SACHIYA-MINI-BOT"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "@xaviabot/fb-downloader": "^1.0.14",
+    "@distube/ytdl-core": "^4.16.12",
+    "sadaslk-dlcore": "latest",
+    "yt-search": "^2.13.1",
+    "api-dylux": "^1.8.5",
+    "axios": "^1.19.0",
+    "browser-id3-writer": "^6.4.0",
+    "cheerio": "^1.2.0",
+    "express": "^5.2.1",
+    "ffmpeg": "^0.0.4",
+    "ffmpeg-static": "^5.3.0",
+    "file_size_url": "^1.0.6",
+    "fluent-ffmpeg": "^2.1.2",
+    "fs-extra": "^11.4.0",
+    "mongoose": "^8.0.0",
+    "node-fetch": "^3.3.2",
+    "node-id3": "^0.2.9",
+    "node-webpmux": "^3.2.1",
+    "path": "^0.12.7",
+    "pino": "^10.3.1",
+    "playwright": "^1.62.1",
+    "pm2": "^7.0.3",
+    "punycode": "^2.3.1",
+    "qrcode-terminal": "^0.12.0",
+    "tmp": "^0.2.7"
+  }
+}
