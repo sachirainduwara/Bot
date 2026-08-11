@@ -26,7 +26,7 @@ function saveAntideleteConfig(config) {
     } catch (err) {}
 }
 
-// Store incoming messages
+// Store incoming messages (Supports Photos, Videos, Audios, Stickers & Text)
 async function storeMessage(sock, message) {
     try {
         const config = loadAntideleteConfig();
@@ -47,23 +47,39 @@ async function storeMessage(sock, message) {
         } else if (message.message?.imageMessage) {
             mediaType = 'image';
             content = message.message.imageMessage.caption || '';
-            const buffer = await downloadContentFromMessage(message.message.imageMessage, 'image');
+            const stream = await downloadContentFromMessage(message.message.imageMessage, 'image');
+            let buffer = Buffer.from([]);
+            for await (const chunk of stream) {
+                buffer = Buffer.concat([buffer, chunk]);
+            }
             mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.jpg`);
             await writeFile(mediaPath, buffer);
         } else if (message.message?.videoMessage) {
             mediaType = 'video';
             content = message.message.videoMessage.caption || '';
-            const buffer = await downloadContentFromMessage(message.message.videoMessage, 'video');
+            const stream = await downloadContentFromMessage(message.message.videoMessage, 'video');
+            let buffer = Buffer.from([]);
+            for await (const chunk of stream) {
+                buffer = Buffer.concat([buffer, chunk]);
+            }
             mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.mp4`);
             await writeFile(mediaPath, buffer);
         } else if (message.message?.audioMessage) {
             mediaType = 'audio';
-            const buffer = await downloadContentFromMessage(message.message.audioMessage, 'audio');
+            const stream = await downloadContentFromMessage(message.message.audioMessage, 'audio');
+            let buffer = Buffer.from([]);
+            for await (const chunk of stream) {
+                buffer = Buffer.concat([buffer, chunk]);
+            }
             mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.mp3`);
             await writeFile(mediaPath, buffer);
         } else if (message.message?.stickerMessage) {
             mediaType = 'sticker';
-            const buffer = await downloadContentFromMessage(message.message.stickerMessage, 'sticker');
+            const stream = await downloadContentFromMessage(message.message.stickerMessage, 'sticker');
+            let buffer = Buffer.from([]);
+            for await (const chunk of stream) {
+                buffer = Buffer.concat([buffer, chunk]);
+            }
             mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.webp`);
             await writeFile(mediaPath, buffer);
         }
@@ -82,7 +98,7 @@ async function storeMessage(sock, message) {
     }
 }
 
-// Handle message deletion
+// Handle message deletion (Antidelete)
 async function handleMessageRevocation(sock, revocationMessage) {
     try {
         const config = loadAntideleteConfig();
@@ -110,11 +126,12 @@ async function handleMessageRevocation(sock, revocationMessage) {
             day: '2-digit', month: '2-digit', year: 'numeric'
         });
 
+        // Send Text Report
         let text = `╭━━━〔 *🗑️ SACHIYA-MD ANTIDELETE* 〕━━━\n` +
                    `┃\n` +
                    `┃ ❌ *Deleted By:* @${deleterName}\n` +
                    `┃ 👤 *Sender:* @${senderName}\n` +
-                   `┃ 🕒 *Time:* ${time}\n` +
+                   `┃ 🕒 *Time & Date:* ${time}\n` +
                    `┃\n`;
 
         if (original.content) {
@@ -131,25 +148,43 @@ async function handleMessageRevocation(sock, revocationMessage) {
             mentions: [deletedBy, sender]
         });
 
+        // Send Media (Photos, Videos, Audios, Stickers) Separately with Clean Captions
         if (original.mediaType && fs.existsSync(original.mediaPath)) {
             const mediaCaption = `╭━━━〔 *📁 DELETED ${original.mediaType.toUpperCase()}* 〕━━━\n` +
                                  `┃\n` +
                                  `┃ 👤 *Sender:* @${senderName}\n` +
+                                 `┃ 🕒 *Time:* ${time}\n` +
                                  `┃\n` +
                                  `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                                  `> *⚡ Powered by SACHIYA-MD 💫*`;
 
             try {
                 if (original.mediaType === 'image') {
-                    await sock.sendMessage(remoteJid, { image: { url: original.mediaPath }, caption: mediaCaption, mentions: [sender] });
+                    await sock.sendMessage(remoteJid, { 
+                        image: { url: original.mediaPath }, 
+                        caption: mediaCaption, 
+                        mentions: [sender] 
+                    });
                 } else if (original.mediaType === 'video') {
-                    await sock.sendMessage(remoteJid, { video: { url: original.mediaPath }, caption: mediaCaption, mentions: [sender] });
+                    await sock.sendMessage(remoteJid, { 
+                        video: { url: original.mediaPath }, 
+                        caption: mediaCaption, 
+                        mentions: [sender] 
+                    });
                 } else if (original.mediaType === 'audio') {
-                    await sock.sendMessage(remoteJid, { audio: { url: original.mediaPath }, mimetype: 'audio/mpeg', ptt: false });
+                    await sock.sendMessage(remoteJid, { 
+                        audio: { url: original.mediaPath }, 
+                        mimetype: 'audio/mpeg', 
+                        ptt: false 
+                    });
                 } else if (original.mediaType === 'sticker') {
-                    await sock.sendMessage(remoteJid, { sticker: { url: original.mediaPath } });
+                    await sock.sendMessage(remoteJid, { 
+                        sticker: { url: original.mediaPath } 
+                    });
                 }
-            } catch (err) {}
+            } catch (err) {
+                console.error('Media send error:', err);
+            }
 
             try { fs.unlinkSync(original.mediaPath); } catch {}
         }
@@ -161,7 +196,7 @@ async function handleMessageRevocation(sock, revocationMessage) {
     }
 }
 
-// Command handler
+// Command handler (.antidelete on/off)
 const { commands } = require('../command');
 commands.push({
     pattern: 'antidelete',
