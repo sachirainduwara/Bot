@@ -53,7 +53,7 @@ async function saveAntideleteConfig(isEnabled) {
     } catch (e) {}
 }
 
-// Store incoming messages
+// Store incoming messages safely without empty media key crashes
 async function storeMessage(sock, message) {
     try {
         const cfg = await loadAntideleteConfig();
@@ -71,44 +71,54 @@ async function storeMessage(sock, message) {
             content = message.message.conversation;
         } else if (message.message?.extendedTextMessage?.text) {
             content = message.message.extendedTextMessage.text;
-        } else if (message.message?.imageMessage) {
+        } else if (message.message?.imageMessage && message.message.imageMessage.mediaKey) {
             mediaType = 'image';
             content = message.message.imageMessage.caption || '';
-            const stream = await downloadContentFromMessage(message.message.imageMessage, 'image');
-            let buffer = Buffer.from([]);
-            for await (const chunk of stream) {
-                buffer = Buffer.concat([buffer, chunk]);
+            try {
+                const stream = await downloadContentFromMessage(message.message.imageMessage, 'image');
+                let buffer = Buffer.from([]);
+                for await (const chunk of stream) {
+                    buffer = Buffer.concat([buffer, chunk]);
+                }
+                mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.jpg`);
+                await writeFile(mediaPath, buffer);
+            } catch (mediaErr) {
+                // Ignore media download failure silently to prevent crash
             }
-            mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.jpg`);
-            await writeFile(mediaPath, buffer);
-        } else if (message.message?.videoMessage) {
+        } else if (message.message?.videoMessage && message.message.videoMessage.mediaKey) {
             mediaType = 'video';
             content = message.message.videoMessage.caption || '';
-            const stream = await downloadContentFromMessage(message.message.videoMessage, 'video');
-            let buffer = Buffer.from([]);
-            for await (const chunk of stream) {
-                buffer = Buffer.concat([buffer, chunk]);
-            }
-            mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.mp4`);
-            await writeFile(mediaPath, buffer);
-        } else if (message.message?.audioMessage) {
+            try {
+                const stream = await downloadContentFromMessage(message.message.videoMessage, 'video');
+                let buffer = Buffer.from([]);
+                for await (const chunk of stream) {
+                    buffer = Buffer.concat([buffer, chunk]);
+                }
+                mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.mp4`);
+                await writeFile(mediaPath, buffer);
+            } catch (mediaErr) {}
+        } else if (message.message?.audioMessage && message.message.audioMessage.mediaKey) {
             mediaType = 'audio';
-            const stream = await downloadContentFromMessage(message.message.audioMessage, 'audio');
-            let buffer = Buffer.from([]);
-            for await (const chunk of stream) {
-                buffer = Buffer.concat([buffer, chunk]);
-            }
-            mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.mp3`);
-            await writeFile(mediaPath, buffer);
-        } else if (message.message?.stickerMessage) {
+            try {
+                const stream = await downloadContentFromMessage(message.message.audioMessage, 'audio');
+                let buffer = Buffer.from([]);
+                for await (const chunk of stream) {
+                    buffer = Buffer.concat([buffer, chunk]);
+                }
+                mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.mp3`);
+                await writeFile(mediaPath, buffer);
+            } catch (mediaErr) {}
+        } else if (message.message?.stickerMessage && message.message.stickerMessage.mediaKey) {
             mediaType = 'sticker';
-            const stream = await downloadContentFromMessage(message.message.stickerMessage, 'sticker');
-            let buffer = Buffer.from([]);
-            for await (const chunk of stream) {
-                buffer = Buffer.concat([buffer, chunk]);
-            }
-            mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.webp`);
-            await writeFile(mediaPath, buffer);
+            try {
+                const stream = await downloadContentFromMessage(message.message.stickerMessage, 'sticker');
+                let buffer = Buffer.from([]);
+                for await (const chunk of stream) {
+                    buffer = Buffer.concat([buffer, chunk]);
+                }
+                mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.webp`);
+                await writeFile(mediaPath, buffer);
+            } catch (mediaErr) {}
         }
 
         messageStore.set(messageId, {
@@ -121,7 +131,7 @@ async function storeMessage(sock, message) {
         });
 
     } catch (err) {
-        console.error('storeMessage error:', err);
+        // Silently catch any store message errors to prevent console spam
     }
 }
 
@@ -194,7 +204,7 @@ async function handleMessageRevocation(sock, revocationMessage) {
         let mentionsArray = [sender];
         if (isAdminDelete) mentionsArray.push(deletedBy);
 
-        if (original.mediaType && fs.existsSync(original.mediaPath)) {
+        if (original.mediaType && original.mediaPath && fs.existsSync(original.mediaPath)) {
             try {
                 if (original.mediaType === 'image') {
                     await sock.sendMessage(remoteJid, { 
@@ -221,9 +231,7 @@ async function handleMessageRevocation(sock, revocationMessage) {
                         sticker: { url: original.mediaPath } 
                     });
                 }
-            } catch (err) {
-                console.error('Media send error:', err);
-            }
+            } catch (err) {}
 
             try { fs.unlinkSync(original.mediaPath); } catch {}
         } else {
@@ -235,9 +243,7 @@ async function handleMessageRevocation(sock, revocationMessage) {
 
         messageStore.delete(messageId);
 
-    } catch (err) {
-        console.error('handleMessageRevocation error:', err);
-    }
+    } catch (err) {}
 }
 
 // Command handler (.antidelete on/off)
