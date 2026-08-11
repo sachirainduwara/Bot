@@ -86,7 +86,7 @@ async function clearMongoSession() {
   } catch (e) {}
 }
 
-// 🛡️ Ultimate Console Cleaner to suppress decryption errors
+// 🛡️ Ultimate Console Cleaner to suppress decryption and session errors
 const originalConsoleError = console.error;
 const originalConsoleLog = console.log;
 
@@ -102,7 +102,11 @@ console.error = function (...args) {
     logText.includes('Decrypted message') ||
     logText.includes('libsignal') ||
     logText.includes('Unexpected end of JSON') ||
-    logText.includes('prekey bundle')
+    logText.includes('prekey bundle') ||
+    logText.includes('_chains') ||
+    logText.includes('currentRatchet') ||
+    logText.includes('indexInfo') ||
+    logText.includes('pendingPreKey')
   ) {
     return;
   }
@@ -116,7 +120,11 @@ console.log = function (...args) {
     logText.includes('Closing session') ||
     logText.includes('Decrypted message') ||
     logText.includes('rootKey') ||
-    logText.includes('creds.json successfully synced')
+    logText.includes('creds.json successfully synced') ||
+    logText.includes('_chains') ||
+    logText.includes('currentRatchet') ||
+    logText.includes('indexInfo') ||
+    logText.includes('pendingPreKey')
   ) {
     return;
   }
