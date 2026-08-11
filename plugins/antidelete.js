@@ -26,7 +26,7 @@ function saveAntideleteConfig(config) {
     } catch (err) {}
 }
 
-// Store incoming messages (Supports Photos, Videos, Audios, Stickers & Text)
+// Store incoming messages
 async function storeMessage(sock, message) {
     try {
         const config = loadAntideleteConfig();
@@ -120,19 +120,43 @@ async function handleMessageRevocation(sock, revocationMessage) {
         const senderName = sender.split('@')[0];
         const deleterName = deletedBy.split('@')[0];
 
-        const time = new Date().toLocaleString('en-US', {
+        // Check if it's a group and if the deleter is an admin deleting someone else's message
+        let isAdminDelete = false;
+        let groupAdmins = [];
+        if (remoteJid.endsWith('@g.us')) {
+            try {
+                const groupMetadata = await sock.groupMetadata(remoteJid);
+                groupAdmins = groupMetadata.participants
+                    .filter(p => p.admin === 'admin' || p.admin === 'superadmin')
+                    .map(p => p.id);
+                
+                // If deleter is admin and sender is different from deleter
+                if (groupAdmins.includes(deletedBy) && sender !== deletedBy) {
+                    isAdminDelete = true;
+                }
+            } catch (e) {}
+        }
+
+        const timeString = new Date().toLocaleString('en-US', {
             timeZone: 'Asia/Colombo',
-            hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit',
-            day: '2-digit', month: '2-digit', year: 'numeric'
+            hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+        const dateString = new Date().toLocaleDateString('en-GB', {
+            timeZone: 'Asia/Colombo'
         });
 
-        // Send Text Report
+        // Construct report text cleanly
         let text = `╭━━━〔 *🗑️ SACHIYA-MD ANTIDELETE* 〕━━━\n` +
                    `┃\n` +
-                   `┃ ❌ *Deleted By:* @${deleterName}\n` +
-                   `┃ 👤 *Sender:* @${senderName}\n` +
-                   `┃ 🕒 *Time & Date:* ${time}\n` +
-                   `┃\n`;
+                   `┃ 👤 *Sender:* @${senderName}\n`;
+
+        if (isAdminDelete) {
+            text += `┃ 🛡️ *Deleted By (Admin):* @${deleterName}\n`;
+        }
+
+        text += `┃ ⏰ *Time:* ${timeString}\n` +
+                `┃ 📅 *Date:* ${dateString}\n` +
+                `┃\n`;
 
         if (original.content) {
             text += `┣ *💬 Deleted Message:*\n` +
@@ -143,41 +167,34 @@ async function handleMessageRevocation(sock, revocationMessage) {
         text += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                 `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-        await sock.sendMessage(remoteJid, {
-            text,
-            mentions: [deletedBy, sender]
-        });
+        let mentionsArray = [sender];
+        if (isAdminDelete) mentionsArray.push(deletedBy);
 
-        // Send Media (Photos, Videos, Audios, Stickers) Separately with Clean Captions
+        // If Media exists, send it with the caption together (No double messages)
         if (original.mediaType && fs.existsSync(original.mediaPath)) {
-            const mediaCaption = `╭━━━〔 *📁 DELETED ${original.mediaType.toUpperCase()}* 〕━━━\n` +
-                                 `┃\n` +
-                                 `┃ 👤 *Sender:* @${senderName}\n` +
-                                 `┃ 🕒 *Time:* ${time}\n` +
-                                 `┃\n` +
-                                 `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                                 `> *⚡ Powered by SACHIYA-MD 💫*`;
-
             try {
                 if (original.mediaType === 'image') {
                     await sock.sendMessage(remoteJid, { 
                         image: { url: original.mediaPath }, 
-                        caption: mediaCaption, 
-                        mentions: [sender] 
+                        caption: text, 
+                        mentions: mentionsArray 
                     });
                 } else if (original.mediaType === 'video') {
                     await sock.sendMessage(remoteJid, { 
                         video: { url: original.mediaPath }, 
-                        caption: mediaCaption, 
-                        mentions: [sender] 
+                        caption: text, 
+                        mentions: mentionsArray 
                     });
                 } else if (original.mediaType === 'audio') {
+                    // Audio and stickers don't support large captions nicely, so send text first then audio/sticker
+                    await sock.sendMessage(remoteJid, { text, mentions: mentionsArray });
                     await sock.sendMessage(remoteJid, { 
                         audio: { url: original.mediaPath }, 
                         mimetype: 'audio/mpeg', 
                         ptt: false 
                     });
                 } else if (original.mediaType === 'sticker') {
+                    await sock.sendMessage(remoteJid, { text, mentions: mentionsArray });
                     await sock.sendMessage(remoteJid, { 
                         sticker: { url: original.mediaPath } 
                     });
@@ -187,6 +204,12 @@ async function handleMessageRevocation(sock, revocationMessage) {
             }
 
             try { fs.unlinkSync(original.mediaPath); } catch {}
+        } else {
+            // Only text message deleted
+            await sock.sendMessage(remoteJid, {
+                text,
+                mentions: mentionsArray
+            });
         }
 
         messageStore.delete(messageId);
