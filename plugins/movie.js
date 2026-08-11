@@ -3,29 +3,31 @@ const axios = require('axios');
 
 const movieSessions = new Map();
 
-// Search movies using a reliable public movie database API
-async function searchMoviesApi(query) {
+// Search and get details via Zanta Mini API
+async function searchSinhalasubApi(query) {
     try {
-        const url = `https://api.themoviedb.org/3/search/movie?api_key=2d61a711e9a2fa562ab2b6b6e8284e3d&query=${encodeURIComponent(query)}`;
-        const res = await axios.get(url);
-        const results = res.data.results;
+        const searchUrl = `https://api.zanta-mini.store/api/sinhalasub/search?apiKey=zanta_WdA26szT535TnL0TeeL0g6o9&text=${encodeURIComponent(query)}`;
+        const res = await axios.get(searchUrl);
         
-        let movies = [];
-        if (results && results.length > 0) {
-            results.slice(0, 5).forEach(movie => {
-                const year = movie.release_date ? movie.release_date.split('-')[0] : '';
-                movies.push({
-                    title: `${movie.title} ${year ? '(' + year + ')' : ''}`,
-                    overview: movie.overview || 'No description available.',
-                    rating: movie.vote_average || 'N/A',
-                    img: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : 'https://i.imgur.com/Jo9x02a.jpeg',
-                    releaseDate: movie.release_date || 'Unknown'
-                });
-            });
+        // Check API response structure (array or data object)
+        const results = res.data.result || res.data.data || res.data;
+        if (Array.isArray(results) && results.length > 0) {
+            return results.slice(0, 5); // Top 5 results
         }
-        return movies;
+        return [];
     } catch (e) {
         return [];
+    }
+}
+
+// Get specific movie details/links using the API
+async function getMovieDetailsApi(movieLink) {
+    try {
+        const dlUrl = `https://api.zanta-mini.store/api/sinhalasub/dl?apiKey=zanta_WdA26szT535TnL0TeeL0g6o9&text=${encodeURIComponent(movieLink)}`;
+        const res = await axios.get(dlUrl);
+        return res.data.result || res.data.data || res.data;
+    } catch (e) {
+        return null;
     }
 }
 
@@ -33,7 +35,7 @@ async function searchMoviesApi(query) {
 commands.push({
     pattern: 'movie',
     alias: ['film', 'sinhalasub'],
-    desc: 'Search movies and details',
+    desc: 'Search movies with Sinhala subtitles using Zanta API',
     category: 'download',
     react: '🎬',
     function: async (sock, mek, m, { q, reply, from }) => {
@@ -41,24 +43,25 @@ commands.push({
             return reply('⚠️ *භාවිතා කරන ආකාරය: .movie <film name> (උදා: .movie Avatar)*');
         }
 
-        await reply('🔍 *චිත්‍රපටය දත්ත පද්ධතියෙන් සොයමින් පවතී, කරුණාකර මොහොතක් රැඳී සිටින්න...*');
-        const movies = await searchMoviesApi(q);
+        await reply('🔍 *චිත්‍රපටය සිංහල සබ් API එකෙන් සොයමින් පවතී, කරුණාකර මොහොතක් රැඳී සිටින්න...*');
+        const movies = await searchSinhalasubApi(q);
 
         if (!movies || movies.length === 0) {
-            return reply('⚠️ *අදාළ නමින් චිත්‍රපටයක් හමු නොවීය! කරුණාකර නම නිවැරදිව පරීක්ෂා කර නැවත උත්සාහ කරන්න.*');
+            return reply('⚠️ *අදාළ නමින් සිංහල උපසිරැසි සහිත චිත්‍රපටයක් හමු නොවීය! කරුණාකර නම නිවැරදිව ලියා නැවත උත්සාහ කරන්න.*');
         }
 
-        let txt = `╭━━━〔 *🎬 MOVIE SEARCH RESULTS* 〕━━━\n` +
+        let txt = `╭━━━〔 *🎬 SINHALA SUB MOVIES* 〕━━━\n` +
                   `┃\n` +
                   `┃ *පහත දැක්වෙන චිත්‍රපට හමු විය:*\n` +
                   `┃\n`;
 
         movies.forEach((movie, index) => {
-            txt += `┃ *[ ${index + 1} ]* ${movie.title}\n`;
+            const title = movie.title || movie.name || 'Unknown Movie';
+            txt += `┃ *[ ${index + 1} ]* ${title}\n`;
         });
 
         txt += `┃\n` +
-               `┃ 📌 *විස්තර සහ ඩවුන්ලෝඩ් ලින්ක් බැලීමට අවශ්‍ය චිත්‍රපටයේ අංකය (1, 2, 3...) පමණක් මෙම චැට් එකට එවන්න!*\n` +
+               `┃ 📌 *අවශ්‍ය චිත්‍රපටයේ අංකය (1, 2, 3...) පමණක් මෙම චැට් එකට එවන්න!*\n` +
                `┃\n` +
                `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                `> *⚡ Powered by SACHIYA-MD 💫*`;
@@ -68,16 +71,15 @@ commands.push({
     }
 });
 
-// 2. Handle Number Selection (Listener for selection)
+// 2. Message Interceptor for Number Selection (Handles user input 1, 2, 3...)
 const { commands: globalCmds } = require('../command');
 globalCmds.push({
-    pattern: 'handle_movie_number',
+    pattern: 'handle_movie_number_api',
     dontAddCommandList: true,
     function: async () => {}
 });
 
-// Message listener hook to handle number input when user sends 1, 2, 3...
-const originalUpsertHandler = global.handleMovieSelection || null;
+// Global hook to process number selections seamlessly
 global.handleMovieSelection = async (sock, mek, from, body) => {
     const session = movieSessions.get(from);
     if (!session || session.step !== 'SELECT_MOVIE') return false;
@@ -90,20 +92,27 @@ global.handleMovieSelection = async (sock, mek, from, body) => {
     const selectedMovie = session.movies[choice - 1];
     movieSessions.delete(from);
 
+    await sock.sendMessage(from, { text: '⏳ *චිත්‍රපටයේ විස්තර සහ දත්ත ලබාගනිමින් පවතී...*' }, { quoted: mek });
+
+    const movieLink = selectedMovie.link || selectedMovie.url;
+    const details = movieLink ? await getMovieDetailsApi(movieLink) : selectedMovie;
+
+    const title = details?.title || selectedMovie.title || 'Sinhala Sub Movie';
+    const image = details?.image || details?.img || selectedMovie.image || selectedMovie.img || 'https://i.imgur.com/Jo9x02a.jpeg';
+    const description = details?.description || details?.desc || selectedMovie.description || 'සිංහල උපසිරැසි සමඟ නරඹන්න.';
+
     const msg = `╭━━━〔 *🎬 MOVIE DETAILS* 〕━━━\n` +
                 `┃\n` +
-                `┃ 📌 *Title:* ${selectedMovie.title}\n` +
-                `┃ 📅 *Release Date:* ${selectedMovie.releaseDate}\n` +
-                `┃ ⭐ *Rating:* ${selectedMovie.rating} / 10\n` +
+                `┃ 📌 *Title:* ${title}\n` +
                 `┃\n` +
                 `┃ 📝 *Description:*\n` +
-                `┃ ${selectedMovie.overview}\n` +
+                `┃ ${description.substring(0, 300)}...\n` +
                 `┃\n` +
                 `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                 `> *⚡ Powered by SACHIYA-MD 💫*`;
 
     await sock.sendMessage(from, { 
-        image: { url: selectedMovie.img }, 
+        image: { url: image }, 
         caption: msg 
     }, { quoted: mek });
 
