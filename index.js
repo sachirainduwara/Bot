@@ -109,7 +109,11 @@ console.error = function (...args) {
     logText.includes('_chains') ||
     logText.includes('currentRatchet') ||
     logText.includes('indexInfo') ||
-    logText.includes('pendingPreKey')
+    logText.includes('pendingPreKey') ||
+    logText.includes('registrationId') ||
+    logText.includes('ephemeralKeyPair') ||
+    logText.includes('privKey') ||
+    logText.includes('remoteIdentityKey')
   ) {
     return;
   }
@@ -127,7 +131,11 @@ console.log = function (...args) {
     logText.includes('_chains') ||
     logText.includes('currentRatchet') ||
     logText.includes('indexInfo') ||
-    logText.includes('pendingPreKey')
+    logText.includes('pendingPreKey') ||
+    logText.includes('registrationId') ||
+    logText.includes('ephemeralKeyPair') ||
+    logText.includes('privKey') ||
+    logText.includes('remoteIdentityKey')
   ) {
     return;
   }
