@@ -99,12 +99,73 @@ async function clearMongoSession() {
   }
 }
 
-// Global Uncaught Exception and Rejection Handlers to print real errors to console
+// 🛡️ Ultimate Console Cleaner to suppress decryption, sync, and session error spam
+const originalConsoleError = console.error;
+const originalConsoleLog = console.log;
+
+console.error = function (...args) {
+  const logText = args.join(' ');
+  if (
+    logText.includes('Failed to decrypt message') ||
+    logText.includes('Bad MAC') ||
+    logText.includes('No sessions') ||
+    logText.includes('closing connection') ||
+    logText.includes('Closing session') ||
+    logText.includes('SessionEntry') ||
+    logText.includes('Decrypted message') ||
+    logText.includes('libsignal') ||
+    logText.includes('Unexpected end of JSON') ||
+    logText.includes('prekey bundle') ||
+    logText.includes('_chains') ||
+    logText.includes('currentRatchet') ||
+    logText.includes('indexInfo') ||
+    logText.includes('pendingPreKey') ||
+    logText.includes('registrationId') ||
+    logText.includes('ephemeralKeyPair') ||
+    logText.includes('privKey') ||
+    logText.includes('remoteIdentityKey') ||
+    logText.includes('Syncing messages')
+  ) {
+    return;
+  }
+  originalConsoleError.apply(console, args);
+};
+
+console.log = function (...args) {
+  const logText = args.join(' ');
+  if (
+    logText.includes('SessionEntry') ||
+    logText.includes('Closing session') ||
+    logText.includes('Decrypted message') ||
+    logText.includes('rootKey') ||
+    logText.includes('creds.json successfully synced') ||
+    logText.includes('_chains') ||
+    logText.includes('currentRatchet') ||
+    logText.includes('indexInfo') ||
+    logText.includes('pendingPreKey') ||
+    logText.includes('Syncing messages')
+  ) {
+    return;
+  }
+  originalConsoleLog.apply(console, args);
+};
+
+const handleSilentErrors = (err) => {
+  if (!err) return true;
+  const msg = err.message || err.toString() || "";
+  if (msg.includes('Failed to decrypt') || msg.includes('Bad MAC') || msg.includes('No sessions') || msg.includes('libsignal') || msg.includes('JSON')) {
+    return true;
+  }
+  return false;
+};
+
 process.on('uncaughtException', (err) => {
+  if (handleSilentErrors(err)) return;
   console.error('🔥 Uncaught Exception:', err);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
+  if (handleSilentErrors(reason)) return;
   console.error('🔥 Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
@@ -347,7 +408,9 @@ async function connectToWA() {
         }
       }
     } catch (err) {
-      console.error("❌ Message Upsert Error:", err);
+      if (!handleSilentErrors(err)) {
+        console.error("❌ Message Upsert Error:", err);
+      }
     }
   });
 }
