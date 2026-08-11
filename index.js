@@ -14,6 +14,7 @@ const P = require('pino');
 const express = require('express');
 const path = require('path');
 const mongoose = require('mongoose');
+const http = require('http');
 
 const config = require('./config');
 const { sms } = require('./lib/msg');
@@ -24,6 +25,9 @@ const { storeMessage, handleMessageRevocation } = require('./plugins/antidelete'
 
 const app = express();
 const port = process.env.PORT || 8000;
+
+// Create HTTP server to keep workflow alive and responsive
+const server = http.createServer(app);
 
 const prefix = config.PREFIX || '.';
 const ownerNumber = [config.OWNER_NUM || '94760579211'];
@@ -51,7 +55,9 @@ async function loadSessionFromMongo() {
       fs.writeFileSync(path.join(authFolder, 'creds.json'), JSON.stringify(sessionDoc.data, null, 2));
       console.log("✅ Session loaded successfully from MongoDB Atlas!");
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error("❌ MongoDB Session Load Error:", e);
+  }
 }
 
 // Save Session to MongoDB Atlas safely
@@ -74,7 +80,9 @@ async function saveSessionToMongo() {
       { data: credsData },
       { upsert: true, new: true }
     );
-  } catch (e) {}
+  } catch (e) {
+    console.error("❌ MongoDB Session Save Error:", e);
+  }
 }
 
 // Clear Session from MongoDB on Logout
@@ -86,79 +94,18 @@ async function clearMongoSession() {
     }
     await SessionModel.deleteOne({ _id: 'sachiyamd_creds' });
     console.log("🗑️ MongoDB session cleared due to logout.");
-  } catch (e) {}
+  } catch (e) {
+    console.error("❌ MongoDB Session Clear Error:", e);
+  }
 }
 
-// 🛡️ Ultimate Console Cleaner to suppress decryption and session errors
-const originalConsoleError = console.error;
-const originalConsoleLog = console.log;
-
-console.error = function (...args) {
-  const logText = args.join(' ');
-  if (
-    logText.includes('Failed to decrypt message') ||
-    logText.includes('Bad MAC') ||
-    logText.includes('No sessions') ||
-    logText.includes('closing connection') ||
-    logText.includes('Closing session') ||
-    logText.includes('SessionEntry') ||
-    logText.includes('Decrypted message') ||
-    logText.includes('libsignal') ||
-    logText.includes('Unexpected end of JSON') ||
-    logText.includes('prekey bundle') ||
-    logText.includes('_chains') ||
-    logText.includes('currentRatchet') ||
-    logText.includes('indexInfo') ||
-    logText.includes('pendingPreKey') ||
-    logText.includes('registrationId') ||
-    logText.includes('ephemeralKeyPair') ||
-    logText.includes('privKey') ||
-    logText.includes('remoteIdentityKey')
-  ) {
-    return;
-  }
-  originalConsoleError.apply(console, args);
-};
-
-console.log = function (...args) {
-  const logText = args.join(' ');
-  if (
-    logText.includes('SessionEntry') ||
-    logText.includes('Closing session') ||
-    logText.includes('Decrypted message') ||
-    logText.includes('rootKey') ||
-    logText.includes('creds.json successfully synced') ||
-    logText.includes('_chains') ||
-    logText.includes('currentRatchet') ||
-    logText.includes('indexInfo') ||
-    logText.includes('pendingPreKey') ||
-    logText.includes('registrationId') ||
-    logText.includes('ephemeralKeyPair') ||
-    logText.includes('privKey') ||
-    logText.includes('remoteIdentityKey')
-  ) {
-    return;
-  }
-  originalConsoleLog.apply(console, args);
-};
-
-const handleSilentErrors = (err) => {
-  if (!err) return true;
-  const msg = err.message || err.toString() || "";
-  if (msg.includes('Failed to decrypt') || msg.includes('Bad MAC') || msg.includes('No sessions') || msg.includes('libsignal') || msg.includes('JSON')) {
-    return true;
-  }
-  return false;
-};
-
+// Global Uncaught Exception and Rejection Handlers to print real errors to console
 process.on('uncaughtException', (err) => {
-  if (handleSilentErrors(err)) return;
-  console.error('Uncaught Exception:', err);
+  console.error('🔥 Uncaught Exception:', err);
 });
 
-process.on('unhandledRejection', (err) => {
-  if (handleSilentErrors(err)) return;
-  console.error('Unhandled Rejection:', err);
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🔥 Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
 // 1. Load Plugins Safely
@@ -198,7 +145,7 @@ async function connectToWA() {
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestWaWebVersion();
   
-  const logger = P({ level: 'fatal' });
+  const logger = P({ level: 'silent' });
 
   const sachiya = makeWASocket({
     logger,
@@ -264,6 +211,7 @@ async function connectToWA() {
         }
         process.exit(1);
       } else {
+        console.log("⚠️ Connection closed, reconnecting in 3 seconds...");
         setTimeout(() => connectToWA(), 3000);
       }
     } else if (connection === 'open') {
@@ -399,9 +347,7 @@ async function connectToWA() {
         }
       }
     } catch (err) {
-      if (!handleSilentErrors(err)) {
-        console.error("Message Upsert Error:", err);
-      }
+      console.error("❌ Message Upsert Error:", err);
     }
   });
 }
@@ -413,4 +359,9 @@ app.get("/", (req, res) => {
   res.send("Hey, SACHIYA MD started successfully with MongoDB! ✅");
 });
 
-app.listen(port, () => console.log(`🚀 Server listening on http://localhost:${port}`));
+// Self-ping interval to keep GitHub workflow network alive longer
+setInterval(() => {
+  http.get(`http://localhost:${port}/`, () => {}).on('error', () => {});
+}, 30000);
+
+server.listen(port, () => console.log(`🚀 Server listening on http://localhost:${port}`));
