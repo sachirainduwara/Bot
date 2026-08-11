@@ -2,35 +2,62 @@ const fs = require('fs');
 const path = require('path');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 const { writeFile } = require('fs/promises');
+const mongoose = require('mongoose');
+const config = require('../config');
 
 const messageStore = new Map();
-const CONFIG_PATH = path.join(__dirname, '../data_antidelete.json');
 const TEMP_MEDIA_DIR = path.join(__dirname, '../tmp');
 
 if (!fs.existsSync(TEMP_MEDIA_DIR)) {
     fs.mkdirSync(TEMP_MEDIA_DIR, { recursive: true });
 }
 
-function loadAntideleteConfig() {
+// --- MongoDB Schema for Antidelete Setting ---
+const AntideleteSchema = new mongoose.Schema({
+  _id: { type: String, required: true, default: 'sachiyamd_antidelete_status' },
+  enabled: { type: Boolean, default: false }
+});
+const AntideleteModel = mongoose.models.Antidelete || mongoose.model('Antidelete', AntideleteSchema);
+
+// Load setting from MongoDB safely
+async function loadAntideleteConfig() {
+    if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) {
+        return { enabled: false };
+    }
     try {
-        if (!fs.existsSync(CONFIG_PATH)) return { enabled: false };
-        return JSON.parse(fs.readFileSync(CONFIG_PATH));
-    } catch {
+        if (mongoose.connection.readyState === 0) {
+            await mongoose.connect(config.SESSION_ID);
+        }
+        let doc = await AntideleteModel.findOne({ _id: 'sachiyamd_antidelete_status' });
+        if (!doc) {
+            doc = await AntideleteModel.create({ _id: 'sachiyamd_antidelete_status', enabled: false });
+        }
+        return { enabled: doc.enabled };
+    } catch (e) {
         return { enabled: false };
     }
 }
 
-function saveAntideleteConfig(config) {
+// Save setting to MongoDB safely
+async function saveAntideleteConfig(isEnabled) {
+    if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
     try {
-        fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
-    } catch (err) {}
+        if (mongoose.connection.readyState === 0) {
+            await mongoose.connect(config.SESSION_ID);
+        }
+        await AntideleteModel.findOneAndUpdate(
+            { _id: 'sachiyamd_antidelete_status' },
+            { enabled: isEnabled },
+            { upsert: true, new: true }
+        );
+    } catch (e) {}
 }
 
 // Store incoming messages
 async function storeMessage(sock, message) {
     try {
-        const config = loadAntideleteConfig();
-        if (!config.enabled) return;
+        const cfg = await loadAntideleteConfig();
+        if (!cfg.enabled) return;
         if (!message.key?.id) return;
 
         const messageId = message.key.id;
@@ -101,8 +128,8 @@ async function storeMessage(sock, message) {
 // Handle message deletion (Antidelete)
 async function handleMessageRevocation(sock, revocationMessage) {
     try {
-        const config = loadAntideleteConfig();
-        if (!config.enabled) return;
+        const cfg = await loadAntideleteConfig();
+        if (!cfg.enabled) return;
 
         const protocolMsg = revocationMessage.message?.protocolMessage;
         if (!protocolMsg || protocolMsg.type !== 0) return;
@@ -120,7 +147,6 @@ async function handleMessageRevocation(sock, revocationMessage) {
         const senderName = sender.split('@')[0];
         const deleterName = deletedBy.split('@')[0];
 
-        // Check if it's a group and if the deleter is an admin deleting someone else's message
         let isAdminDelete = false;
         let groupAdmins = [];
         if (remoteJid.endsWith('@g.us')) {
@@ -130,7 +156,6 @@ async function handleMessageRevocation(sock, revocationMessage) {
                     .filter(p => p.admin === 'admin' || p.admin === 'superadmin')
                     .map(p => p.id);
                 
-                // If deleter is admin and sender is different from deleter
                 if (groupAdmins.includes(deletedBy) && sender !== deletedBy) {
                     isAdminDelete = true;
                 }
@@ -145,7 +170,6 @@ async function handleMessageRevocation(sock, revocationMessage) {
             timeZone: 'Asia/Colombo'
         });
 
-        // Construct report text cleanly
         let text = `╭━━━〔 *🗑️ SACHIYA-MD ANTIDELETE* 〕━━━\n` +
                    `┃\n` +
                    `┃ 👤 *Sender:* @${senderName}\n`;
@@ -170,7 +194,6 @@ async function handleMessageRevocation(sock, revocationMessage) {
         let mentionsArray = [sender];
         if (isAdminDelete) mentionsArray.push(deletedBy);
 
-        // If Media exists, send it with the caption together (No double messages)
         if (original.mediaType && fs.existsSync(original.mediaPath)) {
             try {
                 if (original.mediaType === 'image') {
@@ -186,7 +209,6 @@ async function handleMessageRevocation(sock, revocationMessage) {
                         mentions: mentionsArray 
                     });
                 } else if (original.mediaType === 'audio') {
-                    // Audio and stickers don't support large captions nicely, so send text first then audio/sticker
                     await sock.sendMessage(remoteJid, { text, mentions: mentionsArray });
                     await sock.sendMessage(remoteJid, { 
                         audio: { url: original.mediaPath }, 
@@ -205,7 +227,6 @@ async function handleMessageRevocation(sock, revocationMessage) {
 
             try { fs.unlinkSync(original.mediaPath); } catch {}
         } else {
-            // Only text message deleted
             await sock.sendMessage(remoteJid, {
                 text,
                 mentions: mentionsArray
@@ -235,12 +256,12 @@ commands.push({
             return reply('⚠️ *මෙම විධානය භාවිතා කළ හැක්කේ බොට් හිමිකරුට (Owner) පමණි!*');
         }
 
-        const config = loadAntideleteConfig();
+        const cfg = await loadAntideleteConfig();
         if (!q) {
             return reply(
                 `╭━━━〔 *✨ SACHIYA-MD ANTIDELETE ✨* 〕━━━\n` +
                 `┃\n` +
-                `┃ ⚙️ *Current Status:* ${config.enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
+                `┃ ⚙️ *Current Status:* ${cfg.enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
                 `┃\n` +
                 `┃ *Available Commands:*\n` +
                 `┃ • \`.antidelete on\` - Enable Antidelete 🟢\n` +
@@ -251,16 +272,17 @@ commands.push({
             );
         }
 
+        let newStatus = false;
         if (q.toLowerCase() === 'on') {
-            config.enabled = true;
+            newStatus = true;
         } else if (q.toLowerCase() === 'off') {
-            config.enabled = false;
+            newStatus = false;
         } else {
             return reply('⚠️ *වැරදි විධානයකි! භාවිතය සඳහා .antidelete ලෙස යොදන්න.*');
         }
 
-        saveAntideleteConfig(config);
-        return reply(`✨ *Antidelete System successfully ${q.toLowerCase() === 'on' ? 'Enabled 🟢' : 'Disabled 🔴'}!*`);
+        await saveAntideleteConfig(newStatus);
+        return reply(`✨ *Antidelete System successfully ${newStatus ? 'Enabled 🟢' : 'Disabled 🔴'}!*`);
     }
 });
 
