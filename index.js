@@ -6,6 +6,7 @@ const {
   getContentType,
   fetchLatestWaWebVersion,
   makeCacheableSignalKeyStore,
+  downloadContentFromMessage,
   delay
 } = require('@whiskeysockets/baileys');
 
@@ -14,6 +15,7 @@ const P = require('pino');
 const express = require('express');
 const path = require('path');
 const mongoose = require('mongoose');
+const { writeFile } = require('fs/promises');
 
 const config = require('./config');
 const { sms } = require('./lib/msg');
@@ -25,6 +27,59 @@ const port = process.env.PORT || 8000;
 const prefix = config.PREFIX || '.';
 const ownerNumber = [config.OWNER_NUM || '94760579211'];
 const authFolder = path.join(__dirname, '/auth_info_baileys/');
+
+// --- Antidelete Setup & Storage ---
+const messageStore = new Map();
+const CONFIG_PATH = path.join(__dirname, 'data_antidelete.json');
+const TEMP_MEDIA_DIR = path.join(__dirname, 'tmp');
+
+if (!fs.existsSync(TEMP_MEDIA_DIR)) {
+    fs.mkdirSync(TEMP_MEDIA_DIR, { recursive: true });
+}
+
+// Folder size checking and cleaning
+const getFolderSizeInMB = (folderPath) => {
+    try {
+        const files = fs.readdirSync(folderPath);
+        let totalSize = 0;
+        for (const file of files) {
+            const filePath = path.join(folderPath, file);
+            if (fs.statSync(filePath).isFile()) {
+                totalSize += fs.statSync(filePath).size;
+            }
+        }
+        return totalSize / (1024 * 1024);
+    } catch (err) {
+        return 0;
+    }
+};
+
+const cleanTempFolderIfLarge = () => {
+    try {
+        if (getFolderSizeInMB(TEMP_MEDIA_DIR) > 200) {
+            const files = fs.readdirSync(TEMP_MEDIA_DIR);
+            for (const file of files) {
+                try { fs.unlinkSync(path.join(TEMP_MEDIA_DIR, file)); } catch {}
+            }
+        }
+    } catch (err) {}
+};
+setInterval(cleanTempFolderIfLarge, 60 * 1000);
+
+function loadAntideleteConfig() {
+    try {
+        if (!fs.existsSync(CONFIG_PATH)) return { enabled: false };
+        return JSON.parse(fs.readFileSync(CONFIG_PATH));
+    } catch {
+        return { enabled: false };
+    }
+}
+
+function saveAntideleteConfig(cfg) {
+    try {
+        fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+    } catch (err) {}
+}
 
 // --- MongoDB Session Database Schema ---
 const SessionSchema = new mongoose.Schema({
@@ -318,6 +373,182 @@ async function connectToWA() {
       if (!mek || !mek.message) return;
       if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
 
+      // Handle Antidelete Store & Message Revocation
+      if (mek.message.protocolMessage && mek.message.protocolMessage.type === 0) {
+        // Message deleted event
+        try {
+          const cfg = loadAntideleteConfig();
+          if (cfg.enabled) {
+            const messageId = mek.message.protocolMessage.key.id;
+            const deletedBy = mek.participant || mek.key.participant || mek.key.remoteJid;
+            const targetOwnerJid = ownerNumber[0] + '@s.whatsapp.net';
+
+            if (!deletedBy.includes(sachiya.user.id) && deletedBy !== targetOwnerJid) {
+              const original = messageStore.get(messageId);
+              if (original) {
+                const sender = original.sender;
+                const senderName = sender.split('@')[0];
+                let groupName = '';
+                if (original.group) {
+                  try {
+                    const meta = await sachiya.groupMetadata(original.group);
+                    groupName = meta.subject;
+                  } catch (e) {}
+                }
+
+                const time = new Date().toLocaleString('en-US', {
+                  timeZone: 'Asia/Colombo',
+                  hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit',
+                  day: '2-digit', month: '2-digit', year: 'numeric'
+                });
+
+                let text = `╭━━━〔 *🗑️ SACHIYA-MD ANTIDELETE* 〕━━━\n` +
+                           `┃\n` +
+                           `┃ ❌ *Deleted By:* @${deletedBy.split('@')[0]}\n` +
+                           `┃ 👤 *Original Sender:* @${senderName}\n` +
+                           `┃ 📱 *Number:* wa.me/${sender.split('@')[0]}\n` +
+                           `┃ 🕒 *Time:* ${time}\n`;
+
+                if (groupName) text += `┃ 👥 *Group:* ${groupName}\n`;
+                text += `┃\n`;
+
+                if (original.content) {
+                  text += `┣ *💬 Deleted Message:*\n` +
+                          `┃ ${original.content}\n` +
+                          `┃\n`;
+                }
+
+                text += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                        `> *⚡ Powered by SACHIYA-MD 💫*`;
+
+                await sachiya.sendMessage(targetOwnerJid, {
+                  text,
+                  mentions: [deletedBy, sender]
+                });
+
+                if (original.mediaType && fs.existsSync(original.mediaPath)) {
+                  const mediaOpts = {
+                    caption: `╭━━━〔 *📁 DELETED ${original.mediaType.toUpperCase()}* 〕━━━\n` +
+                             `┃\n` +
+                             `┃ 👤 *Sender:* @${senderName}\n` +
+                             `┃\n` +
+                             `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                             `> *⚡ Powered by SACHIYA-MD 💫*`,
+                    mentions: [sender]
+                  };
+
+                  if (original.mediaType === 'image') {
+                    await sachiya.sendMessage(targetOwnerJid, { image: { url: original.mediaPath }, ...mediaOpts });
+                  } else if (original.mediaType === 'video') {
+                    await sachiya.sendMessage(targetOwnerJid, { video: { url: original.mediaPath }, ...mediaOpts });
+                  } else if (original.mediaType === 'audio') {
+                    await sachiya.sendMessage(targetOwnerJid, { audio: { url: original.mediaPath }, mimetype: 'audio/mpeg', ptt: false, ...mediaOpts });
+                  } else if (original.mediaType === 'sticker') {
+                    await sachiya.sendMessage(targetOwnerJid, { sticker: { url: original.mediaPath }, ...mediaOpts });
+                  }
+
+                  try { fs.unlinkSync(original.mediaPath); } catch {}
+                }
+                messageStore.delete(messageId);
+              }
+            }
+          }
+        } catch (e) {}
+      } else {
+        // Store normal incoming message
+        try {
+          const cfg = loadAntideleteConfig();
+          if (cfg.enabled && mek.key?.id) {
+            const messageId = mek.key.id;
+            let content = '';
+            let mediaType = '';
+            let mediaPath = '';
+            let isViewOnce = false;
+            const sender = mek.key.participant || mek.key.remoteJid;
+
+            const voContainer = mek.message?.viewOnceMessageV2?.message || mek.message?.viewOnceMessage?.message;
+            if (voContainer) {
+              if (voContainer.imageMessage) {
+                mediaType = 'image';
+                content = voContainer.imageMessage.caption || '';
+                const buf = await downloadContentFromMessage(voContainer.imageMessage, 'image');
+                mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.jpg`);
+                await writeFile(mediaPath, buf);
+                isViewOnce = true;
+              } else if (voContainer.videoMessage) {
+                mediaType = 'video';
+                content = voContainer.videoMessage.caption || '';
+                const buf = await downloadContentFromMessage(voContainer.videoMessage, 'video');
+                mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.mp4`);
+                await writeFile(mediaPath, buf);
+                isViewOnce = true;
+              }
+            } else if (mek.message?.conversation) {
+              content = mek.message.conversation;
+            } else if (mek.message?.extendedTextMessage?.text) {
+              content = mek.message.extendedTextMessage.text;
+            } else if (mek.message?.imageMessage) {
+              mediaType = 'image';
+              content = mek.message.imageMessage.caption || '';
+              const buf = await downloadContentFromMessage(mek.message.imageMessage, 'image');
+              mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.jpg`);
+              await writeFile(mediaPath, buf);
+            } else if (mek.message?.videoMessage) {
+              mediaType = 'video';
+              content = mek.message.videoMessage.caption || '';
+              const buf = await downloadContentFromMessage(mek.message.videoMessage, 'video');
+              mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.mp4`);
+              await writeFile(mediaPath, buf);
+            } else if (mek.message?.audioMessage) {
+              mediaType = 'audio';
+              const mime = mek.message.audioMessage.mimetype || '';
+              const ext = mime.includes('ogg') ? 'ogg' : 'mp3';
+              const buf = await downloadContentFromMessage(mek.message.audioMessage, 'audio');
+              mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.${ext}`);
+              await writeFile(mediaPath, buf);
+            } else if (mek.message?.stickerMessage) {
+              mediaType = 'sticker';
+              const buf = await downloadContentFromMessage(mek.message.stickerMessage, 'sticker');
+              mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.webp`);
+              await writeFile(mediaPath, buf);
+            }
+
+            messageStore.set(messageId, {
+              content,
+              mediaType,
+              mediaPath,
+              sender,
+              group: mek.key.remoteJid.endsWith('@g.us') ? mek.key.remoteJid : null,
+              timestamp: new Date().toISOString()
+            });
+
+            // Anti-ViewOnce forwarding
+            if (isViewOnce && mediaType && fs.existsSync(mediaPath)) {
+              try {
+                const targetOwnerJid = ownerNumber[0] + '@s.whatsapp.net';
+                const senderName = sender.split('@')[0];
+                const voOpts = {
+                  caption: `╭━━━〔 *🛡️ SACHIYA-MD VIEW ONCE* 〕━━━\n` +
+                           `┃\n` +
+                           `┃ 📸 *Type:* ${mediaType.toUpperCase()}\n` +
+                           `┃ 👤 *Sender:* @${senderName}\n` +
+                           `┃\n` +
+                           `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                           `> *⚡ Powered by SACHIYA-MD 💫*`,
+                  mentions: [sender]
+                };
+                if (mediaType === 'image') {
+                  await sachiya.sendMessage(targetOwnerJid, { image: { url: mediaPath }, ...voOpts });
+                } else if (mediaType === 'video') {
+                  await sachiya.sendMessage(targetOwnerJid, { video: { url: mediaPath }, ...voOpts });
+                }
+                try { fs.unlinkSync(mediaPath); } catch {}
+              } catch (e) {}
+            }
+          }
+        } catch (e) {}
+      }
+
       let msgType = getContentType(mek.message);
       if (msgType === 'ephemeralMessage') {
         mek.message = mek.message.ephemeralMessage.message;
@@ -327,7 +558,7 @@ async function connectToWA() {
         msgType = getContentType(mek.message);
       } else if (msgType === 'viewOnceMessageV2') {
         mek.message = mek.message.viewOnceMessageV2.message;
-        msgType = getContentType(mek.message); // FIXED: Correctly updating msgType here!
+        msgType = getContentType(mek.message);
       }
 
       const m = sms(sachiya, mek);
@@ -366,6 +597,40 @@ async function connectToWA() {
       }
 
       const reply = (text) => sachiya.sendMessage(from, { text }, { quoted: mek });
+
+      // Handle embedded .antidelete command directly
+      if (commandName === 'antidelete') {
+        if (!mek.key.fromMe && !isOwner) {
+          return reply('⚠️ *මෙම විධානය භාවිතා කළ හැක්කේ බොට් හිමිකරුට (Owner) පමණි!*');
+        }
+
+        const cfg = loadAntideleteConfig();
+        if (!q) {
+          return reply(
+            `╭━━━〔 *✨ SACHIYA-MD ANTIDELETE ✨* 〕━━━\n` +
+            `┃\n` +
+            `┃ ⚙️ *Current Status:* ${cfg.enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
+            `┃\n` +
+            `┃ *Available Commands:*\n` +
+            `┃ • \`.antidelete on\` - Enable Antidelete 🟢\n` +
+            `┃ • \`.antidelete off\` - Disable Antidelete 🔴\n` +
+            `┃\n` +
+            `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `> *⚡ Powered by SACHIYA-MD 💫*`
+          );
+        }
+
+        if (q.toLowerCase() === 'on') {
+          cfg.enabled = true;
+        } else if (q.toLowerCase() === 'off') {
+          cfg.enabled = false;
+        } else {
+          return reply('⚠️ *වැරදි විධානයකි! භාවිතය සඳහා .antidelete ලෙස යොදන්න.*');
+        }
+
+        saveAntideleteConfig(cfg);
+        return reply(`✨ *Antidelete System successfully ${q.toLowerCase() === 'on' ? 'Enabled 🟢' : 'Disabled 🔴'}!*`);
+      }
 
       const cmd = commands.find((c) => c.pattern === commandName || (c.alias && c.alias.includes(commandName)));
       if (cmd) {
