@@ -11,7 +11,6 @@ if (!fs.existsSync(TEMP_MEDIA_DIR)) {
     fs.mkdirSync(TEMP_MEDIA_DIR, { recursive: true });
 }
 
-// Load config
 function loadAntideleteConfig() {
     try {
         if (!fs.existsSync(CONFIG_PATH)) return { enabled: false };
@@ -21,7 +20,6 @@ function loadAntideleteConfig() {
     }
 }
 
-// Save config
 function saveAntideleteConfig(config) {
     try {
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
@@ -39,28 +37,10 @@ async function storeMessage(sock, message) {
         let content = '';
         let mediaType = '';
         let mediaPath = '';
-        let isViewOnce = false;
         const sender = message.key.participant || message.key.remoteJid;
         const remoteJid = message.key.remoteJid;
 
-        const viewOnceContainer = message.message?.viewOnceMessageV2?.message || message.message?.viewOnceMessage?.message;
-        if (viewOnceContainer) {
-            if (viewOnceContainer.imageMessage) {
-                mediaType = 'image';
-                content = viewOnceContainer.imageMessage.caption || '';
-                const buffer = await downloadContentFromMessage(viewOnceContainer.imageMessage, 'image');
-                mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.jpg`);
-                await writeFile(mediaPath, buffer);
-                isViewOnce = true;
-            } else if (viewOnceContainer.videoMessage) {
-                mediaType = 'video';
-                content = viewOnceContainer.videoMessage.caption || '';
-                const buffer = await downloadContentFromMessage(viewOnceContainer.videoMessage, 'video');
-                mediaPath = path.join(TEMP_MEDIA_DIR, `${messageId}.mp4`);
-                await writeFile(mediaPath, buffer);
-                isViewOnce = true;
-            }
-        } else if (message.message?.conversation) {
+        if (message.message?.conversation) {
             content = message.message.conversation;
         } else if (message.message?.extendedTextMessage?.text) {
             content = message.message.extendedTextMessage.text;
@@ -97,39 +77,21 @@ async function storeMessage(sock, message) {
             timestamp: new Date().toISOString()
         });
 
-        // Anti-ViewOnce: Send directly to the same chat where it was sent
-        if (isViewOnce && mediaType && fs.existsSync(mediaPath)) {
-            try {
-                const senderName = sender.split('@')[0];
-                const voCaption = `╭━━━〔 *🛡️ SACHIYA-MD VIEW ONCE* 〕━━━\n` +
-                                  `┃\n` +
-                                  `┃ 📸 *Type:* ${mediaType.toUpperCase()}\n` +
-                                  `┃ 👤 *Sender:* @${senderName}\n` +
-                                  `┃\n` +
-                                  `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                                  `> *⚡ Powered by SACHIYA-MD 💫*`;
-
-                if (mediaType === 'image') {
-                    await sock.sendMessage(remoteJid, { image: { url: mediaPath }, caption: voCaption, mentions: [sender] });
-                } else if (mediaType === 'video') {
-                    await sock.sendMessage(remoteJid, { video: { url: mediaPath }, caption: voCaption, mentions: [sender] });
-                }
-                try { fs.unlinkSync(mediaPath); } catch {}
-            } catch (e) {}
-        }
-
     } catch (err) {
         console.error('storeMessage error:', err);
     }
 }
 
-// Handle message deletion (Antidelete in the same chat)
+// Handle message deletion
 async function handleMessageRevocation(sock, revocationMessage) {
     try {
         const config = loadAntideleteConfig();
         if (!config.enabled) return;
 
-        const messageId = revocationMessage.message.protocolMessage.key.id;
+        const protocolMsg = revocationMessage.message?.protocolMessage;
+        if (!protocolMsg || protocolMsg.type !== 0) return;
+
+        const messageId = protocolMsg.key?.id;
         const deletedBy = revocationMessage.participant || revocationMessage.key.participant || revocationMessage.key.remoteJid;
         const remoteJid = revocationMessage.key.remoteJid;
 
@@ -164,13 +126,11 @@ async function handleMessageRevocation(sock, revocationMessage) {
         text += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                 `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-        // Send text report to the SAME chat (Group or Inbox)
         await sock.sendMessage(remoteJid, {
             text,
             mentions: [deletedBy, sender]
         });
 
-        // Send media to the SAME chat if available
         if (original.mediaType && fs.existsSync(original.mediaPath)) {
             const mediaCaption = `╭━━━〔 *📁 DELETED ${original.mediaType.toUpperCase()}* 〕━━━\n` +
                                  `┃\n` +
@@ -180,19 +140,14 @@ async function handleMessageRevocation(sock, revocationMessage) {
                                  `> *⚡ Powered by SACHIYA-MD 💫*`;
 
             try {
-                switch (original.mediaType) {
-                    case 'image':
-                        await sock.sendMessage(remoteJid, { image: { url: original.mediaPath }, caption: mediaCaption, mentions: [sender] });
-                        break;
-                    case 'sticker':
-                        await sock.sendMessage(remoteJid, { sticker: { url: original.mediaPath } });
-                        break;
-                    case 'video':
-                        await sock.sendMessage(remoteJid, { video: { url: original.mediaPath }, caption: mediaCaption, mentions: [sender] });
-                        break;
-                    case 'audio':
-                        await sock.sendMessage(remoteJid, { audio: { url: original.mediaPath }, mimetype: 'audio/mpeg', ptt: false });
-                        break;
+                if (original.mediaType === 'image') {
+                    await sock.sendMessage(remoteJid, { image: { url: original.mediaPath }, caption: mediaCaption, mentions: [sender] });
+                } else if (original.mediaType === 'video') {
+                    await sock.sendMessage(remoteJid, { video: { url: original.mediaPath }, caption: mediaCaption, mentions: [sender] });
+                } else if (original.mediaType === 'audio') {
+                    await sock.sendMessage(remoteJid, { audio: { url: original.mediaPath }, mimetype: 'audio/mpeg', ptt: false });
+                } else if (original.mediaType === 'sticker') {
+                    await sock.sendMessage(remoteJid, { sticker: { url: original.mediaPath } });
                 }
             } catch (err) {}
 
@@ -206,7 +161,7 @@ async function handleMessageRevocation(sock, revocationMessage) {
     }
 }
 
-// Command handler for setting up Antidelete
+// Command handler
 const { commands } = require('../command');
 commands.push({
     pattern: 'antidelete',
@@ -214,8 +169,13 @@ commands.push({
     desc: 'Enable or disable antidelete system',
     category: 'owner',
     react: '🛡️',
-    function: async (sock, mek, m, { q, reply, isOwner }) => {
-        if (!isOwner) return reply('⚠️ *මෙම විධානය භාවිතා කළ හැක්කේ බොට් හිමිකරුට (Owner) පමණි!*');
+    function: async (sock, mek, m, { q, reply, isOwner, senderNumber, from }) => {
+        const botNumber = sock.user.id.split(':')[0];
+        const isSelfChat = from === sock.user.id || senderNumber === botNumber;
+
+        if (!isOwner && !isSelfChat && !mek.key.fromMe) {
+            return reply('⚠️ *මෙම විධානය භාවිතා කළ හැක්කේ බොට් හිමිකරුට (Owner) පමණි!*');
+        }
 
         const config = loadAntideleteConfig();
         if (!q) {
