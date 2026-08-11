@@ -114,12 +114,12 @@ async function getPixeldrainLinks(movieUrl) {
 
 cmd({
   pattern: "movie",
-  alias: ["sinhalasub","films","cinema"],
+  alias: ["sinhalasub", "films", "cinema"],
   react: "🎬",
   desc: "Search and send movies from Sinhalasub.lk using SACHIYA MD",
   category: "download",
   filename: __filename
-}, async (danuwa, mek, m, { from, q, sender, reply }) => {
+}, async (sachiya, mek, m, { from, q, sender, reply }) => {
   if (!q) return reply(`*╭──────────────────╮*\n│  ⭐ *SACHIYA MD 💫 MOVIE*  ⭐\n*╰──────────────────╯*\n\n*❌ Please provide a movie name!*\n*💡 Example:* \`.movie Avatar\`\n\n> *© Powered by SACHIYA MD 💫*`);
   
   await reply(`*🔍 Searching for your movie on SinhalaSub.lk, Please wait...* \n\n> *✨ SACHIYA MD 💫 SYSTEM*`);
@@ -130,11 +130,11 @@ cmd({
   pendingSearch[sender] = { results: searchResults, timestamp: Date.now() };
   
   let text = `*╭──────────────────╮*\n│  🎬 *SACHIYA MD MOVIE SEARCH* 🎬\n*╰──────────────────╯*\n\n`;
-  searchResults.forEach((m, i) => {
-    text += `*${i+1}.* 🌟 *${m.title}*\n`;
-    text += `   🗣️ *Language:* ${m.language}\n`;
-    text += `   📊 *Quality:* ${m.quality}\n`;
-    text += `   🎞️ *Format:* ${m.qty}\n\n`;
+  searchResults.forEach((item, i) => {
+    text += `*${i+1}.* 🌟 *${item.title}*\n`;
+    text += `   🗣️ *Language:* ${item.language}\n`;
+    text += `   📊 *Quality:* ${item.quality}\n`;
+    text += `   🎞️ *Format:* ${item.qty}\n\n`;
   });
   text += `*👇 Reply with the movie number (1-${searchResults.length}) to continue!*\n\n> *© Powered by SACHIYA MD 💫*`;
   
@@ -143,8 +143,8 @@ cmd({
 
 cmd({
   filter: (text, { sender }) => pendingSearch[sender] && !isNaN(text) && parseInt(text) > 0 && parseInt(text) <= pendingSearch[sender].results.length
-}, async (danuwa, mek, m, { body, sender, reply, from }) => {
-  await danuwa.sendMessage(from, { react: { text: "⚡", key: m.key } });
+}, async (sachiya, mek, m, { body, sender, reply, from }) => {
+  await sachiya.sendMessage(from, { react: { text: "⚡", key: m.key } });
   const index = parseInt(body.trim()) - 1;
   const selected = pendingSearch[sender].results[index];
   delete pendingSearch[sender];
@@ -164,9 +164,9 @@ cmd({
   msg += `> *© SACHIYA MD 💫*`;
 
   if (metadata.thumbnail) {
-    await danuwa.sendMessage(from, { image: { url: metadata.thumbnail }, caption: msg }, { quoted: mek });
+    await sachiya.sendMessage(from, { image: { url: metadata.thumbnail }, caption: msg }, { quoted: mek });
   } else {
-    await danuwa.sendMessage(from, { text: msg }, { quoted: mek });
+    await sachiya.sendMessage(from, { text: msg }, { quoted: mek });
   }
   
   const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
@@ -177,18 +177,18 @@ cmd({
   let qualityMsg = `*╭──────────────────╮*\n`;
   qualityMsg += `│  📥 *AVAILABLE QUALITIES*  📥\n`;
   qualityMsg += `*╰──────────────────╯*\n\n`;
-  downloadLinks.forEach((d,i) => {
+  downloadLinks.forEach((d, i) => {
     qualityMsg += `*${i+1}.* 📁 *${d.quality}* ── *[ ${d.size} ]*\n`;
   });
   qualityMsg += `\n*👇 Reply with the quality number to get your movie file!* 🎬\n\n> *© Powered by SACHIYA MD 💫*`;
   
-  await danuwa.sendMessage(from, { text: qualityMsg }, { quoted: mek });
+  await sachiya.sendMessage(from, { text: qualityMsg }, { quoted: mek });
 });
 
 cmd({
   filter: (text, { sender }) => pendingQuality[sender] && !isNaN(text) && parseInt(text) > 0 && parseInt(text) <= pendingQuality[sender].movie.downloadLinks.length
-}, async (danuwa, mek, m, { body, sender, reply, from }) => {
-  await danuwa.sendMessage(from, { react: { text: "🚀", key: m.key } });
+}, async (sachiya, mek, m, { body, sender, reply, from }) => {
+  await sachiya.sendMessage(from, { react: { text: "🚀", key: m.key } });
   const index = parseInt(body.trim()) - 1;
   const { movie } = pendingQuality[sender];
   delete pendingQuality[sender];
@@ -199,7 +199,7 @@ cmd({
   
   try {
     const directUrl = getDirectPixeldrainUrl(selectedLink.link);
-    await danuwa.sendMessage(from, {
+    await sachiya.sendMessage(from, {
       document: { url: directUrl },
       mimetype: "video/mp4",
       fileName: `${movie.metadata.title.substring(0,50)} - ${selectedLink.quality} [SACHIYA-MD].mp4`.replace(/[^\w\s.-]/gi,''),
@@ -213,9 +213,9 @@ cmd({
 
 setInterval(() => {
   const now = Date.now();
-  const timeout = 10*60*1000;
+  const timeout = 10 * 60 * 1000;
   for (const s in pendingSearch) if (now - pendingSearch[s].timestamp > timeout) delete pendingSearch[s];
   for (const s in pendingQuality) if (now - pendingQuality[s].timestamp > timeout) delete pendingQuality[s];
-}, 5*60*1000);
+}, 5 * 60 * 1000);
 
 module.exports = { pendingSearch, pendingQuality };
