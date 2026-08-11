@@ -316,7 +316,7 @@ async function connectToWA() {
         const callerJid = call.from;
         try {
           await sachiya.rejectCall(call.id, callerJid);
-          await sachiya.sendMessage(callerJid, { text: `*කෝල් නොකර මැසේජ් එකක් දාපන් බං\nමම මේ ඩයලොග් එකේ සිග්නල් හොයනවා 🤧*` });
+          await sachiya.sendMessage(callerJid, { text: `අයියො CALL ගන්න එපා බන්..\nමට MASSAGE එකක් දාපන් මම Online ආපු වෙලාවට බලන්නම්..\nමෙහාට SIGNAL නෑ එකයි..\nගහක් උඩට ගිහිම් DATA ON කරපු වෙලවට බලන්නම්..\nඑක නිසා මට MASSAGE එකක් දාල තියපන් 👀` });
         } catch (e) {}
       }
     }
