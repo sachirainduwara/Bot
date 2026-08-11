@@ -297,7 +297,7 @@ async function connectToWA() {
         const callerJid = call.from;
         try {
           await sachiya.rejectCall(call.id, callerJid);
-          await sachiya.sendMessage(callerJid, { text: `කෝල් ගන්න එපා අනේ! 😅\nමට මැසේජ් එකක් දාන්නකො, කෝල් ගන්න එපා.` });
+          await sachiya.sendMessage(callerJid, { text: `කෝල් නොකර මැසේජ් එකක් දාපන් බං 😏\nමම මේ ඩයලොග් එකේ සිග්නල් හොයනවා🤧` });
         } catch (e) {}
       }
     }
