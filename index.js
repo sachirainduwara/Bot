@@ -321,9 +321,11 @@ async function connectToWA() {
       if (!mek || !mek.message) return;
       if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
 
-      // Handle Antidelete revocation or storing messages
-      if (mek.message.protocolMessage && mek.message.protocolMessage.type === 0) {
+      // Check if message is a deletion (revocation)
+      const isRevoke = mek.message?.protocolMessage && mek.message.protocolMessage.type === 0;
+      if (isRevoke) {
         await handleMessageRevocation(sachiya, mek);
+        return;
       } else {
         await storeMessage(sachiya, mek);
       }
@@ -337,7 +339,7 @@ async function connectToWA() {
         msgType = getContentType(mek.message);
       } else if (msgType === 'viewOnceMessageV2') {
         mek.message = mek.message.viewOnceMessageV2.message;
-        msgType = getContentType(mek.message); // FIXED: Correctly updating msgType here!
+        msgType = getContentType(mek.message);
       }
 
       const m = sms(sachiya, mek);
