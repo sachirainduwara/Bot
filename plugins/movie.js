@@ -45,7 +45,6 @@ async function searchMovies(query) {
   );
   
   await browser.close();
-  // Remove duplicates based on movieUrl
   const uniqueResults = Array.from(new Map(results.map(item => [item.movieUrl, item])).values());
   return uniqueResults.slice(0, 10);
 }
@@ -119,7 +118,6 @@ async function getPixeldrainLinks(movieUrl) {
     }
   }
   await browser.close();
-  // Unique links filter
   return Array.from(new Map(directLinks.map(item => [item.link, item])).values());
 }
 
@@ -153,28 +151,10 @@ cmd({
   return reply(text);
 });
 
-// 2. Movie Selection & Quality Options Handler (Fixed quoting issue using m.quoted)
+// 2. Global message listener to handle number replies (Supports both quoted and unquoted replies)
 cmd({
-  pattern: "selectmovie",
-  dontAddCommandList: true,
-  filename: __filename
-}, async () => {}); // Dummy to keep command safe if needed, handled via general message listener below
-
-// Global message listener to handle number replies reliably with quoting support
-const originalMessagesUpsert = global.movieListenerAdded || false;
-// We handle selection inside messages or via general text hook if standard filters fail.
-// Below we use standard cmd filter with robust quoted text detection.
-
-cmd({
-  filter: (text, { sender, mek }) => {
-    // Check if user is replying to a pending search or quality selection
-    const isSearchPending = pendingSearch[sender];
-    const isQualityPending = pendingQuality[sender];
-    if (!isSearchPending && !isQualityPending) return false;
-    
-    // Check if the message is a pure number or text containing the number
-    const cleanText = text.trim();
-    return !isNaN(cleanText) && parseInt(cleanText) > 0;
+  filter: (text, { sender }) => {
+    return (pendingSearch[sender] || pendingQuality[sender]) && !isNaN(text.trim()) && parseInt(text.trim()) > 0;
   }
 }, async (conn, mek, m, { body, sender, reply, from }) => {
   const textNum = parseInt(body.trim());
@@ -202,13 +182,13 @@ cmd({
       if (metadata.stars?.length) msg += `🌟 *Stars:* ${metadata.stars.slice(0, 5).join(", ")}\n\n`;
       msg += `📥 *Fetching download links, please wait...*\n\n> *⚡ Powered by SACHIYA-MD 💫*`;
       
-      const thumbUrl = metadata.thumbnail || selected.thumb;
-      if (thumbUrl) {
-        await conn.sendMessage(from, { image: { url: thumbUrl }, caption: msg }, { quoted: mek }).catch(() => {
-          reply(msg);
-        });
-      } else {
-        await reply(msg);
+      const customBotImage = "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
+      const thumbUrl = metadata.thumbnail || selected.thumb || customBotImage;
+      
+      try {
+        await conn.sendMessage(from, { image: { url: thumbUrl }, caption: msg }, { quoted: mek });
+      } catch (e) {
+        await conn.sendMessage(from, { image: { url: customBotImage }, caption: msg }, { quoted: mek }).catch(() => reply(msg));
       }
       
       const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
