@@ -32,6 +32,9 @@ const prefix = config.PREFIX || '.';
 const ownerNumber = [config.OWNER_NUM || '94760579211'];
 const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
+// In-memory blocked cache for instant response without delay
+global.blockedChatsCache = [];
+
 // --- MongoDB Session & Block Database Schemas ---
 const SessionSchema = new mongoose.Schema({
   _id: { type: String, required: true },
@@ -101,18 +104,21 @@ async function clearMongoSession() {
   }
 }
 
-// Check if chat is blocked from MongoDB
-async function isChatBlocked(chatId) {
+// Load Blocked List into Memory Cache instantly on startup
+async function loadBlockedListIntoCache() {
   try {
     if (mongoose.connection.readyState === 0 && config.SESSION_ID) {
       await mongoose.connect(config.SESSION_ID);
     }
     const doc = await BlockModel.findOne({ _id: 'sachiyamd_blocks' });
-    if (doc && doc.blockedChats && doc.blockedChats.includes(chatId)) {
-      return true;
+    if (doc && doc.blockedChats) {
+      global.blockedChatsCache = doc.blockedChats;
+    } else {
+      global.blockedChatsCache = [];
     }
-  } catch (e) {}
-  return false;
+  } catch (e) {
+    global.blockedChatsCache = [];
+  }
 }
 
 // 🛡️ Ultimate Console Cleaner
@@ -215,6 +221,7 @@ async function connectToWA() {
   }
 
   await loadSessionFromMongo();
+  await loadBlockedListIntoCache(); // Load blocks to memory instantly
 
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestWaWebVersion();
@@ -295,6 +302,7 @@ async function connectToWA() {
       console.log('╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n');
 
       await saveSessionToMongo();
+      await loadBlockedListIntoCache();
 
       const ownerJid = ownerNumber[0] + "@s.whatsapp.net";
       const date = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' });
@@ -368,8 +376,8 @@ async function connectToWA() {
       
       const bodyText = rawBody ? String(rawBody) : '';
 
-      // 🛑 Check if chat or group is blocked in MongoDB (Allow .unblock command to bypass)
-      if (await isChatBlocked(from)) {
+      // 🛑 Instant Memory Check for Blocked Chats (Zero Delay)
+      if (global.blockedChatsCache && global.blockedChatsCache.includes(from)) {
           const isUnblockCmd = bodyText.startsWith(prefix) && bodyText.slice(prefix.length).trim().toLowerCase().startsWith('unblock');
           if (!isUnblockCmd) {
               return; 
