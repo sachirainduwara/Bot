@@ -192,7 +192,7 @@ function loadPlugins() {
   }
 }
 
-// 2. WhatsApp Connection Logic with MongoDB Session Support
+// 2. WhatsApp Connection Logic with MongoDB Session Support & Nonstop Reconnection
 async function connectToWA() {
   console.log("\n⏳ Connecting SACHIYA MD ✨...");
 
@@ -261,9 +261,9 @@ async function connectToWA() {
     const { connection, lastDisconnect } = update;
     
     if (connection === 'close') {
-      if (isConnectedOnce) return; 
-
       const statusCode = lastDisconnect?.error?.output?.statusCode;
+      console.log(`⚠️ Connection closed. Reconnecting automatically in 3 seconds...`);
+
       if (statusCode === DisconnectReason.loggedOut) {
         console.error("❌ Session logged out from WhatsApp! Clearing MongoDB session...");
         await clearMongoSession();
@@ -272,7 +272,7 @@ async function connectToWA() {
         }
         process.exit(1);
       } else {
-        console.log("⚠️ Connection closed, reconnecting in 3 seconds...");
+        // Nonstop reconnection loop without getting blocked
         setTimeout(() => connectToWA(), 3000);
       }
     } else if (connection === 'open') {
