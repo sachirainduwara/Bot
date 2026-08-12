@@ -7,16 +7,6 @@ const BlockSchema = new mongoose.Schema({
 });
 const BlockModel = mongoose.models.BlockList || mongoose.model('BlockList', BlockSchema);
 
-async function getBlockedListFromMongo() {
-    try {
-        let doc = await BlockModel.findOne({ _id: 'sachiyamd_blocks' });
-        if (!doc) return [];
-        return doc.blockedChats;
-    } catch (e) {
-        return [];
-    }
-}
-
 async function saveBlockedListToMongo(chats) {
     try {
         await BlockModel.findOneAndUpdate(
@@ -41,13 +31,14 @@ commands.push({
             return reply('⚠️ *මෙම විධානය භාවිතා කළ හැක්කේ බොට් හිමිකරුට පමණි!*');
         }
 
-        let blocked = await getBlockedListFromMongo();
-        if (!blocked.includes(from)) {
+        if (!global.blockedChatsCache) global.blockedChatsCache = [];
+
+        if (!global.blockedChatsCache.includes(from)) {
             return reply(isGroup ? '⚠️ *මෙම ගෲප් එක බ්ලොක් කර නොමැත!*' : '⚠️ *මෙම චැට් එක බ්ලොක් කර නොමැත!*');
         }
 
-        blocked = blocked.filter(item => item !== from);
-        await saveBlockedListToMongo(blocked);
+        global.blockedChatsCache = global.blockedChatsCache.filter(item => item !== from);
+        await saveBlockedListToMongo(global.blockedChatsCache);
 
         if (isGroup) {
             return reply('✅ *මෙම ගෲප් එකට බොට් නැවත සක්‍රීය කරන ලදී (ගෲප් එක අන්බ්ලොක් කරන ලදී).*');
