@@ -1,24 +1,33 @@
 const { commands } = require('../command');
-const fs = require('fs');
-const path = require('path');
+const mongoose = require('mongoose');
 
-const blockedFile = path.join(__dirname, '../blocked_chats.json');
+// Blocked Schema for MongoDB
+const BlockSchema = new mongoose.Schema({
+    _id: { type: String, required: true },
+    blockedChats: { type: Array, default: [] }
+});
+const BlockModel = mongoose.models.BlockList || mongoose.model('BlockList', BlockSchema);
 
-// Helper to get blocked chats
-function getBlockedChats() {
+async function getBlockedListFromMongo() {
     try {
-        if (fs.existsSync(blockedFile)) {
-            const data = fs.readFileSync(blockedFile, 'utf8');
-            return JSON.parse(data);
+        let doc = await BlockModel.findOne({ _id: 'sachiyamd_blocks' });
+        if (!doc) {
+            doc = new BlockModel({ _id: 'sachiyamd_blocks', blockedChats: [] });
+            await doc.save();
         }
-    } catch (e) {}
-    return [];
+        return doc.blockedChats;
+    } catch (e) {
+        return [];
+    }
 }
 
-// Helper to save blocked chats
-function saveBlockedChats(chats) {
+async function saveBlockedListToMongo(chats) {
     try {
-        fs.writeFileSync(blockedFile, JSON.stringify(chats, null, 2));
+        await BlockModel.findOneAndUpdate(
+            { _id: 'sachiyamd_blocks' },
+            { blockedChats: chats },
+            { upsert: true, new: true }
+        );
     } catch (e) {}
 }
 
@@ -28,7 +37,7 @@ commands.push({
     desc: 'Block bot from responding in this chat or group',
     category: 'owner',
     react: '🚫',
-    function: async (sock, mek, m, { reply, isOwner, senderNumber, from }) => {
+    function: async (sock, mek, m, { reply, isOwner, senderNumber, from, isGroup }) => {
         const botNumber = sock.user.id.split(':')[0];
         const isSelfChat = from === sock.user.id || senderNumber === botNumber;
         
@@ -36,14 +45,18 @@ commands.push({
             return reply('⚠️ *මෙම විධානය භාවිතා කළ හැක්කේ බොට් හිමිකරුට පමණි!*');
         }
 
-        let blocked = getBlockedChats();
+        let blocked = await getBlockedListFromMongo();
         if (blocked.includes(from)) {
-            return reply('⚠️ *මෙම චැට් එක / ගෘප් එක දැනටමත් බ්ලොක් කර ඇත!*');
+            return reply(isGroup ? '⚠️ *මෙම ගෲප් එක දැනටමත් බ්ලොක් කර ඇත!*' : '⚠️ *මෙම චැට් එක දැනටමත් බ්ලොක් කර ඇත!*');
         }
 
         blocked.push(from);
-        saveBlockedChats(blocked);
+        await saveBlockedListToMongo(blocked);
 
-        return reply('🚫 *මෙම ගෘප් එකට හෝ චැට් එකට බොට්ගේ ක්‍රියාකාරිත්වය සාර්ථකව අත්හිටුවන ලදී (.block කරන ලදී).*');
+        if (isGroup) {
+            return reply('🚫 *මෙම ගෲප් එකට බොට්ගේ ක්‍රියාකාරිත්වය සාර්ථකව අත්හිටුවන ලදී (ගෲප් එක බ්ලොක් කරන ලදී).*');
+        } else {
+            return reply('🚫 *මෙම චැට් එකට බොට්ගේ ක්‍රියාකාරිත්වය සාර්ථකව අත්හිටුවන ලදී (චැට් එක බ්ලොක් කරන ලදී).*');
+        }
     }
 });
