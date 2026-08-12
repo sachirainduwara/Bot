@@ -340,13 +340,37 @@ async function connectToWA() {
 
       const from = mek.key.remoteJid;
 
-      // 🛑 Check if chat or group is blocked
+      // Extract message body early to check for unblock command bypass
+      let msgType = getContentType(mek.message);
+      if (msgType === 'ephemeralMessage') {
+        mek.message = mek.message.ephemeralMessage.message;
+        msgType = getContentType(mek.message);
+      } else if (msgType === 'viewOnceMessage') {
+        mek.message = mek.message.viewOnceMessage.message;
+        msgType = getContentType(mek.message);
+      } else if (msgType === 'viewOnceMessageV2') {
+        mek.message = mek.message.viewOnceMessageV2.message;
+        msgType = getContentType(mek.message);
+      }
+
+      const rawBody = msgType === 'conversation' ? mek.message.conversation :
+                      msgType === 'extendedTextMessage' ? mek.message.extendedTextMessage.text :
+                      msgType === 'imageMessage' ? mek.message.imageMessage.caption :
+                      msgType === 'videoMessage' ? mek.message.videoMessage.caption : 
+                      mek.text || '';
+      
+      const bodyText = rawBody ? String(rawBody) : '';
+
+      // 🛑 Check if chat or group is blocked (Allow .unblock command to bypass)
       const blockedFilePath = path.join(__dirname, 'blocked_chats.json');
       if (fs.existsSync(blockedFilePath)) {
           try {
               const blockedList = JSON.parse(fs.readFileSync(blockedFilePath, 'utf8'));
               if (blockedList.includes(from)) {
-                  return; // Stop processing if chat is blocked
+                  const isUnblockCmd = bodyText.startsWith(prefix) && bodyText.slice(prefix.length).trim().toLowerCase().startsWith('unblock');
+                  if (!isUnblockCmd) {
+                      return; // Stop processing if chat is blocked and it's not the unblock command
+                  }
               }
           } catch (e) {}
       }
@@ -360,28 +384,10 @@ async function connectToWA() {
         await storeMessage(sachiya, mek);
       }
 
-      let msgType = getContentType(mek.message);
-      if (msgType === 'ephemeralMessage') {
-        mek.message = mek.message.ephemeralMessage.message;
-        msgType = getContentType(mek.message);
-      } else if (msgType === 'viewOnceMessage') {
-        mek.message = mek.message.viewOnceMessage.message;
-        msgType = getContentType(mek.message);
-      } else if (msgType === 'viewOnceMessageV2') {
-        mek.message = mek.message.viewOnceMessageV2.message;
-        msgType = getContentType(mek.message);
-      }
-
       const m = sms(sachiya, mek);
       const quoted = m.quoted ? m.quoted : null;
-
-      const rawBody = msgType === 'conversation' ? mek.message.conversation :
-                      msgType === 'extendedTextMessage' ? mek.message.extendedTextMessage.text :
-                      msgType === 'imageMessage' ? mek.message.imageMessage.caption :
-                      msgType === 'videoMessage' ? mek.message.videoMessage.caption : 
-                      mek.text || m.body || '';
       
-      const body = rawBody ? String(rawBody) : '';
+      const body = bodyText || m.body || '';
       const isCmd = body.startsWith(prefix);
       if (!isCmd) return;
 
