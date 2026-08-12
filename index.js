@@ -117,7 +117,7 @@ async function loadBlockedListIntoCache() {
   }
 }
 
-// 🛡️ Ultimate Console Cleaner
+// 🛡️ Ultimate Console Cleaner to suppress session and decryption spam completely
 const originalConsoleError = console.error;
 const originalConsoleLog = console.log;
 
@@ -143,7 +143,8 @@ console.error = function (...args) {
     logText.includes('privKey') ||
     logText.includes('remoteIdentityKey') ||
     logText.includes('Syncing messages') ||
-    logText.includes('Closing open session')
+    logText.includes('Closing open session') ||
+    logText.includes('SessionEntry')
   ) {
     return;
   }
@@ -163,7 +164,8 @@ console.log = function (...args) {
     logText.includes('indexInfo') ||
     logText.includes('pendingPreKey') ||
     logText.includes('Syncing messages') ||
-    logText.includes('Closing open session')
+    logText.includes('Closing open session') ||
+    logText.includes('SessionEntry')
   ) {
     return;
   }
