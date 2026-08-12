@@ -149,112 +149,140 @@ cmd({
   return reply(text);
 });
 
-// 2. Number Reply Handler (Triggered when user replies with a number)
+// 2. Direct Baileys Event Listener to catch numbers instantly without index.js restriction
+let isListenerInitialized = false;
+
+function initMovieListener(conn) {
+  if (isListenerInitialized) return;
+  isListenerInitialized = true;
+
+  conn.ev.on("messages.upsert", async (chatUpdate) => {
+    try {
+      const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
+      if (!mek || !mek.message) return;
+      if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
+      if (mek.key.fromMe) return;
+
+      const from = mek.key.remoteJid;
+      const sender = mek.key.participant || from;
+      
+      const msgType = Object.keys(mek.message)[0];
+      const bodyText = msgType === 'conversation' ? mek.message.conversation :
+                      msgType === 'extendedTextMessage' ? mek.message.extendedTextMessage.text :
+                      msgType === 'imageMessage' ? mek.message.imageMessage.caption : '';
+
+      if (!bodyText) return;
+      const cleanBody = bodyText.trim();
+      if (isNaN(cleanBody) || parseInt(cleanBody) <= 0) return;
+      const textNum = parseInt(cleanBody);
+
+      const replyFunc = (text) => conn.sendMessage(from, { text }, { quoted: mek });
+
+      // Handle Search Selection
+      if (pendingSearch[sender]) {
+        const searchData = pendingSearch[sender];
+        if (textNum > 0 && textNum <= searchData.results.length) {
+          await conn.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
+          
+          const index = textNum - 1;
+          const selected = searchData.results[index];
+          delete pendingSearch[sender];
+          
+          await replyFunc(`*⏳ Fetching details for:* *${selected.title}*...`);
+          const metadata = await getMovieMetadata(selected.movieUrl);
+          
+          let msg = `╭━━━〔 *SACHIYA-MD MOVIE INFO* 〕━━━\n\n`;
+          msg += `🎬 *TITLE:* ${metadata.title || selected.title}\n`;
+          if (metadata.language) msg += `🌐 *Language:* ${metadata.language}\n`;
+          if (metadata.duration) msg += `⏱️ *Duration:* ${metadata.duration}\n`;
+          if (metadata.imdb) msg += `⭐ *IMDb Rating:* ${metadata.imdb}\n`;
+          if (metadata.genres?.length) msg += `🎭 *Genres:* ${metadata.genres.join(", ")}\n`;
+          if (metadata.directors?.length) msg += `🎬 *Directors:* ${metadata.directors.join(", ")}\n`;
+          if (metadata.stars?.length) msg += `🌟 *Stars:* ${metadata.stars.slice(0, 5).join(", ")}\n\n`;
+          msg += `📥 *Fetching download links, please wait...*\n\n> *⚡ Powered by SACHIYA-MD 💫*`;
+          
+          const botThumbnail = "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
+          const thumbUrl = metadata.thumbnail || selected.thumb || botThumbnail;
+          
+          try {
+            await conn.sendMessage(from, { image: { url: thumbUrl }, caption: msg }, { quoted: mek });
+          } catch (err) {
+            await conn.sendMessage(from, { image: { url: botThumbnail }, caption: msg }, { quoted: mek }).catch(() => replyFunc(msg));
+          }
+          
+          const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
+          if (!downloadLinks.length) return replyFunc("❌ *No download links found for this movie!*");
+          
+          pendingQuality[sender] = { movie: { metadata: { ...metadata, title: metadata.title || selected.title }, downloadLinks }, timestamp: Date.now() };
+          
+          let qualityMsg = `╭━━━〔 *SELECT QUALITY* 〕━━━\n\n`;
+          qualityMsg += `🎬 *${metadata.title || selected.title}*\n\n`;
+          downloadLinks.forEach((d, i) => {
+            qualityMsg += `*${i + 1}.* Quality: *${d.quality}* | Size: *${d.size}*\n`;
+          });
+          qualityMsg += `\n*👉 Reply with the quality number to download.*` + `\n\n> *⚡ Powered by SACHIYA-MD 💫*`;
+          
+          return replyFunc(qualityMsg);
+        }
+      }
+
+      // Handle Quality Selection
+      if (pendingQuality[sender]) {
+        const qualityData = pendingQuality[sender];
+        if (textNum > 0 && textNum <= qualityData.movie.downloadLinks.length) {
+          await conn.sendMessage(from, { react: { text: "📥", key: mek.key } }).catch(() => {});
+          
+          const index = textNum - 1;
+          const { movie } = qualityData;
+          delete pendingQuality[sender];
+          
+          const selectedLink = movie.downloadLinks[index];
+          await replyFunc(`📥 *Preparing to send "${movie.metadata.title}" (${selectedLink.quality})...*\n⏳ *Please wait, sending as a document file.*`);
+          
+          try {
+            const directUrl = getDirectPixeldrainUrl(selectedLink.link);
+            if (!directUrl) throw new Error("Invalid download link.");
+
+            const safeTitle = (movie.metadata.title || "Movie").replace(/[^\w\s.-]/gi, '').substring(0, 40);
+            const fileName = `${safeTitle} - ${selectedLink.quality}.mp4`;
+
+            await conn.sendMessage(from, {
+              document: { url: directUrl },
+              mimetype: "video/mp4",
+              fileName: fileName,
+              caption: `╭━━━〔 *SACHIYA-MD DOWNLOAD* 〕━━━\n\n🎬 *${movie.metadata.title}*\n📊 *Quality:* ${selectedLink.quality}\n📁 *Size:* ${selectedLink.size}\n\n*✨ Enjoy your movie!*` + `\n\n> *⚡ Powered by SACHIYA-MD 💫*`
+            }, { quoted: mek });
+
+          } catch (error) {
+            console.error("Movie Send Error:", error);
+            await replyFunc(`❌ *Failed to send movie file:* ${error.message || "Unknown error occurred."}`);
+          }
+        }
+      }
+    } catch (err) {}
+  });
+}
+
+// Hook into command execution to initialize the listener with the active connection socket
 cmd({
-  on: "text"
-}, async (conn, mek, m, { body, sender, reply, from }) => {
-  try {
-    if (!body) return;
-    const cleanBody = body.trim();
-    if (isNaN(cleanBody) || parseInt(cleanBody) <= 0) return;
-    const textNum = parseInt(cleanBody);
-
-    // Handle Movie Search Selection
-    if (pendingSearch[sender]) {
-      const searchData = pendingSearch[sender];
-      if (textNum > 0 && textNum <= searchData.results.length) {
-        await conn.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
-        
-        const index = textNum - 1;
-        const selected = searchData.results[index];
-        delete pendingSearch[sender];
-        
-        await reply(`*⏳ Fetching details for:* *${selected.title}*...`);
-        const metadata = await getMovieMetadata(selected.movieUrl);
-        
-        let msg = `╭━━━〔 *SACHIYA-MD MOVIE INFO* 〕━━━\n\n`;
-        msg += `🎬 *TITLE:* ${metadata.title || selected.title}\n`;
-        if (metadata.language) msg += `🌐 *Language:* ${metadata.language}\n`;
-        if (metadata.duration) msg += `⏱️ *Duration:* ${metadata.duration}\n`;
-        if (metadata.imdb) msg += `⭐ *IMDb Rating:* ${metadata.imdb}\n`;
-        if (metadata.genres?.length) msg += `🎭 *Genres:* ${metadata.genres.join(", ")}\n`;
-        if (metadata.directors?.length) msg += `🎬 *Directors:* ${metadata.directors.join(", ")}\n`;
-        if (metadata.stars?.length) msg += `🌟 *Stars:* ${metadata.stars.slice(0, 5).join(", ")}\n\n`;
-        msg += `📥 *Fetching download links, please wait...*\n\n> *⚡ Powered by SACHIYA-MD 💫*`;
-        
-        const botThumbnail = "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
-        const thumbUrl = metadata.thumbnail || selected.thumb || botThumbnail;
-        
-        try {
-          await conn.sendMessage(from, { image: { url: thumbUrl }, caption: msg }, { quoted: mek });
-        } catch (err) {
-          await conn.sendMessage(from, { image: { url: botThumbnail }, caption: msg }, { quoted: mek }).catch(() => reply(msg));
-        }
-        
-        const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
-        if (!downloadLinks.length) return reply("❌ *No download links found for this movie!*");
-        
-        pendingQuality[sender] = { movie: { metadata: { ...metadata, title: metadata.title || selected.title }, downloadLinks }, timestamp: Date.now() };
-        
-        let qualityMsg = `╭━━━〔 *SELECT QUALITY* 〕━━━\n\n`;
-        qualityMsg += `🎬 *${metadata.title || selected.title}*\n\n`;
-        downloadLinks.forEach((d, i) => {
-          qualityMsg += `*${i + 1}.* Quality: *${d.quality}* | Size: *${d.size}*\n`;
-        });
-        qualityMsg += `\n*👉 Reply with the quality number to download.*` + `\n\n> *⚡ Powered by SACHIYA-MD 💫*`;
-        
-        return reply(qualityMsg);
-      }
-    }
-
-    // Handle Quality Selection
-    if (pendingQuality[sender]) {
-      const qualityData = pendingQuality[sender];
-      if (textNum > 0 && textNum <= qualityData.movie.downloadLinks.length) {
-        await conn.sendMessage(from, { react: { text: "📥", key: mek.key } }).catch(() => {});
-        
-        const index = textNum - 1;
-        const { movie } = qualityData;
-        delete pendingQuality[sender];
-        
-        const selectedLink = movie.downloadLinks[index];
-        await reply(`📥 *Preparing to send "${movie.metadata.title}" (${selectedLink.quality})...*\n⏳ *Please wait, sending as a document file.*`);
-        
-        try {
-          const directUrl = getDirectPixeldrainUrl(selectedLink.link);
-          if (!directUrl) throw new Error("Invalid download link.");
-
-          const safeTitle = (movie.metadata.title || "Movie").replace(/[^\w\s.-]/gi, '').substring(0, 40);
-          const fileName = `${safeTitle} - ${selectedLink.quality}.mp4`;
-
-          await conn.sendMessage(from, {
-            document: { url: directUrl },
-            mimetype: "video/mp4",
-            fileName: fileName,
-            caption: `╭━━━〔 *SACHIYA-MD DOWNLOAD* 〕━━━\n\n🎬 *${movie.metadata.title}*\n📊 *Quality:* ${selectedLink.quality}\n📁 *Size:* ${selectedLink.size}\n\n*✨ Enjoy your movie!*` + `\n\n> *⚡ Powered by SACHIYA-MD 💫*`
-          }, { quoted: mek });
-
-        } catch (error) {
-          console.error("Movie Send Error:", error);
-          await reply(`❌ *Failed to send movie file:* ${error.message || "Unknown error occurred."}`);
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Movie Listener Error:", err);
-  }
+  pattern: "moviesetup",
+  dontAddCommandList: true,
+  filename: __filename
+}, async (conn) => {
+  initMovieListener(conn);
 });
 
-// Timeout Cleanup Routine
-setInterval(() => {
-  const now = Date.now();
-  const timeout = 10 * 60 * 1000; // 10 Minutes
-  for (const s in pendingSearch) {
-    if (now - pendingSearch[s].timestamp > timeout) delete pendingSearch[s];
-  }
-  for (const s in pendingQuality) {
-    if (now - pendingQuality[s].timestamp > timeout) delete pendingQuality[s];
-  }
-}, 5 * 60 * 1000);
+// Auto-initialize when any movie command is called
+cmd({
+  pattern: "moviecheck",
+  dontAddCommandList: true,
+  filename: __filename
+}, async (conn) => {
+  initMovieListener(conn);
+});
+
+// Also trigger initialization immediately via a self-invoking hook on module load if possible, 
+// but since 'conn' is needed, we hook it into the main movie command too:
+const originalMovieCmd = cmd;
 
 module.exports = { pendingSearch, pendingQuality };
