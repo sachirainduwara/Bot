@@ -338,6 +338,19 @@ async function connectToWA() {
       if (!mek || !mek.message) return;
       if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
 
+      const from = mek.key.remoteJid;
+
+      // 🛑 Check if chat or group is blocked
+      const blockedFilePath = path.join(__dirname, 'blocked_chats.json');
+      if (fs.existsSync(blockedFilePath)) {
+          try {
+              const blockedList = JSON.parse(fs.readFileSync(blockedFilePath, 'utf8'));
+              if (blockedList.includes(from)) {
+                  return; // Stop processing if chat is blocked
+              }
+          } catch (e) {}
+      }
+
       // Check if message is a deletion (revocation)
       const isRevoke = mek.message?.protocolMessage && mek.message.protocolMessage.type === 0;
       if (isRevoke) {
@@ -360,7 +373,6 @@ async function connectToWA() {
       }
 
       const m = sms(sachiya, mek);
-      const from = mek.key.remoteJid;
       const quoted = m.quoted ? m.quoted : null;
 
       const rawBody = msgType === 'conversation' ? mek.message.conversation :
