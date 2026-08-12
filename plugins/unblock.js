@@ -1,24 +1,29 @@
 const { commands } = require('../command');
-const fs = require('fs');
-const path = require('path');
+const mongoose = require('mongoose');
 
-const blockedFile = path.join(__dirname, '../blocked_chats.json');
+const BlockSchema = new mongoose.Schema({
+    _id: { type: String, required: true },
+    blockedChats: { type: Array, default: [] }
+});
+const BlockModel = mongoose.models.BlockList || mongoose.model('BlockList', BlockSchema);
 
-// Helper to get blocked chats
-function getBlockedChats() {
+async function getBlockedListFromMongo() {
     try {
-        if (fs.existsSync(blockedFile)) {
-            const data = fs.readFileSync(blockedFile, 'utf8');
-            return JSON.parse(data);
-        }
-    } catch (e) {}
-    return [];
+        let doc = await BlockModel.findOne({ _id: 'sachiyamd_blocks' });
+        if (!doc) return [];
+        return doc.blockedChats;
+    } catch (e) {
+        return [];
+    }
 }
 
-// Helper to save blocked chats
-function saveBlockedChats(chats) {
+async function saveBlockedListToMongo(chats) {
     try {
-        fs.writeFileSync(blockedFile, JSON.stringify(chats, null, 2));
+        await BlockModel.findOneAndUpdate(
+            { _id: 'sachiyamd_blocks' },
+            { blockedChats: chats },
+            { upsert: true, new: true }
+        );
     } catch (e) {}
 }
 
@@ -28,7 +33,7 @@ commands.push({
     desc: 'Unblock bot to respond in this chat or group',
     category: 'owner',
     react: '✅',
-    function: async (sock, mek, m, { reply, isOwner, senderNumber, from }) => {
+    function: async (sock, mek, m, { reply, isOwner, senderNumber, from, isGroup }) => {
         const botNumber = sock.user.id.split(':')[0];
         const isSelfChat = from === sock.user.id || senderNumber === botNumber;
         
@@ -36,14 +41,18 @@ commands.push({
             return reply('⚠️ *මෙම විධානය භාවිතා කළ හැක්කේ බොට් හිමිකරුට පමණි!*');
         }
 
-        let blocked = getBlockedChats();
+        let blocked = await getBlockedListFromMongo();
         if (!blocked.includes(from)) {
-            return reply('⚠️ *මෙම චැට් එක බ්ලොක් කර නොමැත!*');
+            return reply(isGroup ? '⚠️ *මෙම ගෲප් එක බ්ලොක් කර නොමැත!*' : '⚠️ *මෙම චැට් එක බ්ලොක් කර නොමැත!*');
         }
 
         blocked = blocked.filter(item => item !== from);
-        saveBlockedChats(blocked);
+        await saveBlockedListToMongo(blocked);
 
-        return reply('✅ *මෙම ගෘප් එකට හෝ චැට් එකට බොට් නැවත සක්‍රීය කරන ලදී (.unblock කරන ලදී).*');
+        if (isGroup) {
+            return reply('✅ *මෙම ගෲප් එකට බොට් නැවත සක්‍රීය කරන ලදී (ගෲප් එක අන්බ්ලොක් කරන ලදී).*');
+        } else {
+            return reply('✅ *මෙම චැට් එකට බොට් නැවත සක්‍රීය කරන ලදී (චැට් එක අන්බ්ලොක් කරන ලදී).*');
+        }
     }
 });
