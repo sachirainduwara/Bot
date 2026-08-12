@@ -1,7 +1,6 @@
 const { cmd } = require("../command");
 const puppeteer = require("puppeteer");
 
-// Store active sessions per user chat
 const pendingSearch = {};
 const pendingQuality = {};
 
@@ -120,6 +119,8 @@ async function getPixeldrainLinks(movieUrl) {
   return Array.from(new Map(directLinks.map(item => [item.link, item])).values());
 }
 
+let activeConnection = null;
+
 // 1. Movie Search Command (.movie <name>)
 cmd({
   pattern: "movie",
@@ -129,6 +130,7 @@ cmd({
   category: "download",
   filename: __filename
 }, async (conn, mek, m, { from, q, sender, reply }) => {
+  activeConnection = conn;
   if (!q) return reply(`╭━━━〔 *SACHIYA-MD MOVIE* 〕━━━\n┃\n┃ ⚠️ *Please provide a movie name!*\n┃ *Example:* .movie Avatar\n┃\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
   
   await reply("🔍 Searching for movies");
@@ -145,146 +147,148 @@ cmd({
   });
   text += `\n*👉 Reply with the number (1-${searchResults.length}) of the movie you want to select.*\n\n> *⚡ Powered by SACHIYA-MD 💫*`;
   
-  // Send message and save its ID to track replies specifically to this message
   const sentMsg = await conn.sendMessage(from, { text }, { quoted: mek });
   const sentMsgId = sentMsg.key.id;
 
-  pendingSearch[sentMsgId] = { results: searchResults, timestamp: Date.now() };
+  pendingSearch[sentMsgId] = { results: searchResults, sender, timestamp: Date.now() };
 });
 
-// 2. Direct Baileys Event Listener to track Quoted Message Replies precisely
-let isListenerInitialized = false;
-
-function initMovieListener(conn) {
-  if (isListenerInitialized) return;
-  isListenerInitialized = true;
-
-  conn.ev.on("messages.upsert", async (chatUpdate) => {
-    try {
-      const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
-      if (!mek || !mek.message) return;
-      if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
-      if (mek.key.fromMe) return;
-
-      const from = mek.key.remoteJid;
-      const sender = mek.key.participant || from;
-      
-      const msgType = Object.keys(mek.message)[0];
-      const bodyText = msgType === 'conversation' ? mek.message.conversation :
-                      msgType === 'extendedTextMessage' ? mek.message.extendedTextMessage.text :
-                      msgType === 'imageMessage' ? mek.message.imageMessage.caption : '';
-
-      if (!bodyText) return;
-
-      // Check if the user is quoting a message
-      const quotedMessage = mek.message.extendedTextMessage?.contextInfo;
-      const quotedId = quotedMessage ? quotedMessage.stanzaId : null;
-
-      const cleanBody = bodyText.replace('.', '').trim(); // supports both '6' and '.6'
-      if (isNaN(cleanBody) || parseInt(cleanBody) <= 0) return;
-      const textNum = parseInt(cleanBody);
-
-      const replyFunc = (text) => conn.sendMessage(from, { text }, { quoted: mek });
-
-      // Handle Search Selection (Only if user quoted the movie list message)
-      if (quotedId && pendingSearch[quotedId]) {
-        const searchData = pendingSearch[quotedId];
-        if (textNum > 0 && textNum <= searchData.results.length) {
-          await conn.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
-          
-          const index = textNum - 1;
-          const selected = searchData.results[index];
-          delete pendingSearch[quotedId]; // clear this session
-          
-          await replyFunc(`*⏳ Fetching details for:* *${selected.title}*...`);
-          const metadata = await getMovieMetadata(selected.movieUrl);
-          
-          let msg = `╭━━━〔 *SACHIYA-MD MOVIE INFO* 〕━━━\n\n`;
-          msg += `🎬 *TITLE:* ${metadata.title || selected.title}\n`;
-          if (metadata.language) msg += `🌐 *Language:* ${metadata.language}\n`;
-          if (metadata.duration) msg += `⏱️ *Duration:* ${metadata.duration}\n`;
-          if (metadata.imdb) msg += `⭐ *IMDb Rating:* ${metadata.imdb}\n`;
-          if (metadata.genres?.length) msg += `🎭 *Genres:* ${metadata.genres.join(", ")}\n`;
-          if (metadata.directors?.length) msg += `🎬 *Directors:* ${metadata.directors.join(", ")}\n`;
-          if (metadata.stars?.length) msg += `🌟 *Stars:* ${metadata.stars.slice(0, 5).join(", ")}\n\n`;
-          msg += `📥 *Fetching download links, please wait...*\n\n> *⚡ Powered by SACHIYA-MD 💫*`;
-          
-          const botThumbnail = "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
-          const thumbUrl = metadata.thumbnail || selected.thumb || botThumbnail;
-          
-          let qualityMsgSentId = null;
-          try {
-            const sentInfo = await conn.sendMessage(from, { image: { url: thumbUrl }, caption: msg }, { quoted: mek });
-            qualityMsgSentId = sentInfo.key.id;
-          } catch (err) {
-            const sentInfo = await conn.sendMessage(from, { image: { url: botThumbnail }, caption: msg }, { quoted: mek }).catch(() => {});
-            qualityMsgSentId = sentInfo ? sentInfo.key.id : null;
-            if (!sentInfo) await replyFunc(msg);
-          }
-          
-          const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
-          if (!downloadLinks.length) return replyFunc("❌ *No download links found for this movie!*");
-          
-          let qualityText = `╭━━━〔 *SELECT QUALITY* 〕━━━\n\n`;
-          qualityText += `🎬 *${metadata.title || selected.title}*\n\n`;
-          downloadLinks.forEach((d, i) => {
-            qualityText += `*${i + 1}.* Quality: *${d.quality}* | Size: *${d.size}*\n`;
-          });
-          qualityText += `\n*👉 Reply with the quality number to download.*` + `\n\n> *⚡ Powered by SACHIYA-MD 💫*`;
-          
-          const qualityMsg = await conn.sendMessage(from, { text: qualityText }, { quoted: mek });
-          const qualityMsgId = qualityMsg.key.id;
-
-          pendingQuality[qualityMsgId] = { movie: { metadata: { ...metadata, title: metadata.title || selected.title }, downloadLinks }, timestamp: Date.now() };
-          return;
-        }
-      }
-
-      // Handle Quality Selection (Only if user quoted the quality selection message)
-      if (quotedId && pendingQuality[quotedId]) {
-        const qualityData = pendingQuality[quotedId];
-        if (textNum > 0 && textNum <= qualityData.movie.downloadLinks.length) {
-          await conn.sendMessage(from, { react: { text: "📥", key: mek.key } }).catch(() => {});
-          
-          const index = textNum - 1;
-          const { movie } = qualityData;
-          delete pendingQuality[quotedId];
-          
-          const selectedLink = movie.downloadLinks[index];
-          await replyFunc(`📥 *Preparing to send "${movie.metadata.title}" (${selectedLink.quality})...*\n⏳ *Please wait, sending as a document file.*`);
-          
-          try {
-            const directUrl = getDirectPixeldrainUrl(selectedLink.link);
-            if (!directUrl) throw new Error("Invalid download link.");
-
-            const safeTitle = (movie.metadata.title || "Movie").replace(/[^\w\s.-]/gi, '').substring(0, 40);
-            const fileName = `${safeTitle} - ${selectedLink.quality}.mp4`;
-
-            await conn.sendMessage(from, {
-              document: { url: directUrl },
-              mimetype: "video/mp4",
-              fileName: fileName,
-              caption: `╭━━━〔 *SACHIYA-MD DOWNLOAD* 〕━━━\n\n🎬 *${movie.metadata.title}*\n📊 *Quality:* ${selectedLink.quality}\n📁 *Size:* ${selectedLink.size}\n\n*✨ Enjoy your movie!*` + `\n\n> *⚡ Powered by SACHIYA-MD 💫*`
-            }, { quoted: mek });
-
-          } catch (error) {
-            console.error("Movie Send Error:", error);
-            await replyFunc(`❌ *Failed to send movie file:* ${error.message || "Unknown error occurred."}`);
-          }
-          return;
-        }
-      }
-    } catch (err) {}
-  });
-}
-
-// Hook to initialize listener when command is processed
+// 2. Global Text/Reply catcher that bypasses normal command blocks
 cmd({
-  pattern: "movielisten",
-  dontAddCommandList: true,
-  filename: __filename
-}, async (conn) => {
-  initMovieListener(conn);
+  on: "text"
+}, async (conn, mek, m, { body, sender, reply, from }) => {
+  activeConnection = conn;
+  try {
+    if (!body) return;
+    const cleanBody = body.replace('.', '').trim();
+    if (isNaN(cleanBody) || parseInt(cleanBody) <= 0) return;
+    const textNum = parseInt(cleanBody);
+
+    const quotedMessage = mek.message?.extendedTextMessage?.contextInfo;
+    const quotedId = quotedMessage ? quotedMessage.stanzaId : null;
+
+    // Fallback: If not quoted, check if user has an active pending search/quality session
+    let targetSearchKey = quotedId && pendingSearch[quotedId] ? quotedId : null;
+    if (!targetSearchKey) {
+      // Find latest pending search for this sender
+      for (const key in pendingSearch) {
+        if (pendingSearch[key].sender === sender) {
+          targetSearchKey = key;
+          break;
+        }
+      }
+    }
+
+    if (targetSearchKey && pendingSearch[targetSearchKey]) {
+      const searchData = pendingSearch[targetSearchKey];
+      if (textNum > 0 && textNum <= searchData.results.length) {
+        await conn.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
+        
+        const index = textNum - 1;
+        const selected = searchData.results[index];
+        delete pendingSearch[targetSearchKey];
+        
+        await reply(`*⏳ Fetching details for:* *${selected.title}*...`);
+        const metadata = await getMovieMetadata(selected.movieUrl);
+        
+        let msg = `╭━━━〔 *SACHIYA-MD MOVIE INFO* 〕━━━\n\n`;
+        msg += `🎬 *TITLE:* ${metadata.title || selected.title}\n`;
+        if (metadata.language) msg += `🌐 *Language:* ${metadata.language}\n`;
+        if (metadata.duration) msg += `⏱️ *Duration:* ${metadata.duration}\n`;
+        if (metadata.imdb) msg += `⭐ *IMDb Rating:* ${metadata.imdb}\n`;
+        if (metadata.genres?.length) msg += `🎭 *Genres:* ${metadata.genres.join(", ")}\n`;
+        if (metadata.directors?.length) msg += `🎬 *Directors:* ${metadata.directors.join(", ")}\n`;
+        if (metadata.stars?.length) msg += `🌟 *Stars:* ${metadata.stars.slice(0, 5).join(", ")}\n\n`;
+        msg += `📥 *Fetching download links, please wait...*\n\n> *⚡ Powered by SACHIYA-MD 💫*`;
+        
+        const botThumbnail = "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
+        const thumbUrl = metadata.thumbnail || selected.thumb || botThumbnail;
+        
+        let qualityMsgId = null;
+        try {
+          const sentInfo = await conn.sendMessage(from, { image: { url: thumbUrl }, caption: msg }, { quoted: mek });
+          qualityMsgId = sentInfo.key.id;
+        } catch (err) {
+          const sentInfo = await conn.sendMessage(from, { image: { url: botThumbnail }, caption: msg }, { quoted: mek }).catch(() => {});
+          qualityMsgId = sentInfo ? sentInfo.key.id : null;
+          if (!sentInfo) await reply(msg);
+        }
+        
+        const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
+        if (!downloadLinks.length) return reply("❌ *No download links found for this movie!*");
+        
+        let qualityText = `╭━━━〔 *SELECT QUALITY* 〕━━━\n\n`;
+        qualityText += `🎬 *${metadata.title || selected.title}*\n\n`;
+        downloadLinks.forEach((d, i) => {
+          qualityText += `*${i + 1}.* Quality: *${d.quality}* | Size: *${d.size}*\n`;
+        });
+        qualityText += `\n*👉 Reply with the quality number to download.*` + `\n\n> *⚡ Powered by SACHIYA-MD 💫*`;
+        
+        const qualityMsg = await conn.sendMessage(from, { text: qualityText }, { quoted: mek });
+        pendingQuality[qualityMsg.key.id] = { movie: { metadata: { ...metadata, title: metadata.title || selected.title }, downloadLinks }, sender, timestamp: Date.now() };
+        return;
+      }
+    }
+
+    // Check Quality Selection Session
+    let targetQualityKey = quotedId && pendingQuality[quotedId] ? quotedId : null;
+    if (!targetQualityKey) {
+      for (const key in pendingQuality) {
+        if (pendingQuality[key].sender === sender) {
+          targetQualityKey = key;
+          break;
+        }
+      }
+    }
+
+    if (targetQualityKey && pendingQuality[targetQualityKey]) {
+      const qualityData = pendingQuality[targetQualityKey];
+      if (textNum > 0 && textNum <= qualityData.movie.downloadLinks.length) {
+        await conn.sendMessage(from, { react: { text: "📥", key: mek.key } }).catch(() => {});
+        
+        const index = textNum - 1;
+        const { movie } = qualityData;
+        delete pendingQuality[targetQualityKey];
+        
+        const selectedLink = movie.downloadLinks[index];
+        await reply(`📥 *Preparing to send "${movie.metadata.title}" (${selectedLink.quality})...*\n⏳ *Please wait, sending as a document file.*`);
+        
+        try {
+          const directUrl = getDirectPixeldrainUrl(selectedLink.link);
+          if (!directUrl) throw new Error("Invalid download link.");
+
+          const safeTitle = (movie.metadata.title || "Movie").replace(/[^\w\s.-]/gi, '').substring(0, 40);
+          const fileName = `${safeTitle} - ${selectedLink.quality}.mp4`;
+
+          await conn.sendMessage(from, {
+            document: { url: directUrl },
+            mimetype: "video/mp4",
+            fileName: fileName,
+            caption: `╭━━━〔 *SACHIYA-MD DOWNLOAD* 〕━━━\n\n🎬 *${movie.metadata.title}*\n📊 *Quality:* ${selectedLink.quality}\n📁 *Size:* ${selectedLink.size}\n\n*✨ Enjoy your movie!*` + `\n\n> *⚡ Powered by SACHIYA-MD 💫*`
+          }, { quoted: mek });
+
+        } catch (error) {
+          console.error("Movie Send Error:", error);
+          await reply(`❌ *Failed to send movie file:* ${error.message || "Unknown error occurred."}`);
+        }
+        return;
+      }
+    }
+  } catch (err) {
+    console.error("Text Listener Error:", err);
+  }
 });
 
-module.exports = { pendingSearch, pendingQuality, initMovieListener };
+// Cleanup Routine
+setInterval(() => {
+  const now = Date.now();
+  const timeout = 10 * 60 * 1000;
+  for (const s in pendingSearch) {
+    if (now - pendingSearch[s].timestamp > timeout) delete pendingSearch[s];
+  }
+  for (const s in pendingQuality) {
+    if (now - pendingQuality[s].timestamp > timeout) delete pendingQuality[s];
+  }
+}, 5 * 60 * 1000);
+
+module.exports = { pendingSearch, pendingQuality };
