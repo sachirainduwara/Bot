@@ -26,21 +26,25 @@ const { storeMessage, handleMessageRevocation } = require('./plugins/antidelete'
 const app = express();
 const port = process.env.PORT || 8000;
 
-// Create HTTP server to keep workflow alive and responsive
 const server = http.createServer(app);
 
 const prefix = config.PREFIX || '.';
 const ownerNumber = [config.OWNER_NUM || '94760579211'];
 const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
-// --- MongoDB Session Database Schema ---
+// --- MongoDB Session & Block Database Schemas ---
 const SessionSchema = new mongoose.Schema({
   _id: { type: String, required: true },
   data: { type: Object, required: true }
 });
 const SessionModel = mongoose.models.Session || mongoose.model('Session', SessionSchema);
 
-// Load Session from MongoDB Atlas safely
+const BlockSchema = new mongoose.Schema({
+  _id: { type: String, required: true },
+  blockedChats: { type: Array, default: [] }
+});
+const BlockModel = mongoose.models.BlockList || mongoose.model('BlockList', BlockSchema);
+
 async function loadSessionFromMongo() {
   if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
@@ -60,7 +64,6 @@ async function loadSessionFromMongo() {
   }
 }
 
-// Save Session to MongoDB Atlas safely
 async function saveSessionToMongo() {
   if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
@@ -85,7 +88,6 @@ async function saveSessionToMongo() {
   }
 }
 
-// Clear Session from MongoDB on Logout
 async function clearMongoSession() {
   if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
@@ -99,7 +101,21 @@ async function clearMongoSession() {
   }
 }
 
-// 🛡️ Ultimate Console Cleaner to suppress decryption, sync, and session error spam
+// Check if chat is blocked from MongoDB
+async function isChatBlocked(chatId) {
+  try {
+    if (mongoose.connection.readyState === 0 && config.SESSION_ID) {
+      await mongoose.connect(config.SESSION_ID);
+    }
+    const doc = await BlockModel.findOne({ _id: 'sachiyamd_blocks' });
+    if (doc && doc.blockedChats && doc.blockedChats.includes(chatId)) {
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+// 🛡️ Ultimate Console Cleaner
 const originalConsoleError = console.error;
 const originalConsoleLog = console.log;
 
@@ -169,7 +185,6 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('🔥 Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-// 1. Load Plugins Safely
 function loadPlugins() {
   let pluginsPath = path.join(__dirname, "plugins");
   if (!fs.existsSync(pluginsPath)) {
@@ -192,7 +207,6 @@ function loadPlugins() {
   }
 }
 
-// 2. WhatsApp Connection Logic with MongoDB Session Support & Nonstop Reconnection
 async function connectToWA() {
   console.log("\n⏳ Connecting SACHIYA MD ✨...");
 
@@ -200,7 +214,6 @@ async function connectToWA() {
     fs.mkdirSync(authFolder, { recursive: true });
   }
 
-  // Load session from MongoDB Atlas first
   await loadSessionFromMongo();
 
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
@@ -230,7 +243,6 @@ async function connectToWA() {
     }
   });
 
-  // Pairing Code Generation ONLY IF NOT REGISTERED
   if (!sachiya.authState.creds.registered) {
     let targetNumber = (config.OWNER_NUM || ownerNumber[0]).replace(/[^0-9]/g, '');
     
@@ -272,7 +284,6 @@ async function connectToWA() {
         }
         process.exit(1);
       } else {
-        // Nonstop reconnection loop without getting blocked
         setTimeout(() => connectToWA(), 3000);
       }
     } else if (connection === 'open') {
@@ -283,7 +294,6 @@ async function connectToWA() {
       console.log('┃ 🎉 SACHIYA MD CONNECTED SUCCESSFULLY!  ');
       console.log('╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n');
 
-      // Save session to MongoDB immediately after successful connection
       await saveSessionToMongo();
 
       const ownerJid = ownerNumber[0] + "@s.whatsapp.net";
@@ -318,7 +328,6 @@ async function connectToWA() {
     await saveSessionToMongo();
   });
 
-  // Call Reject Handler
   sachiya.ev.on('call', async (callEvents) => {
     for (const call of callEvents) {
       if (call.status === 'offer') {
@@ -331,7 +340,6 @@ async function connectToWA() {
     }
   });
 
-  // ✉️ Direct Message Stream Handler (Active for all chats)
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
@@ -340,7 +348,6 @@ async function connectToWA() {
 
       const from = mek.key.remoteJid;
 
-      // Extract message body early to check for unblock command bypass
       let msgType = getContentType(mek.message);
       if (msgType === 'ephemeralMessage') {
         mek.message = mek.message.ephemeralMessage.message;
@@ -361,21 +368,14 @@ async function connectToWA() {
       
       const bodyText = rawBody ? String(rawBody) : '';
 
-      // 🛑 Check if chat or group is blocked (Allow .unblock command to bypass)
-      const blockedFilePath = path.join(__dirname, 'blocked_chats.json');
-      if (fs.existsSync(blockedFilePath)) {
-          try {
-              const blockedList = JSON.parse(fs.readFileSync(blockedFilePath, 'utf8'));
-              if (blockedList.includes(from)) {
-                  const isUnblockCmd = bodyText.startsWith(prefix) && bodyText.slice(prefix.length).trim().toLowerCase().startsWith('unblock');
-                  if (!isUnblockCmd) {
-                      return; // Stop processing if chat is blocked and it's not the unblock command
-                  }
-              }
-          } catch (e) {}
+      // 🛑 Check if chat or group is blocked in MongoDB (Allow .unblock command to bypass)
+      if (await isChatBlocked(from)) {
+          const isUnblockCmd = bodyText.startsWith(prefix) && bodyText.slice(prefix.length).trim().toLowerCase().startsWith('unblock');
+          if (!isUnblockCmd) {
+              return; 
+          }
       }
 
-      // Check if message is a deletion (revocation)
       const isRevoke = mek.message?.protocolMessage && mek.message.protocolMessage.type === 0;
       if (isRevoke) {
         await handleMessageRevocation(sachiya, mek);
@@ -440,7 +440,6 @@ app.get("/", (req, res) => {
   res.send("Hey, SACHIYA MD started successfully with MongoDB! ✅");
 });
 
-// Self-ping interval to keep GitHub workflow network alive longer
 setInterval(() => {
   http.get(`http://localhost:${port}/`, () => {}).on('error', () => {});
 }, 30000);
