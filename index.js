@@ -20,7 +20,6 @@ const config = require('./config');
 const { sms } = require('./lib/msg');
 const { commands } = require('./command');
 
-// Import Antidelete functions from plugins
 const { storeMessage, handleMessageRevocation } = require('./plugins/antidelete');
 
 const app = express();
@@ -32,10 +31,8 @@ const prefix = config.PREFIX || '.';
 const ownerNumber = [config.OWNER_NUM || '94760579211'];
 const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
-// In-memory blocked cache for instant response without delay
 global.blockedChatsCache = [];
 
-// --- MongoDB Session & Block Database Schemas ---
 const SessionSchema = new mongoose.Schema({
   _id: { type: String, required: true },
   data: { type: Object, required: true }
@@ -104,7 +101,6 @@ async function clearMongoSession() {
   }
 }
 
-// Load Blocked List into Memory Cache instantly on startup
 async function loadBlockedListIntoCache() {
   try {
     if (mongoose.connection.readyState === 0 && config.SESSION_ID) {
@@ -121,7 +117,7 @@ async function loadBlockedListIntoCache() {
   }
 }
 
-// 🛡️ Ultimate Console Cleaner
+// 🛡️ Ultimate Console Cleaner (Suppresses session closing and decryption spam)
 const originalConsoleError = console.error;
 const originalConsoleLog = console.log;
 
@@ -146,7 +142,8 @@ console.error = function (...args) {
     logText.includes('ephemeralKeyPair') ||
     logText.includes('privKey') ||
     logText.includes('remoteIdentityKey') ||
-    logText.includes('Syncing messages')
+    logText.includes('Syncing messages') ||
+    logText.includes('Closing open session')
   ) {
     return;
   }
@@ -165,7 +162,8 @@ console.log = function (...args) {
     logText.includes('currentRatchet') ||
     logText.includes('indexInfo') ||
     logText.includes('pendingPreKey') ||
-    logText.includes('Syncing messages')
+    logText.includes('Syncing messages') ||
+    logText.includes('Closing open session')
   ) {
     return;
   }
@@ -221,7 +219,7 @@ async function connectToWA() {
   }
 
   await loadSessionFromMongo();
-  await loadBlockedListIntoCache(); // Load blocks to memory instantly
+  await loadBlockedListIntoCache();
 
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestWaWebVersion();
@@ -376,7 +374,7 @@ async function connectToWA() {
       
       const bodyText = rawBody ? String(rawBody) : '';
 
-      // 🛑 Instant Memory Check for Blocked Chats (Zero Delay)
+      // 🛑 Instant Memory Check for Blocked Chats (Zero Delay & Real-time update)
       if (global.blockedChatsCache && global.blockedChatsCache.includes(from)) {
           const isUnblockCmd = bodyText.startsWith(prefix) && bodyText.slice(prefix.length).trim().toLowerCase().startsWith('unblock');
           if (!isUnblockCmd) {
