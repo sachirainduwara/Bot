@@ -117,7 +117,7 @@ async function loadBlockedListIntoCache() {
   }
 }
 
-// 🛡️ Ultimate Console Cleaner (Suppresses session closing and decryption spam)
+// 🛡️ Ultimate Console Cleaner
 const originalConsoleError = console.error;
 const originalConsoleLog = console.log;
 
@@ -374,10 +374,11 @@ async function connectToWA() {
       
       const bodyText = rawBody ? String(rawBody) : '';
 
-      // 🛑 Instant Memory Check for Blocked Chats (Zero Delay & Real-time update)
+      // 🛑 Instant Memory Check (Allow both .block and .unblock commands to bypass when blocked)
       if (global.blockedChatsCache && global.blockedChatsCache.includes(from)) {
-          const isUnblockCmd = bodyText.startsWith(prefix) && bodyText.slice(prefix.length).trim().toLowerCase().startsWith('unblock');
-          if (!isUnblockCmd) {
+          const trimmedBody = bodyText.startsWith(prefix) ? bodyText.slice(prefix.length).trim().toLowerCase() : '';
+          const isAllowedCmd = trimmedBody.startsWith('block') || trimmedBody.startsWith('unblock');
+          if (!isAllowedCmd) {
               return; 
           }
       }
