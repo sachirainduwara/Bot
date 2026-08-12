@@ -1,6 +1,7 @@
 const { cmd } = require("../command");
 const puppeteer = require("puppeteer");
 
+// Store active sessions per user chat
 const pendingSearch = {};
 const pendingQuality = {};
 
@@ -135,8 +136,6 @@ cmd({
   
   if (!searchResults.length) return reply("❌ *No movies found for your query!*");
   
-  pendingSearch[sender] = { results: searchResults, timestamp: Date.now() };
-  
   let text = `╭━━━〔 *SACHIYA-MD MOVIES* 〕━━━\n\n`;
   searchResults.forEach((movie, i) => {
     text += `*${i + 1}.* ${movie.title}\n`;
@@ -146,10 +145,14 @@ cmd({
   });
   text += `\n*👉 Reply with the number (1-${searchResults.length}) of the movie you want to select.*\n\n> *⚡ Powered by SACHIYA-MD 💫*`;
   
-  return reply(text);
+  // Send message and save its ID to track replies specifically to this message
+  const sentMsg = await conn.sendMessage(from, { text }, { quoted: mek });
+  const sentMsgId = sentMsg.key.id;
+
+  pendingSearch[sentMsgId] = { results: searchResults, timestamp: Date.now() };
 });
 
-// 2. Direct Baileys Event Listener to catch numbers instantly without index.js restriction
+// 2. Direct Baileys Event Listener to track Quoted Message Replies precisely
 let isListenerInitialized = false;
 
 function initMovieListener(conn) {
@@ -172,21 +175,26 @@ function initMovieListener(conn) {
                       msgType === 'imageMessage' ? mek.message.imageMessage.caption : '';
 
       if (!bodyText) return;
-      const cleanBody = bodyText.trim();
+
+      // Check if the user is quoting a message
+      const quotedMessage = mek.message.extendedTextMessage?.contextInfo;
+      const quotedId = quotedMessage ? quotedMessage.stanzaId : null;
+
+      const cleanBody = bodyText.replace('.', '').trim(); // supports both '6' and '.6'
       if (isNaN(cleanBody) || parseInt(cleanBody) <= 0) return;
       const textNum = parseInt(cleanBody);
 
       const replyFunc = (text) => conn.sendMessage(from, { text }, { quoted: mek });
 
-      // Handle Search Selection
-      if (pendingSearch[sender]) {
-        const searchData = pendingSearch[sender];
+      // Handle Search Selection (Only if user quoted the movie list message)
+      if (quotedId && pendingSearch[quotedId]) {
+        const searchData = pendingSearch[quotedId];
         if (textNum > 0 && textNum <= searchData.results.length) {
           await conn.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
           
           const index = textNum - 1;
           const selected = searchData.results[index];
-          delete pendingSearch[sender];
+          delete pendingSearch[quotedId]; // clear this session
           
           await replyFunc(`*⏳ Fetching details for:* *${selected.title}*...`);
           const metadata = await getMovieMetadata(selected.movieUrl);
@@ -204,37 +212,43 @@ function initMovieListener(conn) {
           const botThumbnail = "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
           const thumbUrl = metadata.thumbnail || selected.thumb || botThumbnail;
           
+          let qualityMsgSentId = null;
           try {
-            await conn.sendMessage(from, { image: { url: thumbUrl }, caption: msg }, { quoted: mek });
+            const sentInfo = await conn.sendMessage(from, { image: { url: thumbUrl }, caption: msg }, { quoted: mek });
+            qualityMsgSentId = sentInfo.key.id;
           } catch (err) {
-            await conn.sendMessage(from, { image: { url: botThumbnail }, caption: msg }, { quoted: mek }).catch(() => replyFunc(msg));
+            const sentInfo = await conn.sendMessage(from, { image: { url: botThumbnail }, caption: msg }, { quoted: mek }).catch(() => {});
+            qualityMsgSentId = sentInfo ? sentInfo.key.id : null;
+            if (!sentInfo) await replyFunc(msg);
           }
           
           const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
           if (!downloadLinks.length) return replyFunc("❌ *No download links found for this movie!*");
           
-          pendingQuality[sender] = { movie: { metadata: { ...metadata, title: metadata.title || selected.title }, downloadLinks }, timestamp: Date.now() };
-          
-          let qualityMsg = `╭━━━〔 *SELECT QUALITY* 〕━━━\n\n`;
-          qualityMsg += `🎬 *${metadata.title || selected.title}*\n\n`;
+          let qualityText = `╭━━━〔 *SELECT QUALITY* 〕━━━\n\n`;
+          qualityText += `🎬 *${metadata.title || selected.title}*\n\n`;
           downloadLinks.forEach((d, i) => {
-            qualityMsg += `*${i + 1}.* Quality: *${d.quality}* | Size: *${d.size}*\n`;
+            qualityText += `*${i + 1}.* Quality: *${d.quality}* | Size: *${d.size}*\n`;
           });
-          qualityMsg += `\n*👉 Reply with the quality number to download.*` + `\n\n> *⚡ Powered by SACHIYA-MD 💫*`;
+          qualityText += `\n*👉 Reply with the quality number to download.*` + `\n\n> *⚡ Powered by SACHIYA-MD 💫*`;
           
-          return replyFunc(qualityMsg);
+          const qualityMsg = await conn.sendMessage(from, { text: qualityText }, { quoted: mek });
+          const qualityMsgId = qualityMsg.key.id;
+
+          pendingQuality[qualityMsgId] = { movie: { metadata: { ...metadata, title: metadata.title || selected.title }, downloadLinks }, timestamp: Date.now() };
+          return;
         }
       }
 
-      // Handle Quality Selection
-      if (pendingQuality[sender]) {
-        const qualityData = pendingQuality[sender];
+      // Handle Quality Selection (Only if user quoted the quality selection message)
+      if (quotedId && pendingQuality[quotedId]) {
+        const qualityData = pendingQuality[quotedId];
         if (textNum > 0 && textNum <= qualityData.movie.downloadLinks.length) {
           await conn.sendMessage(from, { react: { text: "📥", key: mek.key } }).catch(() => {});
           
           const index = textNum - 1;
           const { movie } = qualityData;
-          delete pendingQuality[sender];
+          delete pendingQuality[quotedId];
           
           const selectedLink = movie.downloadLinks[index];
           await replyFunc(`📥 *Preparing to send "${movie.metadata.title}" (${selectedLink.quality})...*\n⏳ *Please wait, sending as a document file.*`);
@@ -257,32 +271,20 @@ function initMovieListener(conn) {
             console.error("Movie Send Error:", error);
             await replyFunc(`❌ *Failed to send movie file:* ${error.message || "Unknown error occurred."}`);
           }
+          return;
         }
       }
     } catch (err) {}
   });
 }
 
-// Hook into command execution to initialize the listener with the active connection socket
+// Hook to initialize listener when command is processed
 cmd({
-  pattern: "moviesetup",
+  pattern: "movielisten",
   dontAddCommandList: true,
   filename: __filename
 }, async (conn) => {
   initMovieListener(conn);
 });
 
-// Auto-initialize when any movie command is called
-cmd({
-  pattern: "moviecheck",
-  dontAddCommandList: true,
-  filename: __filename
-}, async (conn) => {
-  initMovieListener(conn);
-});
-
-// Also trigger initialization immediately via a self-invoking hook on module load if possible, 
-// but since 'conn' is needed, we hook it into the main movie command too:
-const originalMovieCmd = cmd;
-
-module.exports = { pendingSearch, pendingQuality };
+module.exports = { pendingSearch, pendingQuality, initMovieListener };
