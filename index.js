@@ -117,65 +117,43 @@ async function loadBlockedListIntoCache() {
   }
 }
 
-// 🛡️ Ultimate Console Cleaner to suppress session and decryption spam completely
+// 🛡️ Ultimate Console Cleaner to completely block session spam, prekeys, and libsignal logs
 const originalConsoleError = console.error;
 const originalConsoleLog = console.log;
+const originalConsoleWarn = console.warn;
+
+const suppressList = [
+  'SessionEntry', 'Closing session', 'Decrypted message', 'rootKey', 
+  'creds.json successfully synced', '_chains', 'currentRatchet', 
+  'indexInfo', 'pendingPreKey', 'Syncing messages', 'Closing open session',
+  'Failed to decrypt message', 'Bad MAC', 'No sessions', 'closing connection',
+  'libsignal', 'Unexpected end of JSON', 'prekey bundle', 'registrationId',
+  'ephemeralKeyPair', 'privKey', 'remoteIdentityKey', 'pubKey', 'closed',
+  'used', 'created', 'chainKey', 'messageKeys', 'chainType', 'Connection closed'
+];
 
 console.error = function (...args) {
   const logText = args.join(' ');
-  if (
-    logText.includes('Failed to decrypt message') ||
-    logText.includes('Bad MAC') ||
-    logText.includes('No sessions') ||
-    logText.includes('closing connection') ||
-    logText.includes('Closing session') ||
-    logText.includes('SessionEntry') ||
-    logText.includes('Decrypted message') ||
-    logText.includes('libsignal') ||
-    logText.includes('Unexpected end of JSON') ||
-    logText.includes('prekey bundle') ||
-    logText.includes('_chains') ||
-    logText.includes('currentRatchet') ||
-    logText.includes('indexInfo') ||
-    logText.includes('pendingPreKey') ||
-    logText.includes('registrationId') ||
-    logText.includes('ephemeralKeyPair') ||
-    logText.includes('privKey') ||
-    logText.includes('remoteIdentityKey') ||
-    logText.includes('Syncing messages') ||
-    logText.includes('Closing open session') ||
-    logText.includes('SessionEntry')
-  ) {
-    return;
-  }
+  if (suppressList.some(word => logText.includes(word))) return;
   originalConsoleError.apply(console, args);
 };
 
 console.log = function (...args) {
   const logText = args.join(' ');
-  if (
-    logText.includes('SessionEntry') ||
-    logText.includes('Closing session') ||
-    logText.includes('Decrypted message') ||
-    logText.includes('rootKey') ||
-    logText.includes('creds.json successfully synced') ||
-    logText.includes('_chains') ||
-    logText.includes('currentRatchet') ||
-    logText.includes('indexInfo') ||
-    logText.includes('pendingPreKey') ||
-    logText.includes('Syncing messages') ||
-    logText.includes('Closing open session') ||
-    logText.includes('SessionEntry')
-  ) {
-    return;
-  }
+  if (suppressList.some(word => logText.includes(word))) return;
   originalConsoleLog.apply(console, args);
+};
+
+console.warn = function (...args) {
+  const logText = args.join(' ');
+  if (suppressList.some(word => logText.includes(word))) return;
+  originalConsoleWarn.apply(console, args);
 };
 
 const handleSilentErrors = (err) => {
   if (!err) return true;
   const msg = err.message || err.toString() || "";
-  if (msg.includes('Failed to decrypt') || msg.includes('Bad MAC') || msg.includes('No sessions') || msg.includes('libsignal') || msg.includes('JSON')) {
+  if (suppressList.some(word => msg.includes(word))) {
     return true;
   }
   return false;
@@ -281,8 +259,7 @@ async function connectToWA() {
     
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      console.log(`⚠️ Connection closed. Reconnecting automatically in 3 seconds...`);
-
+      
       if (statusCode === DisconnectReason.loggedOut) {
         console.error("❌ Session logged out from WhatsApp! Clearing MongoDB session...");
         await clearMongoSession();
@@ -291,7 +268,8 @@ async function connectToWA() {
         }
         process.exit(1);
       } else {
-        setTimeout(() => connectToWA(), 3000);
+        // Prevent instant loop spam by adding safe delay
+        setTimeout(() => connectToWA(), 5000);
       }
     } else if (connection === 'open') {
       if (isConnectedOnce) return;
@@ -299,11 +277,12 @@ async function connectToWA() {
 
       console.log('\n╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮');
       console.log('┃ 🎉 SACHIYA MD CONNECTED SUCCESSFULLY!  ');
-      console.log('╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n');
+      console.log('╰━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n');
 
       await saveSessionToMongo();
       await loadBlockedListIntoCache();
 
+      // Send connection alert to owner ONLY ONCE per fresh boot to prevent inbox spamming on reconnects
       const ownerJid = ownerNumber[0] + "@s.whatsapp.net";
       const date = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' });
       const time = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -376,7 +355,6 @@ async function connectToWA() {
       
       const bodyText = rawBody ? String(rawBody) : '';
 
-      // 🛑 Instant Memory Check (Allow both .block and .unblock commands to bypass when blocked)
       if (global.blockedChatsCache && global.blockedChatsCache.includes(from)) {
           const trimmedBody = bodyText.startsWith(prefix) ? bodyText.slice(prefix.length).trim().toLowerCase() : '';
           const isAllowedCmd = trimmedBody.startsWith('block') || trimmedBody.startsWith('unblock');
