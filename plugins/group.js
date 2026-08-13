@@ -175,7 +175,7 @@ cmd({
 });
 
 // ==========================================
-// 5. TAG ALL MEMBERS
+// 5. TAG ALL MEMBERS (OPEN TO ALL MEMBERS)
 // ==========================================
 cmd({
   pattern: "tagall",
@@ -184,12 +184,11 @@ cmd({
   desc: "Tag all group members with a custom message",
   category: "group",
   filename: __filename,
-}, async (sachiya, mek, m, { from, isGroup, isOwner, sender, reply, q }) => {
+}, async (sachiya, mek, m, { from, isGroup, reply, q }) => {
   try {
     if (!isGroup) return reply("⚠️ *This command can only be used in groups!*");
     
-    const isAdminOrOwner = await checkAdminOrOwner(sachiya, from, sender, isOwner);
-    if (!isAdminOrOwner) return reply("❌ *Only group admins can use tagall!*");
+    // Admin check removed so any normal member can use this command!
 
     const metadata = await sachiya.groupMetadata(from);
     const participants = metadata.participants || [];
