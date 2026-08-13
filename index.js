@@ -33,6 +33,9 @@ const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
 global.blockedChatsCache = [];
 
+// Call Counter Object එක ඉන්බොක්ස් සහ ගෲප් සඳහා වෙන වෙනම මැනේජ් කිරීමට
+global.callCounters = global.callCounters || {};
+
 const SessionSchema = new mongoose.Schema({
   _id: { type: String, required: true },
   data: { type: Object, required: true }
@@ -117,7 +120,7 @@ async function loadBlockedListIntoCache() {
   }
 }
 
-// 🛡️ Ultimate Stream & Console Interceptor placed right in the middle (where old cleaner was)
+// 🛡️ Ultimate Stream & Console Interceptor
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
 
@@ -328,18 +331,47 @@ async function connectToWA() {
     await saveSessionToMongo();
   });
 
+  // 📞 Anti-Call System Handler (Group සහ Inbox වෙන වෙනම හැසිරවීම)
   sachiya.ev.on('call', async (callEvents) => {
     for (const call of callEvents) {
       if (call.status === 'offer') {
         const callerJid = call.from;
-        
-        // ගෲප් එකකින් කෝල් එකක් ආවොත් (jid එකේ @g.us තියෙනවා නම්) කිසිම දෙයක් නොකර ලූප් එකෙන් පැනගන්නවා (Skip කරනවා)
-        if (callerJid.endsWith('@g.us')) continue;
+        const isGroupCall = callerJid.endsWith('@g.us');
 
         try {
-          await sachiya.rejectCall(call.id, callerJid);
-          await sachiya.sendMessage(callerJid, { text: `අයියො CALL ගන්න එපා බන්..\nමට MASSAGE එකක් දාපන් මම Online ආපු වෙලාවට බලන්නම්..\nමෙහාට SIGNAL නෑ එකයි..\nගහක් උඩට ගිහිම් DATA ON කරපු වෙලවට බලන්නම්..\nඑක නිසා මට MASSAGE එකක් දාල තියපන් 👀` });
-        } catch (e) {}
+          if (isGroupCall) {
+            // 👥 1. ගෲප් එකකින් කෝල් එකක් ආවොත් (Call එක කට් කරලා වෙනම ලස්සන මැසේජ් එකක් යැවීම)
+            await sachiya.rejectCall(call.id, callerJid);
+            await sachiya.sendMessage(callerJid, { 
+              text: `හයියෝ..\nCall ගන්න එපෝ..🥱` 
+            });
+          } else {
+            // 👤 2. ඉන්බොක්ස් (Private) කෝල් එකක් ආවොත් (වාර ගණන අනුව වෙනස් මැසේජ් යැවීම සහ කට් කිරීම)
+            if (!global.callCounters[callerJid]) {
+              global.callCounters[callerJid] = 0;
+            }
+            global.callCounters[callerJid] += 1;
+            const count = global.callCounters[callerJid];
+
+            await sachiya.rejectCall(call.id, callerJid);
+
+            if (count === 1) {
+              await sachiya.sendMessage(callerJid, { 
+                text: `Call ගන්න එපා  😑\nමට Massage එකක් දාන්න..\nOnline ආවම මන් Reply කරන්නම් 💖.` 
+              });
+            } else if (count === 2) {
+              await sachiya.sendMessage(callerJid, { 
+                text: `අයියෝ බන්..\nකිය කියා ඉන්න බෑ එකපාරක් කිව්වම අහපන් 😡.` 
+              });
+            } else {
+              await sachiya.sendMessage(callerJid, { 
+                text: `සින්හල තෙරෙන්නෙ නැද්ද බන් උබට 😑😑` 
+              });
+            }
+          }
+        } catch (e) {
+          console.error("Call Reject/Message Error:", e);
+        }
       }
     }
   });
