@@ -332,6 +332,10 @@ async function connectToWA() {
     for (const call of callEvents) {
       if (call.status === 'offer') {
         const callerJid = call.from;
+        
+        // ගෲප් එකකින් කෝල් එකක් ආවොත් (jid එකේ @g.us තියෙනවා නම්) කිසිම දෙයක් නොකර ලූප් එකෙන් පැනගන්නවා (Skip කරනවා)
+        if (callerJid.endsWith('@g.us')) continue;
+
         try {
           await sachiya.rejectCall(call.id, callerJid);
           await sachiya.sendMessage(callerJid, { text: `අයියො CALL ගන්න එපා බන්..\nමට MASSAGE එකක් දාපන් මම Online ආපු වෙලාවට බලන්නම්..\nමෙහාට SIGNAL නෑ එකයි..\nගහක් උඩට ගිහිම් DATA ON කරපු වෙලවට බලන්නම්..\nඑක නිසා මට MASSAGE එකක් දාල තියපන් 👀` });
