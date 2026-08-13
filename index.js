@@ -117,43 +117,58 @@ async function loadBlockedListIntoCache() {
   }
 }
 
-// 🛡️ Ultimate Console Cleaner to completely block session spam, prekeys, and libsignal logs
+// 🛡️ Ultimate Stream & Console Interceptor placed right in the middle (where old cleaner was)
+const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+const originalStderrWrite = process.stderr.write.bind(process.stderr);
+
+const hiddenKeywords = [
+  'SessionEntry', 'Closing session', '_chains', 'currentRatchet', 
+  'indexInfo', 'pendingPreKey', 'registrationId', 'ephemeralKeyPair', 
+  'privKey', 'remoteIdentityKey', 'pubKey', 'rootKey', 'chainKey', 
+  'messageKeys', 'chainType', 'closed', 'used', 'created', 'libsignal',
+  'Decrypted message', 'Failed to decrypt', 'Bad MAC', 'prekey bundle'
+];
+
+process.stdout.write = function (chunk, encoding, callback) {
+  if (typeof chunk === 'string' && hiddenKeywords.some(keyword => chunk.includes(keyword))) {
+    return true;
+  }
+  return originalStdoutWrite(chunk, encoding, callback);
+};
+
+process.stderr.write = function (chunk, encoding, callback) {
+  if (typeof chunk === 'string' && hiddenKeywords.some(keyword => chunk.includes(keyword))) {
+    return true;
+  }
+  return originalStderrWrite(chunk, encoding, callback);
+};
+
 const originalConsoleError = console.error;
 const originalConsoleLog = console.log;
 const originalConsoleWarn = console.warn;
 
-const suppressList = [
-  'SessionEntry', 'Closing session', 'Decrypted message', 'rootKey', 
-  'creds.json successfully synced', '_chains', 'currentRatchet', 
-  'indexInfo', 'pendingPreKey', 'Syncing messages', 'Closing open session',
-  'Failed to decrypt message', 'Bad MAC', 'No sessions', 'closing connection',
-  'libsignal', 'Unexpected end of JSON', 'prekey bundle', 'registrationId',
-  'ephemeralKeyPair', 'privKey', 'remoteIdentityKey', 'pubKey', 'closed',
-  'used', 'created', 'chainKey', 'messageKeys', 'chainType', 'Connection closed'
-];
-
 console.error = function (...args) {
   const logText = args.join(' ');
-  if (suppressList.some(word => logText.includes(word))) return;
+  if (hiddenKeywords.some(word => logText.includes(word))) return;
   originalConsoleError.apply(console, args);
 };
 
 console.log = function (...args) {
   const logText = args.join(' ');
-  if (suppressList.some(word => logText.includes(word))) return;
+  if (hiddenKeywords.some(word => logText.includes(word))) return;
   originalConsoleLog.apply(console, args);
 };
 
 console.warn = function (...args) {
   const logText = args.join(' ');
-  if (suppressList.some(word => logText.includes(word))) return;
+  if (hiddenKeywords.some(word => logText.includes(word))) return;
   originalConsoleWarn.apply(console, args);
 };
 
 const handleSilentErrors = (err) => {
   if (!err) return true;
   const msg = err.message || err.toString() || "";
-  if (suppressList.some(word => msg.includes(word))) {
+  if (hiddenKeywords.some(word => msg.includes(word))) {
     return true;
   }
   return false;
@@ -268,7 +283,6 @@ async function connectToWA() {
         }
         process.exit(1);
       } else {
-        // Prevent instant loop spam by adding safe delay
         setTimeout(() => connectToWA(), 5000);
       }
     } else if (connection === 'open') {
@@ -282,7 +296,6 @@ async function connectToWA() {
       await saveSessionToMongo();
       await loadBlockedListIntoCache();
 
-      // Send connection alert to owner ONLY ONCE per fresh boot to prevent inbox spamming on reconnects
       const ownerJid = ownerNumber[0] + "@s.whatsapp.net";
       const date = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' });
       const time = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
