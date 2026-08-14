@@ -239,9 +239,9 @@ async function connectToWA() {
     generateHighQualityLinkPreview: false,
     getMessage: async (key) => {
       try {
-        return { conversation: 'Hello, I am SACHIYA-MD active bot!' };
+        return undefined;
       } catch (e) {
-        return { conversation: '' };
+        return undefined;
       }
     }
   });
@@ -292,9 +292,9 @@ async function connectToWA() {
       if (isConnectedOnce) return;
       isConnectedOnce = true;
 
-      console.log('\n╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮');
-      console.log('┃ 🎉 SACHIYA MD CONNECTED SUCCESSFULLY!  ');
-      console.log('╰━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n');
+      console.log('\n╭─────────────────────────────────────────╮');
+      console.log('│ 🎉 SACHIYA MD CONNECTED SUCCESSFULLY!   │');
+      console.log('╰─────────────────────────────────────────╯\n');
 
       await saveSessionToMongo();
       await loadBlockedListIntoCache();
@@ -331,7 +331,7 @@ async function connectToWA() {
     await saveSessionToMongo();
   });
 
-  // 📞 Anti-Call System Handler (گෲප් කෝල් මගහරිමින්, ඉන්බොක්ස් කෝල් පමණක් හැසිරවීම)
+  // 📞 Anti-Call System Handler (ගෲප් කෝල් මගහරිමින්, ඉන්බොක්ස් කෝල් පමණක් හැසිරවීම)
   sachiya.ev.on('call', async (callEvents) => {
     for (const call of callEvents) {
       if (call.status === 'offer') {
