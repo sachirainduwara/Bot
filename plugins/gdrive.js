@@ -12,27 +12,29 @@ async (conn, mek, m, { from, q, reply }) => {
     try {
         if (!q) return reply("⚠️ කරුණාකර Google Drive ලින්ක් එක ලබා දෙන්න!\nඋදා: `.gdrive https://drive.google.com/file/...`");
 
-        reply("⏳ ෆයිල් තොරතුරු ලබාගනිමින් පවතී...");
+        // Google Drive share link එක direct download link එකක් බවට හැරවීම
+        let match = q.match(\/d\/([a-zA-Z0-9_-]+)/);
+        if (!match) return reply("❌ වැරදි Google Drive ලින්ක් එකකි!");
 
-        const res = await axios.get(`https://api.siputzx.my.id/api/d/gdrive?url=${encodeURIComponent(q)}`);
-        const data = res.data;
+        let fileId = match[1];
+        let directUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
 
-        if (!data.status || !data.data) {
-            return reply("❌ අදාළ ගූගල් ඩ්‍රයිව් ලින්ක් එකෙන් ෆයිල් එක ලබා ගැනීමට නොහැකි විය!");
-        }
+        reply("⏳ ෆයිල් එක බාගත කරමින් පවතී, කරුණාකර රැඳී සිටින්න...");
 
-        let file = data.data;
         let caption = `╭━━━〔 *GOOGLE DRIVE DOWNLOADER* 〕━━━\n` +
                       `┃\n` +
-                      `┃ 📂 *File Name:* ${file.fileName}\n` +
-                      `┃ 📦 *Size:* ${file.fileSize}\n` +
+                      `┃ 📂 *Status:* Downloaded Successfully ✅\n` +
                       `┃\n` +
                       `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
                       `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-        await conn.sendMessage(from, { document: { url: file.downloadUrl }, mimetype: file.mimetype || 'application/octet-stream', fileName: file.fileName, caption: caption }, { quoted: mek });
+        await conn.sendMessage(from, { 
+            document: { url: directUrl }, 
+            fileName: `GoogleDrive_File_${fileId}.bin`, 
+            caption: caption 
+        }, { quoted: mek });
 
     } catch (e) {
-        reply("❌ ඩවුන්ලෝඩ් කිරීමේදී දෝෂයක් ඇති විය!");
+        reply("❌ ඩවුන්ලෝඩ් කිරීමේදී දෝෂයක් ඇති විය! (මෙම ෆයිල් එක Private හෝ View Access නැති එකක් විය හැක)");
     }
 });
