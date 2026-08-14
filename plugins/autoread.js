@@ -1,6 +1,6 @@
 /**
  * SACHIYA-MD - A WhatsApp Bot
- * Autoread Plugin - Owner Protected Version
+ * Autoread Plugin - Styled & Optimized Version
  */
 
 const { cmd } = require('../command');
@@ -43,7 +43,7 @@ async function initConfig() {
     }
 }
 
-// Registering the command with proper Owner protection
+// Registering the command with professional styling, emojis, and reactions
 cmd({
     pattern: "autoread",
     desc: "Enable or disable automatic reading of messages",
@@ -52,9 +52,9 @@ cmd({
 },
 async (sachiya, mek, m, { from, q, reply, isOwner }) => {
     try {
-        // Owner හෝ තමන්ගේ චැට් එකෙන් (fromMe) ද යන්න පරීක්ෂා කිරීම
         if (!isOwner && !mek.key.fromMe) {
-            return reply('❌ This command is only available for the owner!');
+            await sachiya.sendMessage(from, { react: { text: '❌', key: mek.key } }).catch(() => {});
+            return reply('*❌ This command is only available for the owner!*');
         }
 
         await connectDB();
@@ -66,22 +66,44 @@ async (sachiya, mek, m, { from, q, reply, isOwner }) => {
         const action = q ? q.trim().toLowerCase() : '';
 
         if (action === 'on' || action === 'enable') {
+            if (configData.enabled) {
+                await sachiya.sendMessage(from, { react: { text: 'ℹ️', key: mek.key } }).catch(() => {});
+                return reply('╭━━━〔 *AUTO-READ STATUS* 〕━━━\n┃\n┃ *ℹ️ Auto-read is already ENABLED!* ✅\n┃\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *⚡ Powered by SACHIYA-MD 💫*');
+            }
             configData.enabled = true;
+            configData.updatedAt = new Date();
+            await configData.save();
+            await sachiya.sendMessage(from, { react: { text: '✅', key: mek.key } }).catch(() => {});
+            return reply('╭━━━〔 *AUTO-READ SETTINGS* 〕━━━\n┃\n┃ *✅ Auto-read has been successfully ENABLED!* \n┃\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *⚡ Powered by SACHIYA-MD 💫*');
+
         } else if (action === 'off' || action === 'disable') {
+            if (!configData.enabled) {
+                await sachiya.sendMessage(from, { react: { text: 'ℹ️', key: mek.key } }).catch(() => {});
+                return reply('╭━━━〔 *AUTO-READ STATUS* 〕━━━\n┃\n┃ *ℹ️ Auto-read is already DISABLED!* ❌\n┃\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *⚡ Powered by SACHIYA-MD 💫*');
+            }
             configData.enabled = false;
+            configData.updatedAt = new Date();
+            await configData.save();
+            await sachiya.sendMessage(from, { react: { text: '❌', key: mek.key } }).catch(() => {});
+            return reply('╭━━━〔 *AUTO-READ SETTINGS* 〕━━━\n┃\n┃ *❌ Auto-read has been successfully DISABLED!* \n┃\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *⚡ Powered by SACHIYA-MD 💫*');
+
         } else if (action === '') {
-            configData.enabled = !configData.enabled;
+            // කිසිම ආගර්මන්ට් එකක් නැතුව .autoread විතරක් ගැහුවම දැනට තියෙන ස්ටේටස් එක පෙන්වීම
+            const statusEmoji = configData.enabled ? '✅' : '❌';
+            const statusText = configData.enabled ? 'ENABLED' : 'DISABLED';
+            
+            await sachiya.sendMessage(from, { react: { text: '👁️‍🗨️', key: mek.key } }).catch(() => {});
+            return reply(`╭━━━〔 *AUTO-READ STATUS* 〕━━━\n┃\n┃ *📊 Current Status:* ${statusEmoji} *${statusText}*\n┃\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *⚡ Powered by SACHIYA-MD 💫*`);
+
         } else {
-            return reply('❌ Invalid option! Use: .autoread on or .autoread off');
+            await sachiya.sendMessage(from, { react: { text: '⚠️', key: mek.key } }).catch(() => {});
+            return reply('╭━━━〔 *AUTO-READ ERROR* 〕━━━\n┃\n┃ *⚠️ Invalid option!*\n┃ *💡 Use:* `.autoread on` or `.autoread off`\n┃\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *⚡ Powered by SACHIYA-MD 💫*');
         }
 
-        configData.updatedAt = new Date();
-        await configData.save();
-
-        return reply(`✅ Auto-read has been successfully ${configData.enabled ? 'ENABLED' : 'DISABLED'}! (Saved to MongoDB)`);
     } catch (error) {
         console.error('Error in autoread command:', error);
-        return reply('❌ Error processing command!');
+        await sachiya.sendMessage(from, { react: { text: '🔥', key: mek.key } }).catch(() => {});
+        return reply('*❌ Error processing command!*');
     }
 });
 
