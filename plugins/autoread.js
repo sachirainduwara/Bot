@@ -1,6 +1,6 @@
 /**
  * SACHIYA-MD - A WhatsApp Bot
- * Autoread Plugin
+ * Autoread Plugin - Owner Protected Version
  */
 
 const { cmd } = require('../command');
@@ -43,7 +43,7 @@ async function initConfig() {
     }
 }
 
-// Registering the command properly using `cmd`
+// Registering the command with proper Owner protection
 cmd({
     pattern: "autoread",
     desc: "Enable or disable automatic reading of messages",
@@ -52,7 +52,8 @@ cmd({
 },
 async (sachiya, mek, m, { from, q, reply, isOwner }) => {
     try {
-        if (!isOwner) {
+        // Owner හෝ තමන්ගේ චැට් එකෙන් (fromMe) ද යන්න පරීක්ෂා කිරීම
+        if (!isOwner && !mek.key.fromMe) {
             return reply('❌ This command is only available for the owner!');
         }
 
