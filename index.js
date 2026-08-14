@@ -379,13 +379,13 @@ async function connectToWA() {
       if (!mek || !mek.message) return;
       if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
 
-      // 👁️ සියලුම මැසේජ් සඳහා AutoRead ප්ලගින් එක මුලින්ම ක්‍රියාත්මක වීම
+      // 👁️‍🗨️ මැසේජ් එක ලැබුණු සැනින් වෙන කිසිදු කොන්දේසියකට යටත් නොවී මුලින්ම AutoRead ක්‍රියාත්මක වීම
       try {
         if (!mek.key.fromMe) {
           await handleAutoread(sachiya, mek);
         }
-      } catch (err) {
-        // Autoread දෝෂ මඟ හැරීම
+      } catch (e) {
+        // Autoread දෝෂ වැළැක්වීමට
       }
 
       const from = mek.key.remoteJid;
@@ -431,8 +431,6 @@ async function connectToWA() {
       
       const body = bodyText || m.body || '';
       const isCmd = body.startsWith(prefix);
-      
-      // මෙතනින් පහළට වැඩ කරන්නේ කමාන්ඩ් සඳහා පමණි (සාමාන්‍ය මැසේජ් හැසිරවීමට ඉහත Antidelete සහ Autoread දැන් සාර්ථකව ක්‍රියාත්මක වේ)
       if (!isCmd) return;
 
       const commandName = body.slice(prefix.length).trim().split(" ")[0].toLowerCase();
