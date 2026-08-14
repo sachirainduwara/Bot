@@ -1,6 +1,6 @@
 /**
  * SACHIYA-MD - A WhatsApp Bot
- * Autoread Plugin - Styled & Optimized Version
+ * Autoread Plugin - Styled like Antidelete
  */
 
 const { cmd } = require('../command');
@@ -43,7 +43,7 @@ async function initConfig() {
     }
 }
 
-// Registering the command with professional styling, emojis, and reactions
+// Registering the command with Antidelete-styled layout
 cmd({
     pattern: "autoread",
     desc: "Enable or disable automatic reading of messages",
@@ -66,38 +66,42 @@ async (sachiya, mek, m, { from, q, reply, isOwner }) => {
         const action = q ? q.trim().toLowerCase() : '';
 
         if (action === 'on' || action === 'enable') {
-            if (configData.enabled) {
-                await sachiya.sendMessage(from, { react: { text: 'ℹ️', key: mek.key } }).catch(() => {});
-                return reply('╭━━━〔 *AUTO-READ STATUS* 〕━━━\n┃\n┃ *ℹ️ Auto-read is already ENABLED!* ✅\n┃\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *⚡ Powered by SACHIYA-MD 💫*');
-            }
             configData.enabled = true;
             configData.updatedAt = new Date();
             await configData.save();
-            await sachiya.sendMessage(from, { react: { text: '✅', key: mek.key } }).catch(() => {});
-            return reply('╭━━━〔 *AUTO-READ SETTINGS* 〕━━━\n┃\n┃ *✅ Auto-read has been successfully ENABLED!* \n┃\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *⚡ Powered by SACHIYA-MD 💫*');
+
+            await sachiya.sendMessage(from, { react: { text: '🟢', key: mek.key } }).catch(() => {});
+            return reply(`✨ Autoread System successfully Enabled 🟢!`);
 
         } else if (action === 'off' || action === 'disable') {
-            if (!configData.enabled) {
-                await sachiya.sendMessage(from, { react: { text: 'ℹ️', key: mek.key } }).catch(() => {});
-                return reply('╭━━━〔 *AUTO-READ STATUS* 〕━━━\n┃\n┃ *ℹ️ Auto-read is already DISABLED!* ❌\n┃\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *⚡ Powered by SACHIYA-MD 💫*');
-            }
             configData.enabled = false;
             configData.updatedAt = new Date();
             await configData.save();
-            await sachiya.sendMessage(from, { react: { text: '❌', key: mek.key } }).catch(() => {});
-            return reply('╭━━━〔 *AUTO-READ SETTINGS* 〕━━━\n┃\n┃ *❌ Auto-read has been successfully DISABLED!* \n┃\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *⚡ Powered by SACHIYA-MD 💫*');
+
+            await sachiya.sendMessage(from, { react: { text: '🔴', key: mek.key } }).catch(() => {});
+            return reply(`✨ Autoread System successfully Disabled 🔴!`);
 
         } else if (action === '') {
-            // කිසිම ආගර්මන්ට් එකක් නැතුව .autoread විතරක් ගැහුවම දැනට තියෙන ස්ටේටස් එක පෙන්වීම
-            const statusEmoji = configData.enabled ? '✅' : '❌';
-            const statusText = configData.enabled ? 'ENABLED' : 'DISABLED';
+            // .autoread විතරක් ගැහුවම මෙනු එක පෙන්වීම
+            const currentStatus = configData.enabled ? '🟢 Enabled' : '🔴 Disabled';
             
+            const menuText = `──────〔 ✨ SACHIYA-MD AUTOREAD ✨ 〕──────\n` +
+                             `│\n` +
+                             `│  ⚙️ Current Status: ${currentStatus}\n` +
+                             `│\n` +
+                             `│  Available Commands:\n` +
+                             `│  • .autoread on - Enable Autoread 🟢\n` +
+                             `│  • .autoread off - Disable Autoread 🔴\n` +
+                             `│\n` +
+                             `└───────────────────────────────────\n\n` +
+                             `> *⚡ Powered by SACHIYA-MD 💫*`;
+
             await sachiya.sendMessage(from, { react: { text: '👁️‍🗨️', key: mek.key } }).catch(() => {});
-            return reply(`╭━━━〔 *AUTO-READ STATUS* 〕━━━\n┃\n┃ *📊 Current Status:* ${statusEmoji} *${statusText}*\n┃\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *⚡ Powered by SACHIYA-MD 💫*`);
+            return reply(menuText);
 
         } else {
             await sachiya.sendMessage(from, { react: { text: '⚠️', key: mek.key } }).catch(() => {});
-            return reply('╭━━━〔 *AUTO-READ ERROR* 〕━━━\n┃\n┃ *⚠️ Invalid option!*\n┃ *💡 Use:* `.autoread on` or `.autoread off`\n┃\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *⚡ Powered by SACHIYA-MD 💫*');
+            return reply('❌ Invalid option! Use `.autoread on` or `.autoread off`');
         }
 
     } catch (error) {
