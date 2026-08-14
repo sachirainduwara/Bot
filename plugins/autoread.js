@@ -69,18 +69,20 @@ async function autoreadCommand(sock, chatId, message) {
             return;
         }
 
-        // Get command arguments
-        const args = message.message?.conversation?.trim().split(' ').slice(1) || 
-                    message.message?.extendedTextMessage?.text?.trim().split(' ').slice(1) || 
-                    [];
+        // Get command arguments safely
+        const rawText = message.message?.conversation || 
+                        message.message?.extendedTextMessage?.text || 
+                        message.message?.imageMessage?.caption || '';
+        
+        const args = rawText.trim().split(/ +/).slice(1);
         
         await connectDB();
         let configData = await AutoReadModel.findOne({ _id: 'autoread_config' });
         if (!configData) {
-            configData = new AutoReadModel({ _id: 'autoread_config' });
+            configData = new AutoReadModel({ _id: 'autoread_config', enabled: false });
         }
         
-        // Toggle based on argument or toggle current state if no argument
+        // Toggle based on argument (.autoread on / off)
         if (args.length > 0) {
             const action = args[0].toLowerCase();
             if (action === 'on' || action === 'enable') {
@@ -89,7 +91,7 @@ async function autoreadCommand(sock, chatId, message) {
                 configData.enabled = false;
             } else {
                 await sock.sendMessage(chatId, {
-                    text: '❌ Invalid option! Use: .autoread on/off',
+                    text: '❌ Invalid option! Use: .autoread on or .autoread off',
                     contextInfo: {
                         forwardingScore: 1,
                         isForwarded: true,
@@ -110,7 +112,7 @@ async function autoreadCommand(sock, chatId, message) {
         await configData.save();
         
         await sock.sendMessage(chatId, {
-            text: `✅ Auto-read has been ${configData.enabled ? 'enabled' : 'disabled'}! (Saved to MongoDB)`,
+            text: `✅ Auto-read has been successfully ${configData.enabled ? 'ENABLED' : 'DISABLED'}! (Saved to MongoDB)`,
             contextInfo: {
                 forwardingScore: 1,
                 isForwarded: true,
@@ -139,7 +141,7 @@ async function autoreadCommand(sock, chatId, message) {
     }
 }
 
-// Function to check if autoread is enabled
+// Function to check if autoread is enabled from database
 async function isAutoreadEnabled() {
     try {
         const configData = await initConfig();
@@ -150,60 +152,21 @@ async function isAutoreadEnabled() {
     }
 }
 
-// Function to check if bot is mentioned in a message
-function isBotMentionedInMessage(message, botNumber) {
-    if (!message.message) return false;
-    
-    const messageTypes = [
-        'extendedTextMessage', 'imageMessage', 'videoMessage', 'stickerMessage',
-        'documentMessage', 'audioMessage', 'contactMessage', 'locationMessage'
-    ];
-    
-    for (const type of messageTypes) {
-        if (message.message[type]?.contextInfo?.mentionedJid) {
-            const mentionedJid = message.message[type].contextInfo.mentionedJid;
-            if (mentionedJid.some(jid => jid === botNumber)) {
-                return true;
-            }
-        }
-    }
-    
-    const textContent = 
-        message.message.conversation || 
-        message.message.extendedTextMessage?.text ||
-        message.message.imageMessage?.caption ||
-        message.message.videoMessage?.caption || '';
-    
-    if (textContent) {
-        const botUsername = botNumber.split('@')[0];
-        if (textContent.includes(`@${botUsername}`)) {
-            return true;
-        }
-        
-        const botNames = ['bot', 'sachiya', 'sachiya-md'];
-        const words = textContent.toLowerCase().split(/\s+/);
-        if (botNames.some(name => words.includes(name))) {
-            return true;
-        }
-    }
-    
-    return false;
-}
-
-// Function to handle autoread functionality
+// Function to handle autoread functionality directly for all incoming messages
 async function handleAutoread(sock, message) {
-    const enabled = await isAutoreadEnabled();
-    if (enabled) {
-        const botNumber = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-        const isBotMentioned = isBotMentionedInMessage(message, botNumber);
-        
-        if (isBotMentioned) {
-            return false; 
-        } else {
-            const key = { remoteJid: message.key.remoteJid, id: message.key.id, participant: message.key.participant };
+    try {
+        const enabled = await isAutoreadEnabled();
+        if (enabled && !message.key.fromMe) {
+            const key = { 
+                remoteJid: message.key.remoteJid, 
+                id: message.key.id, 
+                participant: message.key.participant 
+            };
             await sock.readMessages([key]);
             return true; 
         }
+    } catch (error) {
+        console.error('Autoread Execution Error:', error);
     }
     return false; 
 }
@@ -211,6 +174,5 @@ async function handleAutoread(sock, message) {
 module.exports = {
     autoreadCommand,
     isAutoreadEnabled,
-    isBotMentionedInMessage,
     handleAutoread
 };
