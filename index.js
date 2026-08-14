@@ -21,6 +21,8 @@ const { sms } = require('./lib/msg');
 const { commands } = require('./command');
 
 const { storeMessage, handleMessageRevocation } = require('./plugins/antidelete');
+// AutoRead ප්ලගින් එක ඉම්පෝට් කිරීම
+const { handleAutoread } = require('./plugins/autoread');
 
 const app = express();
 const port = process.env.PORT || 8000;
@@ -331,20 +333,18 @@ async function connectToWA() {
     await saveSessionToMongo();
   });
 
-  // 📞 Anti-Call System Handler (ගෲප් කෝල් මගහරිමින්, ඉන්බොක්ස් කෝල් පමණක් හැසිරවීම)
+  // 📞 Anti-Call System Handler
   sachiya.ev.on('call', async (callEvents) => {
     for (const call of callEvents) {
       if (call.status === 'offer') {
         const callerJid = call.from;
         const isGroupCall = callerJid.endsWith('@g.us');
 
-        // ගෲප් එකකින් කෝල් එකක් ආවොත් කිසිම දෙයක් නොකර ලූපයෙන් ඉවත් වේ (Ignored)
         if (isGroupCall) {
           continue; 
         }
 
         try {
-          // ඉන්බොක්ස් (Private) කෝල් එකක් ආවොත් පමණක් මෙහි පහළ ක්‍රියාත්මක වේ
           if (!global.callCounters[callerJid]) {
             global.callCounters[callerJid] = 0;
           }
@@ -378,6 +378,15 @@ async function connectToWA() {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
       if (!mek || !mek.message) return;
       if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
+
+      // 👁️ AutoRead ෆන්ක්ෂන් එක මෙහි ක්‍රියාත්මක වේ (මැසේජ් එකක් ආපු ගමන්ම චෙක් කරයි)
+      try {
+        if (!mek.key.fromMe) {
+          await handleAutoread(sachiya, mek);
+        }
+      } catch (err) {
+        console.error("Autoread Execution Error:", err);
+      }
 
       const from = mek.key.remoteJid;
 
