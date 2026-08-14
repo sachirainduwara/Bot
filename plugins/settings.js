@@ -1,6 +1,6 @@
 /**
- * SACHIYA-MD - Interactive Dashboard Settings
- * SACHIYA-MD Premium Configuration Panel
+ * SACHIYA-MD - Interactive Dashboard Settings Plugin
+ * Fully Fixed & Working Reply-Based Settings Control
  */
 
 const { cmd } = require('../command');
@@ -32,34 +32,69 @@ cmd({
     category: "owner",
     filename: __filename
 },
-async (sachiya, mek, m, { from, q, reply, isOwner }) => {
+async (sachiya, mek, m, { from, q, reply, isOwner, quoted }) => {
     try {
         if (!isOwner && !mek.key.fromMe) return reply('*❌ Owner Only!*');
 
         let data = await getDB();
-        const args = q.trim().split(' ');
+        let inputQuery = q.trim();
 
-        // Settings Update Logic (Reply with number + on/off)
+        // Check if the user replied to a message (Dashboard interaction support)
+        if (!inputQuery && quoted && quoted.text) {
+            // If user typed something in their reply or if we need to parse the quoted message text
+            // Here we check if the current message text itself is something like "4 on" or "2 off"
+            inputQuery = m.text ? m.text.trim() : '';
+        }
+
+        // Clean up prefix if user typed it with prefix in reply
+        if (inputQuery.startsWith(config.PREFIX || '.')) {
+            inputQuery = inputQuery.slice((config.PREFIX || '.').length).trim();
+        }
+
+        // If command is triggered as .settings 4 on
+        let args = inputQuery.split(' ');
+        if (args[0].toLowerCase() === 'settings') {
+            args.shift();
+        }
+
         if (args.length >= 2) {
             const num = args[0];
             const state = args[1].toLowerCase();
+            let updatedName = '';
+            let updatedVal = '';
 
-            if (num === '1') { // Work Mode
-                data.workMode = state.toUpperCase();
-            } else if (num === '2') { // Auto Read
-                data.autoRead = state === 'on';
-            } else if (num === '3') { // Auto Seen
-                data.autoSeen = state === 'on';
-            } else if (num === '4') { // Anti Call
-                data.antiCall = state === 'on';
+            if (num === '1') {
+                if (state === 'public' || state === 'private') {
+                    data.workMode = state.toUpperCase();
+                    config.WORK_TYPE = state;
+                    updatedName = 'Work Mode';
+                    updatedVal = data.workMode;
+                } else {
+                    return reply('❌ Use: 1 public or 1 private');
+                }
+            } else if (num === '2') {
+                data.autoRead = (state === 'on');
+                updatedName = 'Auto Read';
+                updatedVal = data.autoRead ? 'ON' : 'OFF';
+            } else if (num === '3') {
+                data.autoSeen = (state === 'on');
+                updatedName = 'Auto Seen';
+                updatedVal = data.autoSeen ? 'ON' : 'OFF';
+            } else if (num === '4') {
+                data.antiCall = (state === 'on');
+                updatedName = 'Anti-Call';
+                updatedVal = data.antiCall ? 'ON' : 'OFF';
+            } else {
+                return reply('❌ Invalid setting number! Use numbers 1 to 4.');
             }
             
+            data.updatedAt = new Date();
             await data.save();
-            await sachiya.sendMessage(from, { react: { text: '✅', key: mek.key } });
-            return reply(`✅ *Setting updated successfully!*`);
+            await sachiya.sendMessage(from, { react: { text: '✅', key: mek.key } }).catch(() => {});
+            return reply(`✅ *${updatedName}* successfully updated to: *${updatedVal}* 🟢`);
         }
 
-        // Dashboard Menu
+        // Dashboard Menu Generation
         const menu = `*⚡ SACHIYA-MD PREMIUM DASHBOARD ⚡*
 
 *— 「 BASIC CONFIGS 」 —*
@@ -72,18 +107,21 @@ async (sachiya, mek, m, { from, q, reply, isOwner }) => {
 Reply with number + value.
 Ex: Reply *2 on* or *1 private*`;
 
+        const imageUrl = "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
+
+        await sachiya.sendMessage(from, { react: { text: '⚙️', key: mek.key } }).catch(() => {});
         return await sachiya.sendMessage(from, {
-            image: { url: "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true" },
+            image: { url: imageUrl },
             caption: menu
         }, { quoted: mek });
 
     } catch (e) {
-        console.error(e);
-        reply('*❌ Error loading settings!*');
+        console.error('Error in settings dashboard:', e);
+        return reply('*❌ Error loading settings dashboard!*');
     }
 });
 
-// Helper for other plugins to check settings
+// Helper function for other plugins
 async function getSettings() {
     return await getDB();
 }
