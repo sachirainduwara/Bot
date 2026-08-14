@@ -1,8 +1,9 @@
 /**
  * SACHIYA-MD - A WhatsApp Bot
- * Autoread Command - Automatically read all messages and save to MongoDB
+ * Autoread Plugin
  */
 
+const { cmd } = require('../command');
 const mongoose = require('mongoose');
 const config = require('../config');
 
@@ -18,7 +19,6 @@ const AutoReadSchema = new mongoose.Schema({
 
 const AutoReadModel = mongoose.models.AutoRead || mongoose.model('AutoRead', AutoReadSchema);
 
-// Ensure connection to MongoDB
 async function connectDB() {
     try {
         if (mongoose.connection.readyState === 0) {
@@ -29,7 +29,6 @@ async function connectDB() {
     }
 }
 
-// Initialize configuration from MongoDB
 async function initConfig() {
     try {
         await connectDB();
@@ -44,104 +43,48 @@ async function initConfig() {
     }
 }
 
-// Toggle autoread feature
-async function autoreadCommand(sock, chatId, message) {
+// Registering the command properly using `cmd`
+cmd({
+    pattern: "autoread",
+    desc: "Enable or disable automatic reading of messages",
+    category: "owner",
+    filename: __filename
+},
+async (sachiya, mek, m, { from, q, reply, isOwner }) => {
     try {
-        const senderId = message.key.participant || message.key.remoteJid;
-        const senderNumber = senderId.replace(/[^0-9]/g, '');
-        const ownerNumber = (config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
-        
-        const isOwner = senderNumber === ownerNumber || message.key.fromMe;
-        
-        if (!message.key.fromMe && !isOwner) {
-            await sock.sendMessage(chatId, {
-                text: '❌ This command is only available for the owner!',
-                contextInfo: {
-                    forwardingScore: 1,
-                    isForwarded: true,
-                    forwardedNewsletterMessageInfo: {
-                        newsletterJid: '120363161513685998@newsletter',
-                        newsletterName: 'SACHIYA-MD',
-                        serverMessageId: -1
-                    }
-                }
-            });
-            return;
+        if (!isOwner) {
+            return reply('❌ This command is only available for the owner!');
         }
 
-        // Get command arguments safely
-        const rawText = message.message?.conversation || 
-                        message.message?.extendedTextMessage?.text || 
-                        message.message?.imageMessage?.caption || '';
-        
-        const args = rawText.trim().split(/ +/).slice(1);
-        
         await connectDB();
         let configData = await AutoReadModel.findOne({ _id: 'autoread_config' });
         if (!configData) {
             configData = new AutoReadModel({ _id: 'autoread_config', enabled: false });
         }
-        
-        // Toggle based on argument (.autoread on / off)
-        if (args.length > 0) {
-            const action = args[0].toLowerCase();
-            if (action === 'on' || action === 'enable') {
-                configData.enabled = true;
-            } else if (action === 'off' || action === 'disable') {
-                configData.enabled = false;
-            } else {
-                await sock.sendMessage(chatId, {
-                    text: '❌ Invalid option! Use: .autoread on or .autoread off',
-                    contextInfo: {
-                        forwardingScore: 1,
-                        isForwarded: true,
-                        forwardedNewsletterMessageInfo: {
-                            newsletterJid: '120363161513685998@newsletter',
-                            newsletterName: 'SACHIYA-MD',
-                            serverMessageId: -1
-                        }
-                    }
-                });
-                return;
-            }
-        } else {
+
+        const action = q ? q.trim().toLowerCase() : '';
+
+        if (action === 'on' || action === 'enable') {
+            configData.enabled = true;
+        } else if (action === 'off' || action === 'disable') {
+            configData.enabled = false;
+        } else if (action === '') {
             configData.enabled = !configData.enabled;
+        } else {
+            return reply('❌ Invalid option! Use: .autoread on or .autoread off');
         }
-        
+
         configData.updatedAt = new Date();
         await configData.save();
-        
-        await sock.sendMessage(chatId, {
-            text: `✅ Auto-read has been successfully ${configData.enabled ? 'ENABLED' : 'DISABLED'}! (Saved to MongoDB)`,
-            contextInfo: {
-                forwardingScore: 1,
-                isForwarded: true,
-                forwardedNewsletterMessageInfo: {
-                    newsletterJid: '120363161513685998@newsletter',
-                    newsletterName: 'SACHIYA-MD',
-                    serverMessageId: -1
-                }
-            }
-        });
-        
+
+        return reply(`✅ Auto-read has been successfully ${configData.enabled ? 'ENABLED' : 'DISABLED'}! (Saved to MongoDB)`);
     } catch (error) {
         console.error('Error in autoread command:', error);
-        await sock.sendMessage(chatId, {
-            text: '❌ Error processing command!',
-            contextInfo: {
-                forwardingScore: 1,
-                isForwarded: true,
-                forwardedNewsletterMessageInfo: {
-                    newsletterJid: '120363161513685998@newsletter',
-                    newsletterName: 'SACHIYA-MD',
-                    serverMessageId: -1
-                }
-            }
-        });
+        return reply('❌ Error processing command!');
     }
-}
+});
 
-// Function to check if autoread is enabled from database
+// Function to check if autoread is enabled
 async function isAutoreadEnabled() {
     try {
         const configData = await initConfig();
@@ -152,27 +95,25 @@ async function isAutoreadEnabled() {
     }
 }
 
-// Function to handle autoread functionality directly for all incoming messages
-async function handleAutoread(sock, message) {
+// Function to handle automatic reading
+async function handleAutoread(sachiya, mek) {
     try {
         const enabled = await isAutoreadEnabled();
-        if (enabled && !message.key.fromMe) {
+        if (enabled && !mek.key.fromMe) {
             const key = { 
-                remoteJid: message.key.remoteJid, 
-                id: message.key.id, 
-                participant: message.key.participant 
+                remoteJid: mek.key.remoteJid, 
+                id: mek.key.id, 
+                participant: mek.key.participant 
             };
-            await sock.readMessages([key]);
-            return true; 
+            await sachiya.readMessages([key]);
+            return true;
         }
     } catch (error) {
         console.error('Autoread Execution Error:', error);
     }
-    return false; 
+    return false;
 }
 
 module.exports = {
-    autoreadCommand,
-    isAutoreadEnabled,
     handleAutoread
 };
