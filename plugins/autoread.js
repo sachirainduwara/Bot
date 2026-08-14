@@ -4,11 +4,10 @@
  */
 
 const mongoose = require('mongoose');
-const path = require('path');
-const isOwnerOrSudo = require('../lib/isOwner');
+const config = require('../config');
 
 // MongoDB Connection String
-const MONGO_URI = process.env.SESSION_ID || "mongodb+srv://sachirainduwara02_db_user:Sachi2010@cluster0.skykj4x.mongodb.net/?appName=Cluster0";
+const MONGO_URI = config.SESSION_ID || "mongodb+srv://sachirainduwara02_db_user:Sachi2010@cluster0.skykj4x.mongodb.net/?appName=Cluster0";
 
 // Mongoose Schema for Autoread settings
 const AutoReadSchema = new mongoose.Schema({
@@ -34,11 +33,11 @@ async function connectDB() {
 async function initConfig() {
     try {
         await connectDB();
-        let config = await AutoReadModel.findOne({ _id: 'autoread_config' });
-        if (!config) {
-            config = await AutoReadModel.create({ _id: 'autoread_config', enabled: false });
+        let configData = await AutoReadModel.findOne({ _id: 'autoread_config' });
+        if (!configData) {
+            configData = await AutoReadModel.create({ _id: 'autoread_config', enabled: false });
         }
-        return config;
+        return configData;
     } catch (error) {
         console.error('Error reading autoread config from MongoDB:', error);
         return { enabled: false };
@@ -49,7 +48,10 @@ async function initConfig() {
 async function autoreadCommand(sock, chatId, message) {
     try {
         const senderId = message.key.participant || message.key.remoteJid;
-        const isOwner = await isOwnerOrSudo(senderId, sock, chatId);
+        const senderNumber = senderId.replace(/[^0-9]/g, '');
+        const ownerNumber = (config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
+        
+        const isOwner = senderNumber === ownerNumber || message.key.fromMe;
         
         if (!message.key.fromMe && !isOwner) {
             await sock.sendMessage(chatId, {
@@ -73,18 +75,18 @@ async function autoreadCommand(sock, chatId, message) {
                     [];
         
         await connectDB();
-        let config = await AutoReadModel.findOne({ _id: 'autoread_config' });
-        if (!config) {
-            config = new AutoReadModel({ _id: 'autoread_config' });
+        let configData = await AutoReadModel.findOne({ _id: 'autoread_config' });
+        if (!configData) {
+            configData = new AutoReadModel({ _id: 'autoread_config' });
         }
         
         // Toggle based on argument or toggle current state if no argument
         if (args.length > 0) {
             const action = args[0].toLowerCase();
             if (action === 'on' || action === 'enable') {
-                config.enabled = true;
+                configData.enabled = true;
             } else if (action === 'off' || action === 'disable') {
-                config.enabled = false;
+                configData.enabled = false;
             } else {
                 await sock.sendMessage(chatId, {
                     text: '❌ Invalid option! Use: .autoread on/off',
@@ -101,16 +103,14 @@ async function autoreadCommand(sock, chatId, message) {
                 return;
             }
         } else {
-            // Toggle current state
-            config.enabled = !config.enabled;
+            configData.enabled = !configData.enabled;
         }
         
-        config.updatedAt = new Date();
-        await config.save();
+        configData.updatedAt = new Date();
+        await configData.save();
         
-        // Send confirmation message with SACHIYA-MD branding
         await sock.sendMessage(chatId, {
-            text: `✅ Auto-read has been ${config.enabled ? 'enabled' : 'disabled'}! (Saved to MongoDB)`,
+            text: `✅ Auto-read has been ${configData.enabled ? 'enabled' : 'disabled'}! (Saved to MongoDB)`,
             contextInfo: {
                 forwardingScore: 1,
                 isForwarded: true,
@@ -139,16 +139,14 @@ async function autoreadCommand(sock, chatId, message) {
     }
 }
 
-// Function to check if autoread is enabled (Sync-like cache/fallback method if needed, but uses DB)
-let cachedAutoreadStatus = false;
+// Function to check if autoread is enabled
 async function isAutoreadEnabled() {
     try {
-        const config = await initConfig();
-        cachedAutoreadStatus = config.enabled;
-        return config.enabled;
+        const configData = await initConfig();
+        return configData.enabled;
     } catch (error) {
         console.error('Error checking autoread status:', error);
-        return cachedAutoreadStatus;
+        return false;
     }
 }
 
@@ -182,7 +180,7 @@ function isBotMentionedInMessage(message, botNumber) {
             return true;
         }
         
-        const botNames = [global.botname?.toLowerCase(), 'bot', 'sachiya', 'sachiya-md'];
+        const botNames = ['bot', 'sachiya', 'sachiya-md'];
         const words = textContent.toLowerCase().split(/\s+/);
         if (botNames.some(name => words.includes(name))) {
             return true;
