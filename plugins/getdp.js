@@ -1,60 +1,84 @@
-const { cmd } = require('../command');
+const { cmd } = require("../command");
 
-cmd({
+cmd(
+  {
     pattern: "getdp",
-    alias: ["dp", "getprofilepic"],
-    desc: "Get profile picture of a user (Inbox, Reply, Mention or Number)",
+    alias: ["dp", "pfp"],
+    react: "🖼️",
+    desc: "Download Profile Picture of a tagged user, quoted user, number or inbox partner",
     category: "tools",
-    filename: __filename
-},
-async (sock, mek, m, { from, q, reply, isGroup, mentionedJid }) => {
+    filename: __filename,
+  },
+  async (sachiya, mek, m, { from, quoted, q, reply, isGroup }) => {
     try {
-        let targetJid = '';
-
-        // 1. If replied to a message, get that user's JID
-        if (mek.quoted) {
-            targetJid = mek.quoted.sender;
-        } 
-        // 2. If someone is mentioned in the group
-        else if (mentionedJid && mentionedJid.length > 0) {
-            targetJid = mentionedJid[0];
-        } 
-        // 3. If a phone number or query is provided (e.g. .getdp 9477xxxxxxx)
-        else if (q) {
-            let cleaned = q.replace(/[^0-9]/g, '');
-            if (cleaned.length > 5) {
-                targetJid = cleaned + '@s.whatsapp.net';
-            }
+      let target;
+      
+      // 1. Mentions (ටැග් කර ඇත්නම්)
+      if (m.mentionedJid && m.mentionedJid.length > 0) {
+        target = m.mentionedJid[0];
+      } 
+      // 2. Reply කර ඇත්නම්
+      else if (quoted && quoted.sender) {
+        target = quoted.sender;
+      } 
+      // 3. නම්බර් එකක් දී ඇත්නම් (උදා: .getdp 9477xxxxxxx)
+      else if (q) {
+        let cleanedNum = q.replace(/[^0-9]/g, "");
+        if (!cleanedNum) return reply("⚠️ *Please provide a valid phone number or mention someone!*");
+        target = cleanedNum + "@s.whatsapp.net";
+      } 
+      // 4. කිසිවක් දී නැතිනම්:
+      else {
+        if (!isGroup) {
+          // Inbox (DM) එකක නම්: චැට් එකේ ඉන්න අනිත් කෙනාගේ JID එක ලබා ගැනීම (`from` කියන්නේ Inbox වලදී අදාළ යූගර්ගේ JID එකයි)
+          target = from;
+        } else {
+          // Group එකක නම්: කමාන්ඩ් එක ගැහූ තමන්ගේම (sender) DP එක ලබා ගැනීම
+          target = m.sender;
         }
+      }
 
-        // 4. If no target specified: 
-        // - In a Group: get the sender's DP who typed the command.
-        // - In Inbox (DM): get the other person's (or owner's) DP of that chat.
-        if (!targetJid) {
-            targetJid = from;
-        }
+      await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
-        // Fetch profile picture URL with HD fallback
-        let dpUrl;
-        try {
-            dpUrl = await sock.profilePictureUrl(targetJid, 'image');
-        } catch (err) {
-            return reply('⚠️ *මෙම පරිශීලකයාගේ Profile Picture (DP) එක ලබා ගැනීමට නොහැක (Privacity දමා තිබිය හැක).*');
-        }
+      let dpUrl;
+      try {
+        // Fetch Profile Picture from WhatsApp
+        dpUrl = await sachiya.profilePictureUrl(target, "image");
+      } catch (e) {
+        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
+        return reply("❌ *Unable to fetch profile picture! (User might have privacy settings enabled or no DP).*");
+      }
 
-        if (!dpUrl) {
-            return reply('⚠️ *මෙම පරිශීලකයාට Profile Picture එකක් නොමැත.*');
-        }
+      if (!dpUrl) {
+        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
+        return reply("❌ *Profile picture not found for this user!*");
+      }
 
-        // Send the profile picture
-        await sock.sendMessage(from, {
-            image: { url: dpUrl },
-            caption: `*✨ SACHIYA-MD DP VIEWER ✨*\n\n> *👤 Target User:* @${targetJid.split('@')[0]}`,
-            mentions: [targetJid]
-        }, { quoted: mek });
+      const targetNumber = target.split("@")[0];
 
-    } catch (error) {
-        console.error('GetDP Error:', error);
-        return reply(`⚠️ *දෝෂයක් මතු විය: ${error.message}*`);
+      const desc = `*─── ｢ 🖼️ PROFILE PICTURE ｣ ───*
+
+👤 *Target User:* @${targetNumber}
+
+> *SACHIYA-MD BOT* 💫`;
+
+      // Send the DP Image with Caption and Mentions
+      await sachiya.sendMessage(
+        from,
+        {
+          image: { url: dpUrl },
+          caption: desc,
+          mentions: [target]
+        },
+        { quoted: mek }
+      );
+
+      await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } });
+
+    } catch (e) {
+      console.error("GetDP Error:", e);
+      await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
+      reply(`❌ *Error:* ${e.message || "Failed to fetch DP!"}`);
     }
-});
+  }
+);
