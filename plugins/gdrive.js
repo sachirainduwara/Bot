@@ -18,7 +18,7 @@ async (conn, mek, m, { from, q, reply }) => {
                 `┃ *උදාහරණය:* \`.gdrive https://drive.google.com/file/d/.../\`\n` +
                 `┃\n` +
                 `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                `> *⚡ Powered by SACHIYA-MD 💫*`
+                `> * Powered by SACHIYA-MD 💫*`
             );
         }
 
@@ -32,7 +32,7 @@ async (conn, mek, m, { from, q, reply }) => {
 
         // ⏳ Loading Reaction දීම
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } }).catch(() => {});
-        await reply("⏳ *ෆයිල් එක පරීක්ෂා කරමින් සහ බාගත කරමින් පවතී, කරුණාකර රැඳී සිටින්න...*");
+        await reply("⏳ *ෆයිල් එක Check කරමින් සහ Download කරමින් පවතී, කරුණාකර රැඳී සිටින්න...*");
 
         // 2. Initial Request to Google Drive
         let downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
@@ -105,7 +105,7 @@ async (conn, mek, m, { from, q, reply }) => {
                         `┃ 🟢 *Status:* Downloaded Successfully ✅\n` +
                         `┃\n` +
                         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                        `> *⚡ Powered by SACHIYA-MD 💫*`;
+                        `> * Powered by SACHIYA-MD 💫*`;
 
         // Determine correct Mimetype to prevent .bin issue
         let mimetype = 'application/octet-stream';
