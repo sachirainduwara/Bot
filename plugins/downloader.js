@@ -68,24 +68,8 @@ cmd(
         { quoted: mek }
       );
 
-      let data;
-      try {
-        data = await ytmp3(video.url);
-      } catch (err) {
-        data = null;
-      }
-
-      let audioUrl = data?.url || data?.dl || data?.audio || (typeof data === 'string' ? data : null);
-
-      if (!audioUrl) {
-        try {
-          const fallbackRes = await fetch(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(video.url)}`);
-          const res = await fallbackRes.json();
-          if (res.status && res.data?.dl) audioUrl = res.data.dl;
-        } catch (err) {}
-      }
-
-      if (!audioUrl) {
+      const data = await ytmp3(video.url);
+      if (!data?.url) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
         return reply("❌ *Failed to download MP3 from core server!*");
       }
@@ -93,7 +77,7 @@ cmd(
       await sachiya.sendMessage(
         from,
         {
-          audio: { url: audioUrl },
+          audio: { url: data.url },
           mimetype: "audio/mpeg",
           fileName: `${video.title.replace(/[^\w\s]/gi, '')}.mp3`
         },
@@ -155,27 +139,12 @@ cmd(
         { quoted: mek }
       );
 
-      let data;
-      try {
-        data = await ytmp4(video.url, {
-          format: "mp4",
-          videoQuality: "720",
-        });
-      } catch (err) {
-        data = null;
-      }
+      const data = await ytmp4(video.url, {
+        format: "mp4",
+        videoQuality: "720",
+      });
 
-      let videoUrl = data?.url || data?.dl || data?.video;
-
-      if (!videoUrl) {
-        try {
-          const fallbackRes = await fetch(`https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(video.url)}`);
-          const res = await fallbackRes.json();
-          if (res.status && res.data?.dl) videoUrl = res.data.dl;
-        } catch (err) {}
-      }
-
-      if (!videoUrl) {
+      if (!data?.url) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
         return reply("❌ *Failed to download video from core server!*");
       }
@@ -183,9 +152,9 @@ cmd(
       await sachiya.sendMessage(
         from,
         {
-          video: { url: videoUrl },
+          video: { url: data.url },
           mimetype: "video/mp4",
-          fileName: data?.filename || `${video.title.replace(/[^\w\s]/gi, '')}.mp4`,
+          fileName: data.filename || `${video.title.replace(/[^\w\s]/gi, '')}.mp4`,
           caption: `🎬 *${video.title}*\n\n> Powered by SACHIYA MD`,
           gifPlayback: false,
         },
@@ -220,19 +189,13 @@ cmd(
 
       await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
-      let data;
-      try {
-        data = await tiktok(q);
-      } catch (err) {
-        data = null;
-      }
-
-      if (!data || (!data.no_watermark && !data.url && !data.download)) {
+      const data = await tiktok(q);
+      if (!data || (!data.no_watermark && !data.url)) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
         return reply("❌ *Failed to download TikTok video! Make sure link is public.*");
       }
 
-      const videoUrl = data.no_watermark || data.url || data.download;
+      const videoUrl = data.no_watermark || data.url;
 
       // 🎨 SACHIYA-MD TIKTOK CARD
       const caption = `╭━━━〔 *TIKTOK DOWNLOADER* 〕━━━\n` +
