@@ -67,19 +67,20 @@ cmd(
         { quoted: mek }
       );
 
-      // Fetch MP3 Download Link (Using Native Fetch & Multiple Fallbacks)
+      // Stable API fetch for MP3
       let downloadUrl = null;
       try {
-        const apiRes = await fetch(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(video.url)}`);
+        const apiRes = await fetch(`https://api.ryzendesu.vip/api/downloader/ytmp3?url=${encodeURIComponent(video.url)}`);
         const res = await apiRes.json();
-        if (res.status && res.data?.dl) downloadUrl = res.data.dl;
+        if (res.status && res.data?.url) downloadUrl = res.data.url;
       } catch (err) {}
 
+      // Fallback API if primary fails
       if (!downloadUrl) {
         try {
-          const fallbackRes = await fetch(`https://deliriussapi-oficial.vercel.app/download/ytmp3?url=${encodeURIComponent(video.url)}`);
-          const fbData = await fallbackRes.json();
-          if (fbData.status && fbData.data?.downloadUrl) downloadUrl = fbData.data.downloadUrl;
+          const apiRes2 = await fetch(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(video.url)}`);
+          const res2 = await apiRes2.json();
+          if (res2.status && res2.data?.dl) downloadUrl = res2.data.dl;
         } catch (err) {}
       }
 
@@ -155,16 +156,16 @@ cmd(
 
       let videoUrl = null;
       try {
-        const apiRes = await fetch(`https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(video.url)}`);
+        const apiRes = await fetch(`https://api.ryzendesu.vip/api/downloader/ytmp4?url=${encodeURIComponent(video.url)}`);
         const res = await apiRes.json();
-        if (res.status && res.data?.dl) videoUrl = res.data.dl;
+        if (res.status && res.data?.url) videoUrl = res.data.url;
       } catch (err) {}
 
       if (!videoUrl) {
         try {
-          const fallbackRes = await fetch(`https://deliriussapi-oficial.vercel.app/download/ytmp4?url=${encodeURIComponent(video.url)}`);
-          const fbData = await fallbackRes.json();
-          if (fbData.status && fbData.data?.downloadUrl) videoUrl = fbData.data.downloadUrl;
+          const apiRes2 = await fetch(`https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(video.url)}`);
+          const res2 = await apiRes2.json();
+          if (res2.status && res2.data?.dl) videoUrl = res2.data.dl;
         } catch (err) {}
       }
 
@@ -216,13 +217,24 @@ cmd(
       let videoUrl = null;
       let ttData = {};
       try {
-        const apiRes = await fetch(`https://api.siputzx.my.id/api/d/tiktok?url=${encodeURIComponent(q)}`);
+        const apiRes = await fetch(`https://api.ryzendesu.vip/api/downloader/tiktok?url=${encodeURIComponent(q)}`);
         const res = await apiRes.json();
         if (res.status && res.data) {
           ttData = res.data;
           videoUrl = ttData.no_watermark || ttData.url || ttData.download;
         }
       } catch (err) {}
+
+      if (!videoUrl) {
+        try {
+          const apiRes2 = await fetch(`https://api.siputzx.my.id/api/d/tiktok?url=${encodeURIComponent(q)}`);
+          const res2 = await apiRes2.json();
+          if (res2.status && res2.data) {
+            ttData = res2.data;
+            videoUrl = ttData.no_watermark || ttData.url || ttData.download;
+          }
+        } catch (err) {}
+      }
 
       if (!videoUrl) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
