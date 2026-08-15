@@ -3,7 +3,7 @@ const { commands } = require('../command');
 commands.push({
     pattern: 'spam',
     alias: ['spammsg'],
-    desc: 'Spam a message a specific number of times (Max 50)',
+    desc: 'Spam a message a specific number of times without limits',
     category: 'owner',
     react: '🚀',
     function: async (sock, mek, m, { q, reply, isOwner, senderNumber, from }) => {
@@ -21,9 +21,9 @@ commands.push({
                 `┃\n` +
                 `┃ ⚠️ *භාවිතා කරන ආකාරය:*\n` +
                 `┃ \`.spam <message> <count>\`\n` +
-                `┃ *උදාහරණයක්:* \`.spam Hello 10\`\n` +
+                `┃ *උදාහරණයක්:* \`.spam Hello 100\`\n` +
                 `┃\n` +
-                `┃ 📌 *උපරිම සීමාව:* 50 කි.\n` +
+                `┃ 📌 *සීමාවන් නොමැත (Unlimited)*\n` +
                 `┃\n` +
                 `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                 `> *⚡ Powered by SACHIYA-MD 💫*`
@@ -37,12 +37,7 @@ commands.push({
 
         // Validate if count is a valid number
         if (isNaN(count) || count <= 0) {
-            return reply('⚠️ *කරුණාකර නිවැරදි සංඛ්‍යාවක් (Count එකක්) අගට යොදන්න! (උදා: .spam Hi 5)*');
-        }
-
-        // Enforce maximum limit of 50
-        if (count > 50) {
-            return reply('⚠️ *උපරිම ස්පෑම් සීමාව 50 කි! කරුණාකර 50 ට අඩු අගයක් යොදන්න.*');
+            return reply('⚠️ *කරුණාකර නිවැරදි සංඛ්‍යාවක් (Count එකක්) අගට යොදන්න! (උදා: .spam Hi 50)*');
         }
 
         // Extract message by removing the last element (count)
@@ -57,11 +52,11 @@ commands.push({
             // Delete the command message to keep chat clean (optional)
             await sock.sendMessage(from, { react: { text: '⏳', key: mek.key } }).catch(() => {});
 
-            // Loop and send messages according to count
+            // Loop and send messages according to count without any limit
             for (let i = 0; i < count; i++) {
                 await sock.sendMessage(from, { text: spamMessage });
                 // Small delay to prevent rate-limiting or flooding blocks
-                await new Promise(resolve => setTimeout(resolve, 400));
+                await new Promise(resolve => setTimeout(resolve, 300));
             }
 
             // Success reaction
