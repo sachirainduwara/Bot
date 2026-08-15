@@ -294,9 +294,9 @@ async function connectToWA() {
       if (isConnectedOnce) return;
       isConnectedOnce = true;
 
-      console.log('\n╭─────────────────────────────────────────╮');
-      console.log('│ 🎉 SACHIYA MD CONNECTED SUCCESSFULLY!   │');
-      console.log('╰─────────────────────────────────────────╯\n');
+      console.log('\n╭─────────────────────────────────────╮');
+      console.log('│ SACHIYA MD CONNECTED SUCCESSFULLY!  │');
+      console.log('╰─────────────────────────────────────╯\n');
 
       await saveSessionToMongo();
       await loadBlockedListIntoCache();
