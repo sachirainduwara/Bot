@@ -1,6 +1,6 @@
 const { cmd } = require("../command");
-const { ytmp3, ytmp4, tiktok } = require("sadaslk-dlcore");
 const yts = require("yt-search");
+const fetch = require("node-fetch"); // Make sure node-fetch is installed or use global fetch
 
 // 🔍 Advanced & Safe YouTube Helper Function
 async function getYoutube(query) {
@@ -68,16 +68,25 @@ cmd(
         { quoted: mek }
       );
 
-      const data = await ytmp3(video.url);
-      if (!data?.url) {
-        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("❌ *Failed to download MP3 from core server!*");
+      // Reliable API fetch for MP3
+      const apiRes = await fetch(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(video.url)}`);
+      const res = await apiRes.json();
+
+      if (!res.status || !res.data?.dl) {
+        // Fallback free API if primary fails
+        const fallbackRes = await fetch(`https://deliriussapi-oficial.vercel.app/download/ytmp3?url=${encodeURIComponent(video.url)}`);
+        const fbData = await fallbackRes.json();
+        if (!fbData.status || !fbData.data?.downloadUrl) {
+          await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
+          return reply("❌ *Failed to download MP3 from core server!*");
+        }
+        res.data = { dl: fbData.data.downloadUrl };
       }
 
       await sachiya.sendMessage(
         from,
         {
-          audio: { url: data.url },
+          audio: { url: res.data.dl },
           mimetype: "audio/mpeg",
           fileName: `${video.title.replace(/[^\w\s]/gi, '')}.mp3`
         },
@@ -139,12 +148,21 @@ cmd(
         { quoted: mek }
       );
 
-      const data = await ytmp4(video.url, {
-        format: "mp4",
-        videoQuality: "720",
-      });
+      // Reliable API fetch for MP4
+      const apiRes = await fetch(`https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(video.url)}`);
+      const res = await apiRes.json();
 
-      if (!data?.url) {
+      let videoUrl = res.status && res.data?.dl ? res.data.dl : null;
+
+      if (!videoUrl) {
+        const fallbackRes = await fetch(`https://deliriussapi-oficial.vercel.app/download/ytmp4?url=${encodeURIComponent(video.url)}`);
+        const fbData = await fallbackRes.json();
+        if (fbData.status && fbData.data?.downloadUrl) {
+          videoUrl = fbData.data.downloadUrl;
+        }
+      }
+
+      if (!videoUrl) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
         return reply("❌ *Failed to download video from core server!*");
       }
@@ -152,9 +170,9 @@ cmd(
       await sachiya.sendMessage(
         from,
         {
-          video: { url: data.url },
+          video: { url: videoUrl },
           mimetype: "video/mp4",
-          fileName: data.filename || `${video.title.replace(/[^\w\s]/gi, '')}.mp4`,
+          fileName: `${video.title.replace(/[^\w\s]/gi, '')}.mp4`,
           caption: `🎬 *${video.title}*\n\n> Powered by SACHIYA MD`,
           gifPlayback: false,
         },
@@ -189,20 +207,21 @@ cmd(
 
       await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
-      const data = await tiktok(q);
-      if (!data || (!data.no_watermark && !data.url)) {
+      const apiRes = await fetch(`https://api.siputzx.my.id/api/d/tiktok?url=${encodeURIComponent(q)}`);
+      const res = await apiRes.json();
+
+      const videoUrl = res?.data?.no_watermark || res?.data?.url || res?.data?.download;
+
+      if (!res.status || !videoUrl) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
         return reply("❌ *Failed to download TikTok video! Make sure link is public.*");
       }
 
-      const videoUrl = data.no_watermark || data.url;
-
       // 🎨 SACHIYA-MD TIKTOK CARD
       const caption = `╭━━━〔 *TIKTOK DOWNLOADER* 〕━━━\n` +
                       `┃\n` +
-                      `┃ 🎵 *Title:* ${data.title || "TikTok Video"}\n` +
-                      `┃ 👤 *Author:* ${data.author || "Unknown"}\n` +
-                      `┃ ⏱ *Duration:* ${data.runtime || "0"}s\n` +
+                      `┃ 🎵 *Title:* ${res.data?.title || "TikTok Video"}\n` +
+                      `┃ 👤 *Author:* ${res.data?.author || "Unknown"}\n` +
                       `┃\n` +
                       `╰━━━━━━━━━━━━━━━━━━━\n\n` +
                       `> Powered by SACHIYA MD 💫`;
