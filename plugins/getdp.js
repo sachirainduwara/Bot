@@ -1,72 +1,60 @@
-const { cmd } = require("../command");
+const { cmd } = require('../command');
 
-cmd(
-  {
+cmd({
     pattern: "getdp",
-    alias: ["dp", "pfp"],
-    react: "🖼️",
-    desc: "Download Profile Picture of a tagged user or number",
+    alias: ["dp", "getprofilepic"],
+    desc: "Get profile picture of a user (Inbox, Reply, Mention or Number)",
     category: "tools",
-    filename: __filename,
-  },
-  async (sachiya, mek, m, { from, quoted, q, reply }) => {
+    filename: __filename
+},
+async (sock, mek, m, { from, q, reply, isGroup, mentionedJid }) => {
     try {
-      let target;
-      
-      // 1. Mentions (ටැග් කර ඇත්නම්), Reply කර ඇත්නම් හෝ නම්බර් එකක් දී ඇත්නම් බැලීම
-      if (m.mentionedJid && m.mentionedJid.length > 0) {
-        target = m.mentionedJid[0];
-      } else if (quoted && quoted.sender) {
-        target = quoted.sender;
-      } else if (q) {
-        let cleanedNum = q.replace(/[^0-9]/g, "");
-        if (!cleanedNum) return reply("⚠️ *Please provide a valid phone number or mention someone!*");
-        target = cleanedNum + "@s.whatsapp.net";
-      } else {
-        target = m.sender; // කිසිවක් දී නැත්නම් තමන්ගේම DP එක ලබා ගැනීම
-      }
+        let targetJid = '';
 
-      await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
+        // 1. If replied to a message, get that user's JID
+        if (mek.quoted) {
+            targetJid = mek.quoted.sender;
+        } 
+        // 2. If someone is mentioned in the group
+        else if (mentionedJid && mentionedJid.length > 0) {
+            targetJid = mentionedJid[0];
+        } 
+        // 3. If a phone number or query is provided (e.g. .getdp 9477xxxxxxx)
+        else if (q) {
+            let cleaned = q.replace(/[^0-9]/g, '');
+            if (cleaned.length > 5) {
+                targetJid = cleaned + '@s.whatsapp.net';
+            }
+        }
 
-      let dpUrl;
-      try {
-        // Fetch Profile Picture from WhatsApp
-        dpUrl = await sachiya.profilePictureUrl(target, "image");
-      } catch (e) {
-        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("❌ *Unable to fetch profile picture! (User might have privacy settings enabled or no DP).*");
-      }
+        // 4. If no target specified: 
+        // - In a Group: get the sender's DP who typed the command.
+        // - In Inbox (DM): get the other person's (or owner's) DP of that chat.
+        if (!targetJid) {
+            targetJid = from;
+        }
 
-      if (!dpUrl) {
-        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("❌ *Profile picture not found for this user!*");
-      }
+        // Fetch profile picture URL with HD fallback
+        let dpUrl;
+        try {
+            dpUrl = await sock.profilePictureUrl(targetJid, 'image');
+        } catch (err) {
+            return reply('⚠️ *මෙම පරිශීලකයාගේ Profile Picture (DP) එක ලබා ගැනීමට නොහැක (Privacity දමා තිබිය හැක).*');
+        }
 
-      const targetNumber = target.split("@")[0];
+        if (!dpUrl) {
+            return reply('⚠️ *මෙම පරිශීලකයාට Profile Picture එකක් නොමැත.*');
+        }
 
-      const desc = `*─── ｢ 🖼️ PROFILE PICTURE ｣ ───*
+        // Send the profile picture
+        await sock.sendMessage(from, {
+            image: { url: dpUrl },
+            caption: `*✨ SACHIYA-MD DP VIEWER ✨*\n\n> *👤 Target User:* @${targetJid.split('@')[0]}`,
+            mentions: [targetJid]
+        }, { quoted: mek });
 
-👤 *Target User:* @${targetNumber}
-
-> *SACHIYA-MD BOT* 💫`;
-
-      // Send the DP Image with Caption and Mentions
-      await sachiya.sendMessage(
-        from,
-        {
-          image: { url: dpUrl },
-          caption: desc,
-          mentions: [target]
-        },
-        { quoted: mek }
-      );
-
-      await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } });
-
-    } catch (e) {
-      console.error("GetDP Error:", e);
-      await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-      reply(`❌ *Error:* ${e.message || "Failed to fetch DP!"}`);
+    } catch (error) {
+        console.error('GetDP Error:', error);
+        return reply(`⚠️ *දෝෂයක් මතු විය: ${error.message}*`);
     }
-  }
-);
+});
