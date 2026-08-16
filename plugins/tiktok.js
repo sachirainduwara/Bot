@@ -24,7 +24,7 @@ async function tiktokCommand(sock, chatId, message) {
         if (!text) {
             return await sock.sendMessage(chatId, { 
                 text: "⚠️ *Please provide a TikTok link for the video.*"
-            }, { quoted: message });
+            });
         }
 
         // Extract URL from command
@@ -33,7 +33,7 @@ async function tiktokCommand(sock, chatId, message) {
         if (!url) {
             return await sock.sendMessage(chatId, { 
                 text: "⚠️ *Please provide a TikTok link for the video.*"
-            }, { quoted: message });
+            });
         }
 
         // Check for various TikTok URL formats
@@ -50,10 +50,9 @@ async function tiktokCommand(sock, chatId, message) {
         if (!isValidUrl) {
             return await sock.sendMessage(chatId, { 
                 text: "❌ *That is not a valid TikTok link. Please provide a valid TikTok video link.*"
-            }, { quoted: message });
+            });
         }
 
-        // ⏳ Processing Reaction
         await sock.sendMessage(chatId, {
             react: { text: '⏳', key: message.key }
         });
@@ -77,8 +76,11 @@ async function tiktokCommand(sock, chatId, message) {
                 });
                 
                 if (response.data && response.data.status) {
+                    // Check if the API returned video data
                     if (response.data.data) {
+                        // Check for urls array first (this is the main response format)
                         if (response.data.data.urls && Array.isArray(response.data.data.urls) && response.data.data.urls.length > 0) {
+                            // Use the first URL from the urls array (usually HD quality)
                             videoUrl = response.data.data.urls[0];
                             title = response.data.data.metadata?.title || "TikTok Video";
                         } else if (response.data.data.video_url) {
@@ -112,11 +114,14 @@ async function tiktokCommand(sock, chatId, message) {
                         for (let i = 0; i < Math.min(20, mediaData.length); i++) {
                             const media = mediaData[i];
                             const mediaUrl = media.url;
-                            const isVideo = /\.(mp4|mov|avi|mkv|webm)$/i.test(mediaUrl) || media.type === 'video';
+
+                            // Check if URL ends with common video extensions
+                            const isVideo = /\.(mp4|mov|avi|mkv|webm)$/i.test(mediaUrl) || 
+                                          media.type === 'video';
 
                             const fallbackCaption = `╭━━━〔 *TIKTOK DOWNLOADER* 〕━━━\n` +
                                                     `┃\n` +
-                                                    `┃ 📱 *Status:* Success\n` +
+                                                    `┃ ✨ *Status:* Success\n` +
                                                     `┃\n` +
                                                     `╰━━━━━━━━━━━━━━━━━━━\n\n` +
                                                     `> Powered by SACHIYA MD 💫`;
@@ -145,24 +150,43 @@ async function tiktokCommand(sock, chatId, message) {
             // Send the video if we got a URL from the APIs
             if (videoUrl) {
                 try {
+                    // Download video as buffer
                     const videoResponse = await axios.get(videoUrl, {
                         responseType: 'arraybuffer',
                         timeout: 60000,
-                        maxContentLength: 100 * 1024 * 1024,
+                        maxContentLength: 100 * 1024 * 1024, // 100MB limit
                         headers: {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                             'Accept': 'video/mp4,video/*,*/*;q=0.9',
+                            'Accept-Language': 'en-US,en;q=0.9',
+                            'Accept-Encoding': 'gzip, deflate, br',
+                            'Connection': 'keep-alive',
                             'Referer': 'https://www.tiktok.com/'
                         }
                     });
                     
                     const videoBuffer = Buffer.from(videoResponse.data);
                     
+                    // Validate video buffer
                     if (videoBuffer.length === 0) {
                         throw new Error("Video buffer is empty");
                     }
                     
-                    // 🎨 SACHIYA-MD STYLIZED CARD CAPTION
+                    // Check if it's a valid video file (starts with video file signatures)
+                    const isValidVideo = videoBuffer.length > 1000 && (
+                        videoBuffer.toString('hex', 0, 4) === '000001ba' || // MP4
+                        videoBuffer.toString('hex', 0, 4) === '000001b3' || // MP4
+                        videoBuffer.toString('hex', 0, 8) === '0000001866747970' || // MP4
+                        videoBuffer.toString('hex', 0, 4) === '1a45dfa3' // WebM
+                    );
+                    
+                    if (!isValidVideo && videoBuffer.length < 10000) {
+                        const bufferText = videoBuffer.toString('utf8', 0, 200);
+                        if (bufferText.includes('error') || bufferText.includes('blocked') || bufferText.includes('403')) {
+                            throw new Error("Received error page instead of video");
+                        }
+                    }
+                    
                     const caption = `╭━━━〔 *TIKTOK DOWNLOADER* 〕━━━\n` +
                                     `┃\n` +
                                     `┃ 🎬 *Title:* ${title || "TikTok Video"}\n` +
@@ -176,12 +200,34 @@ async function tiktokCommand(sock, chatId, message) {
                         caption: caption
                     }, { quoted: message });
 
-                    // ✅ Success Reaction
                     await sock.sendMessage(chatId, { react: { text: '✅', key: message.key } });
-                    return;
 
+                    // If we have audio URL, download and send it as well
+                    if (audioUrl) {
+                        try {
+                            const audioResponse = await axios.get(audioUrl, {
+                                responseType: 'arraybuffer',
+                                timeout: 30000,
+                                headers: {
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                                }
+                            });
+                            
+                            const audioBuffer = Buffer.from(audioResponse.data);
+                            
+                            await sock.sendMessage(chatId, {
+                                audio: audioBuffer,
+                                mimetype: "audio/mp3",
+                                caption: "🎵 *Audio from TikTok*\n\n> Powered by SACHIYA MD 💫"
+                            }, { quoted: message });
+                        } catch (audioError) {
+                            console.error(`Failed to download audio: ${audioError.message}`);
+                        }
+                    }
+                    return;
                 } catch (downloadError) {
                     console.error(`Failed to download video: ${downloadError.message}`);
+                    // Fallback to URL method
                     try {
                         const caption = `╭━━━〔 *TIKTOK DOWNLOADER* 〕━━━\n` +
                                         `┃\n` +
@@ -204,25 +250,24 @@ async function tiktokCommand(sock, chatId, message) {
                 }
             }
 
-            // ❌ Failure Reaction
+            // If we reach here, no method worked
             await sock.sendMessage(chatId, { react: { text: '❌', key: message.key } });
             return await sock.sendMessage(chatId, { 
-                text: "❌ *Failed to download TikTok video. All download methods failed. Please try again later.*"
-            }, { quoted: message });
-
+                text: "❌ *Failed to download TikTok video. All download methods failed. Please try again with a different link or check if the video is available.*"
+            },{ quoted: message });
         } catch (error) {
             console.error('Error in TikTok download:', error);
             await sock.sendMessage(chatId, { react: { text: '❌', key: message.key } });
             await sock.sendMessage(chatId, { 
                 text: "❌ *Failed to download the TikTok video. Please try again with a different link.*"
-            }, { quoted: message });
+            },{ quoted: message });
         }
     } catch (error) {
         console.error('Error in TikTok command:', error);
         await sock.sendMessage(chatId, { react: { text: '❌', key: message.key } });
         await sock.sendMessage(chatId, { 
             text: "❌ *An error occurred while processing the request. Please try again later.*"
-        }, { quoted: message });
+        },{ quoted: message });
     }
 }
 
