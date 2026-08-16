@@ -38,6 +38,7 @@
     "tmp": "^0.2.7",
     "puppeteer": "^25.5.0",
     "figlet": "^1.11.4",
-    "google-tts-api": "^2.0.2"
+    "google-tts-api": "^2.0.2",
+    "ruhend-scraper": "^10.0.3"
   }
 }
