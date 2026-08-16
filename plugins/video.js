@@ -30,8 +30,8 @@ cmd({
 
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
 
-        let res = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp4?url=${data.url}`);
-        let downloadUrl = res.data.result.download_url;
+        let res = await axios.get(`https://api.vyturex.com/dl/ytmp4?url=${data.url}`);
+        let downloadUrl = res.data.link;
 
         await conn.sendMessage(from, { 
             video: { url: downloadUrl }, 
