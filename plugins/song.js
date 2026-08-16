@@ -30,8 +30,8 @@ cmd({
 
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
 
-        let res = await axios.get(`https://deliri-api-ofc.vercel.app/download/ytmp3?url=${data.url}`);
-        let downloadUrl = res.data.data.download.url;
+        let res = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp3?url=${data.url}`);
+        let downloadUrl = res.data.result.download_url;
 
         await conn.sendMessage(from, { 
             audio: { url: downloadUrl }, 
