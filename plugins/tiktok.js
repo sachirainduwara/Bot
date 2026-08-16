@@ -14,8 +14,8 @@ cmd({
         
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
-        let res = await axios.get(`https://deliri-api-ofc.vercel.app/download/tiktok?url=${q}`);
-        let videoUrl = res.data.data.data.play || res.data.data.video;
+        let res = await axios.get(`https://api.davidcyriltech.my.id/download/tiktok?url=${q}`);
+        let videoUrl = res.data.result.videoUrl;
 
         await conn.sendMessage(from, { 
             video: { url: videoUrl }, 
