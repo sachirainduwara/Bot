@@ -34,19 +34,29 @@ cmd(
 
       await sachiya.sendMessage(from, { image: { url: data.thumbnail }, caption }, { quoted: mek });
 
-      // Direct stream download using @distube/ytdl-core
-      let streamUrl = data.url;
-      if (!ytdl.validateURL(streamUrl)) {
+      if (!ytdl.validateURL(data.url)) {
         return reply("❌ *Invalid YouTube URL!*");
       }
 
-      // We can pass the video url directly to audio handler or stream
+      // Stream audio directly using ytdl-core buffer
+      let audioStream = ytdl(data.url, {
+        filter: "audioonly",
+        quality: highestaudio = "highestaudio",
+        highWaterMark: 1 << 25
+      });
+
+      let chunks = [];
+      for await (const chunk of audioStream) {
+        chunks.push(chunk);
+      }
+      let buffer = Buffer.concat(chunks);
+
       await sachiya.sendMessage(
         from,
         {
-          audio: { url: streamUrl },
+          audio: buffer,
           mimetype: "audio/mpeg",
-          fileName: `${data.title.replace(/[^\w\s]/gi, '')}.mp3`
+          ptt: false
         },
         { quoted: mek }
       );
