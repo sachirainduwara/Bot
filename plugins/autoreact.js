@@ -133,7 +133,7 @@ cmd(
   {
     pattern: "ireact",
     desc: "Enable or Disable Auto-React for Inbox (Private Chats)",
-    category: "tools",
+    category: "owner",
     react: "💬",
     filename: __filename,
   },
@@ -185,7 +185,7 @@ cmd(
   {
     pattern: "greact",
     desc: "Enable or Disable Auto-React for Groups",
-    category: "tools",
+    category: "owner",
     react: "👥",
     filename: __filename,
   },
