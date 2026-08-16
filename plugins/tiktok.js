@@ -1,55 +1,30 @@
+const { cmd } = require('../command');
 const axios = require('axios');
-const { tikdl } = require('ruhend-scraper');
 
-async function tiktokCommand(sock, chatId, message) {
+cmd({
+    pattern: "tiktok",
+    alias: ["tt", "tiktokdl"],
+    desc: "Download TikTok videos",
+    category: "download",
+    react: "🎬",
+    filename: __filename
+}, async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, reply }) => {
     try {
-        const text = message.message?.conversation || message.message?.extendedTextMessage?.text || '';
-        const url = text.split(' ').slice(1).join(' ').trim() || (text.includes('tiktok.com') ? text : '');
+        if (!q || !q.includes('tiktok.com')) return reply("*❌ කරුණාකර సరైన TikTok ලින්ක් එකක් ලබා දෙන්න!*");
+        
+        await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
-        if (!url || !url.includes('tiktok.com')) {
-            await sock.sendMessage(chatId, { text: '⚠️ *Usage: .tiktok <TikTok URL>*' }, { quoted: message });
-            return;
-        }
+        let res = await axios.get(`https://deliri-api-ofc.vercel.app/download/tiktok?url=${q}`);
+        let videoUrl = res.data.data.data.play || res.data.data.video;
 
-        await sock.sendMessage(chatId, { react: { text: '⏳', key: message.key } });
+        await conn.sendMessage(from, { 
+            video: { url: videoUrl }, 
+            caption: `*✨ SACHIYA MD TIKTOK DOWNLOADER ✨*\n\n*💫 Powered by SACHIYA-MD*` 
+        }, { quoted: mek });
 
-        let videoUrl = '';
-        try {
-            const res = await tikdl(url);
-            videoUrl = res.video?.no_watermark || res.video?.no_watermark_hd || res.video?.watermark;
-        } catch (e) {
-            // Fallback public API if ruhend-scraper fails
-            const fallback = await axios.get(`https://api.yupra.my.id/api/downloader/tiktok?url=${encodeURIComponent(url)}`).catch(() => null);
-            videoUrl = fallback?.data?.data?.play || fallback?.data?.data?.hdplay;
-        }
-
-        if (!videoUrl) {
-            throw new Error('Could not fetch TikTok video.');
-        }
-
-        const caption = `╭━━━〔 *SACHIYA MD - TIKTOK* 〕━━━\n` +
-                        `┃\n` +
-                        `┃ 📥 *Successfully Downloaded!*\n` +
-                        `┃\n` +
-                        `╰━━━━━━━━━━━━━━━━━━━\n\n` +
-                        `> Powered by SACHIYA MD 💫`;
-
-        await sock.sendMessage(chatId, {
-            video: { url: videoUrl },
-            mimetype: 'video/mp4',
-            caption: caption
-        }, { quoted: message });
-
-        await sock.sendMessage(chatId, { react: { text: '✅', key: message.key } });
-    } catch (error) {
-        console.error('TikTok error:', error);
-        await sock.sendMessage(chatId, { react: { text: '❌', key: message.key } });
-        await sock.sendMessage(chatId, { text: '❌ Failed to download TikTok video. Check the link and try again.' }, { quoted: message });
+        await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+    } catch (e) {
+        console.log(e);
+        reply(`*❌ දෝෂයක් සිදු විය:* ${e.message}`);
     }
-}
-
-tiktokCommand.command = ['tiktok', '.tiktok', 'tt'];
-tiktokCommand.category = 'download';
-tiktokCommand.desc = 'Download TikTok videos without watermark';
-
-module.exports = tiktokCommand;
+});
