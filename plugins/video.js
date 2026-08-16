@@ -1,5 +1,5 @@
 const { cmd } = require("../command");
-const { ytmp4 } = require("sadaslk-dlcore");
+const ytdl = require("@distube/ytdl-core");
 const yts = require("yt-search");
 
 cmd(
@@ -7,7 +7,7 @@ cmd(
     pattern: "video",
     alias: ["ytmp4", "ytv"],
     react: "🎬",
-    desc: "Download YouTube video without external APIs",
+    desc: "Download YouTube video securely",
     category: "download",
     filename: __filename,
   },
@@ -34,13 +34,22 @@ cmd(
 
       await sachiya.sendMessage(from, { image: { url: data.thumbnail }, caption }, { quoted: mek });
 
-      let downloadData = await ytmp4(data.url);
-      if (!downloadData || !downloadData.url) {
-        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("❌ *Download failed from core server!*");
+      let streamUrl = data.url;
+      if (!ytdl.validateURL(streamUrl)) {
+        return reply("❌ *Invalid YouTube URL!*");
       }
 
-      await sachiya.sendMessage(from, { video: { url: downloadData.url }, mimetype: "video/mp4", caption: `🎬 *${data.title}*\n\n> *Powered by SACHIYA MD 💫*` }, { quoted: mek });
+      await sachiya.sendMessage(
+        from,
+        {
+          video: { url: streamUrl },
+          mimetype: "video/mp4",
+          fileName: `${data.title.replace(/[^\w\s]/gi, '')}.mp4`,
+          caption: `🎬 *${data.title}*\n\n> *Powered by SACHIYA MD 💫*`
+        },
+        { quoted: mek }
+      );
+
       await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } });
 
     } catch (e) {
