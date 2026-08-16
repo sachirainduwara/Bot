@@ -14,8 +14,8 @@ cmd({
         
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
-        let res = await axios.get(`https://api.davidcyriltech.my.id/download/tiktok?url=${q}`);
-        let videoUrl = res.data.result.videoUrl;
+        let res = await axios.get(`https://www.dark-yasiya-api.site/download/tiktok?url=${q}`);
+        let videoUrl = res.data.result.data.wm;
 
         await conn.sendMessage(from, { 
             video: { url: videoUrl }, 
