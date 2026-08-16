@@ -72,12 +72,13 @@ function handleAntiCall(sachiya) {
   });
 }
 
-// Command for turning on/off AntiCall with robust owner check
+// Command for turning on/off AntiCall with multiple reactions
 cmd(
   {
     pattern: "anticall",
     desc: "Enable or Disable Anti-Call system",
     category: "tools",
+    react: "⚙️",
     filename: __filename,
   },
   async (sachiya, mek, m, { from, q, reply, senderNumber, sender }) => {
@@ -92,10 +93,12 @@ cmd(
                         cleanSender === botNumber;
 
     if (!isTrueOwner) {
+      await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } }).catch(() => {});
       return reply("❌ *This command is only for the Owner!*");
     }
 
     if (!q) {
+      await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } }).catch(() => {});
       const statusText = anticallStatus ? "Enabled ✅" : "Disabled ❌";
       return reply(`╭━━━〔 *✨ SACHIYA-MD ANTICALL ✨* 〕━━━\n` +
                    `┃\n` +
@@ -112,12 +115,15 @@ cmd(
     if (q.toLowerCase() === 'on') {
       anticallStatus = true;
       await saveAntiCallStatus(true);
+      await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
       return reply("✅ *Anti-Call system has been enabled successfully!*");
     } else if (q.toLowerCase() === 'off') {
       anticallStatus = false;
       await saveAntiCallStatus(false);
+      await sachiya.sendMessage(from, { react: { text: "✔️", key: mek.key } }).catch(() => {});
       return reply("❌ *Anti-Call system has been disabled successfully!*");
     } else {
+      await sachiya.sendMessage(from, { react: { text: "⚠️", key: mek.key } }).catch(() => {});
       return reply("⚠️ *Please use `.anticall on` or `.anticall off`*");
     }
   }
