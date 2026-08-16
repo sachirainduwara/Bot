@@ -14,15 +14,20 @@ cmd({
         
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
-        let res = await axios.get(`https://tikwm.com/api/?url=${encodeURIComponent(q)}`);
-        
-        if (!res.data || !res.data.data || !res.data.data.play) {
-            return reply("*❌ වීඩියෝව ඩවුන්ලෝඩ් කරගත නොහැකි විය. කරුණාකර වෙනත් ලින්ක් එකක් උත්සාහ කරන්න!*");
+        let response = await axios.get(`https://api.tikwm.com/api/?url=${encodeURIComponent(q)}`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+            }
+        });
+
+        let res = response.data;
+        if (!res || !res.data || !res.data.play) {
+            return reply("*❌ වීඩියෝව ලබා ගැනීමට නොහැකි විය. කරුණාකර ලින්ක් එක පරීක්ෂා කරන්න!*");
         }
 
-        let videoUrl = res.data.data.play;
-        let title = res.data.data.title || "TikTok Video";
-        let author = res.data.data.author.nickname || "Unknown";
+        let videoUrl = res.data.hdplay || res.data.play;
+        let title = res.data.title || "TikTok Video";
+        let author = res.data.author.nickname || "Unknown";
 
         let caption = `*✨ SACHIYA MD TIKTOK DOWNLOADER ✨*
 
