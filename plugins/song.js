@@ -1,13 +1,13 @@
 const { cmd } = require("../command");
-const axios = require("axios");
 const yts = require("yt-search");
+const fg = require("api-dylux"); // Using dylux stable scraper which handles bot blocks
 
 cmd(
   {
     pattern: "song",
     alias: ["ytmp3", "yta"],
     react: "🎵",
-    desc: "Download YouTube audio instantly without any errors",
+    desc: "Download YouTube audio without any errors",
     category: "download",
     filename: __filename,
   },
@@ -33,27 +33,19 @@ cmd(
 
       await sachiya.sendMessage(from, { image: { url: data.thumbnail }, caption }, { quoted: mek });
 
-      // Direct Public Stream API (No Key Required, 100% Working)
-      let apiResponse = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(data.url)}`);
-      let downloadUrl = apiResponse.data?.data?.dl || apiResponse.data?.dl || apiResponse.data?.data?.download;
-
-      if (!downloadUrl) {
-        // Fallback API if primary is busy
-        let altApi = await axios.get(`https://deliriussapi-oficial.vercel.app/download/ytmp3?url=${encodeURIComponent(data.url)}`);
-        downloadUrl = altApi.data?.data?.download?.url;
-      }
+      // Using dylux scraper to bypass bot verification restrictions
+      let res = await fg.ytmp3(data.url);
+      let downloadUrl = res.dl_url;
 
       if (!downloadUrl) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("❌ *Failed to generate download link. Please try again!*");
+        return reply("❌ *Failed to fetch download link!*");
       }
-
-      let audioBuffer = await axios.get(downloadUrl, { responseType: "arraybuffer" });
 
       await sachiya.sendMessage(
         from,
         {
-          audio: Buffer.from(audioBuffer.data),
+          audio: { url: downloadUrl },
           mimetype: "audio/mpeg",
           ptt: false
         },
