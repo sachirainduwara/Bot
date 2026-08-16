@@ -10,16 +10,30 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, reply }) => {
     try {
-        if (!q || !q.includes('tiktok.com')) return reply("*❌ කරුණාකර సరైన TikTok ලින්ක් එකක් ලබා දෙන්න!*");
+        if (!q || !q.includes('tiktok.com')) return reply("*❌ කරුණාකර නිවැරදි TikTok ලින්ක් එකක් ලබා දෙන්න!*");
         
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
-        let res = await axios.get(`https://www.dark-yasiya-api.site/download/tiktok?url=${q}`);
-        let videoUrl = res.data.result.data.wm;
+        let res = await axios.get(`https://tikwm.com/api/?url=${encodeURIComponent(q)}`);
+        
+        if (!res.data || !res.data.data || !res.data.data.play) {
+            return reply("*❌ වීඩියෝව ඩවුන්ලෝඩ් කරගත නොහැකි විය. කරුණාකර වෙනත් ලින්ක් එකක් උත්සාහ කරන්න!*");
+        }
+
+        let videoUrl = res.data.data.play;
+        let title = res.data.data.title || "TikTok Video";
+        let author = res.data.data.author.nickname || "Unknown";
+
+        let caption = `*✨ SACHIYA MD TIKTOK DOWNLOADER ✨*
+
+*📝 Title:* ${title}
+*👤 Author:* ${author}
+
+*💫 Powered by SACHIYA-MD*`;
 
         await conn.sendMessage(from, { 
             video: { url: videoUrl }, 
-            caption: `*✨ SACHIYA MD TIKTOK DOWNLOADER ✨*\n\n*💫 Powered by SACHIYA-MD*` 
+            caption: caption 
         }, { quoted: mek });
 
         await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
