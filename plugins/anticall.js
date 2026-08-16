@@ -72,7 +72,7 @@ function handleAntiCall(sachiya) {
   });
 }
 
-// Command for turning on/off AntiCall with direct config owner check
+// Command for turning on/off AntiCall with robust owner check
 cmd(
   {
     pattern: "anticall",
@@ -80,13 +80,16 @@ cmd(
     category: "tools",
     filename: __filename,
   },
-  async (sachiya, mek, m, { from, q, reply, senderNumber }) => {
-    // Owner validation directly using config and sender number
-    const ownerNum = (config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
-    const currentSender = (senderNumber || '').replace(/[^0-9]/g, '');
-    const botNumber = (sachiya.user?.id || '').split('@')[0].replace(/[^0-9]/g, '');
+  async (sachiya, mek, m, { from, q, reply, senderNumber, sender }) => {
+    // Robust owner verification
+    const ownerConfig = String(config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
+    const cleanSender = String(senderNumber || sender || '').replace(/[^0-9]/g, '');
+    const botNumber = String(sachiya.user?.id || '').split('@')[0].replace(/[^0-9]/g, '');
 
-    const isTrueOwner = (currentSender === ownerNum) || (currentSender === botNumber);
+    const isTrueOwner = mek.key.fromMe || 
+                        cleanSender.includes(ownerConfig) || 
+                        ownerConfig.includes(cleanSender) || 
+                        cleanSender === botNumber;
 
     if (!isTrueOwner) {
       return reply("❌ *This command is only for the Owner!*");
