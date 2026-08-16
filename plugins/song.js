@@ -30,7 +30,7 @@ cmd({
 
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
 
-        let stream = ytdl(data.url, { filter: 'audioonly', quality: highestaudio });
+        let stream = ytdl(data.url, { filter: 'audioonly', quality: 'highestaudio' });
 
         await conn.sendMessage(from, { 
             audio: stream, 
