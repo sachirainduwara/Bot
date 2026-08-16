@@ -1,11 +1,11 @@
 const { cmd } = require('../command');
 const ytSearch = require('yt-search');
-const axios = require('axios');
+const ytdl = require('@distube/ytdl-core');
 
 cmd({
     pattern: "song",
     alias: ["play", "audio"],
-    desc: "Download YouTube songs",
+    desc: "Download YouTube songs directly",
     category: "download",
     react: "🎵",
     filename: __filename
@@ -30,11 +30,10 @@ cmd({
 
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
 
-        let res = await axios.get(`https://api.vyturex.com/dl/ytmp3?url=${data.url}`);
-        let downloadUrl = res.data.link;
+        let stream = ytdl(data.url, { filter: 'audioonly', quality: highestaudio });
 
         await conn.sendMessage(from, { 
-            audio: { url: downloadUrl }, 
+            audio: stream, 
             mimetype: 'audio/mpeg', 
             ptt: false 
         }, { quoted: mek });
