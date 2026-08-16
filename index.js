@@ -23,6 +23,8 @@ const { commands } = require('./command');
 const { storeMessage, handleMessageRevocation } = require('./plugins/antidelete');
 // AutoRead ප්ලගින් එක ඉම්පෝට් කිරීම
 const { handleAutoread } = require('./plugins/autoread');
+// AntiCall ප්ලගින් එක ඉම්පෝට් කිරීම
+const { handleAntiCall } = require('./plugins/anticall');
 
 const app = express();
 const port = process.env.PORT || 8000;
@@ -329,6 +331,9 @@ async function connectToWA() {
     await saveCreds();
     await saveSessionToMongo();
   });
+
+  // 📞 Anti-Call Event Listener Handler එක සම්බන්ධ කිරීම
+  handleAntiCall(sachiya);
 
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
