@@ -34,17 +34,27 @@ cmd(
 
       await sachiya.sendMessage(from, { image: { url: data.thumbnail }, caption }, { quoted: mek });
 
-      let streamUrl = data.url;
-      if (!ytdl.validateURL(streamUrl)) {
+      if (!ytdl.validateURL(data.url)) {
         return reply("❌ *Invalid YouTube URL!*");
       }
+
+      let videoStream = ytdl(data.url, {
+        filter: "videoandaudio",
+        quality: "highest",
+        highWaterMark: 1 << 25
+      });
+
+      let chunks = [];
+      for await (const chunk of videoStream) {
+        chunks.push(chunk);
+      }
+      let buffer = Buffer.concat(chunks);
 
       await sachiya.sendMessage(
         from,
         {
-          video: { url: streamUrl },
+          video: buffer,
           mimetype: "video/mp4",
-          fileName: `${data.title.replace(/[^\w\s]/gi, '')}.mp4`,
           caption: `🎬 *${data.title}*\n\n> *Powered by SACHIYA MD 💫*`
         },
         { quoted: mek }
