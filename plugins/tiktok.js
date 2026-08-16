@@ -1,12 +1,12 @@
 const { cmd } = require("../command");
-const { tiktok } = require("sadaslk-dlcore");
+const axios = require("axios");
 
 cmd(
   {
     pattern: "tiktok",
     alias: ["tt", "ttdl"],
     react: "📱",
-    desc: "Download TikTok video without external APIs",
+    desc: "Download TikTok video securely",
     category: "download",
     filename: __filename,
   },
@@ -16,12 +16,19 @@ cmd(
 
       await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
-      let res = await tiktok(q);
-      let videoUrl = res?.no_watermark || res?.url || res?.nowatermark;
+      // TikWM Public API (Direct & Stable)
+      let res = await axios.post("https://www.tikwm.com/api/", { url: q }, {
+        headers: {
+          "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "user-agent": "Mozilla/5.0"
+        }
+      });
+
+      let videoUrl = res.data?.data?.play || res.data?.data?.hdplay;
 
       if (!videoUrl) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("❌ *Failed to download TikTok video!*");
+        return reply("❌ *Failed to download TikTok video! Make sure the link is public.*");
       }
 
       let caption = `╭━━━〔 *TIKTOK DOWNLOADER* 〕━━━\n` +
@@ -31,7 +38,16 @@ cmd(
                     `╰━━━━━━━━━━━━━━━━━━━\n\n` +
                     `> *Powered by SACHIYA MD 💫*`;
 
-      await sachiya.sendMessage(from, { video: { url: videoUrl }, mimetype: "video/mp4", caption }, { quoted: mek });
+      await sachiya.sendMessage(
+        from,
+        {
+          video: { url: videoUrl },
+          mimetype: "video/mp4",
+          caption
+        },
+        { quoted: mek }
+      );
+
       await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } });
 
     } catch (e) {
