@@ -1,6 +1,6 @@
 const { cmd } = require("../command");
-const { ytmp3, ytmp4, tiktok } = require("sadaslk-dlcore");
 const yts = require("yt-search");
+const axios = require("axios");
 
 // 🔍 Advanced & Safe YouTube Helper Function
 async function getYoutube(query) {
@@ -68,7 +68,9 @@ cmd(
         { quoted: mek }
       );
 
-      const data = await ytmp3(video.url);
+      const zantaRes = await axios.get(`https://api.zanta-mini.store/api/song?apiKey=zanta_WdA26szT535TnL0TeeL0g6o9&url=${encodeURIComponent(video.url)}`);
+      const data = { url: zantaRes.data.result?.download_url || zantaRes.data.url };
+
       if (!data?.url) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
         return reply("❌ *Failed to download MP3 from core server!*");
@@ -139,10 +141,8 @@ cmd(
         { quoted: mek }
       );
 
-      const data = await ytmp4(video.url, {
-        format: "mp4",
-        videoQuality: "720",
-      });
+      const zantaRes = await axios.get(`https://api.zanta-mini.store/api/ytmp4?apiKey=zanta_WdA26szT535TnL0TeeL0g6o9&url=${encodeURIComponent(video.url)}`);
+      const data = { url: zantaRes.data.result?.download_url || zantaRes.data.url, filename: zantaRes.data.result?.filename };
 
       if (!data?.url) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
@@ -189,7 +189,14 @@ cmd(
 
       await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
-      const data = await tiktok(q);
+      const zantaRes = await axios.get(`https://api.zanta-mini.store/api/tiktok?apiKey=zanta_WdA26szT535TnL0TeeL0g6o9&url=${encodeURIComponent(q)}`);
+      const data = { 
+        no_watermark: zantaRes.data.result?.video || zantaRes.data.result?.play || zantaRes.data.url, 
+        title: zantaRes.data.result?.title, 
+        author: zantaRes.data.result?.author, 
+        runtime: zantaRes.data.result?.runtime 
+      };
+
       if (!data || (!data.no_watermark && !data.url)) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
         return reply("❌ *Failed to download TikTok video! Make sure link is public.*");
