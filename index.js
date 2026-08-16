@@ -25,6 +25,8 @@ const { storeMessage, handleMessageRevocation } = require('./plugins/antidelete'
 const { handleAutoread } = require('./plugins/autoread');
 // AntiCall ප්ලගින් එක ඉම්පෝට් කිරීම
 const { handleAntiCall } = require('./plugins/anticall');
+// AutoReact ප්ලගින් එක ඉම්පෝට් කිරීම (ඉමෝජි 150+ සමඟ)
+const { handleAutoReact } = require('./plugins/autoreact');
 
 const app = express();
 const port = process.env.PORT || 8000;
@@ -341,13 +343,14 @@ async function connectToWA() {
       if (!mek || !mek.message) return;
       if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
 
-      // 👁️‍🗨️ මැසේජ් එක ලැබුණු සැනින් වෙන කිසිදු කොන්දේසියකට යටත් නොවී මුලින්ම AutoRead ක්‍රියාත්මක වීම
+      // 👁️‍🗨️ මැසේජ් එක ලැබුණු සැනින් වෙන කිසිදු කොන්දේසියකට යටත් නොවී මුලින්ම AutoRead සහ AutoReact ක්‍රියාත්මක වීම
       try {
         if (!mek.key.fromMe) {
           await handleAutoread(sachiya, mek);
+          await handleAutoReact(sachiya, mek);
         }
       } catch (e) {
-        // Autoread දෝෂ වැළැක්වීමට
+        // දෝෂ වැළැක්වීමට
       }
 
       const from = mek.key.remoteJid;
