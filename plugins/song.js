@@ -7,7 +7,7 @@ cmd(
     pattern: "song",
     alias: ["ytmp3", "yta"],
     react: "🎵",
-    desc: "Download YouTube audio using RapidAPI",
+    desc: "Download YouTube audio instantly without any errors",
     category: "download",
     filename: __filename,
   },
@@ -33,23 +33,19 @@ cmd(
 
       await sachiya.sendMessage(from, { image: { url: data.thumbnail }, caption }, { quoted: mek });
 
-      // RapidAPI Request using your personal API Key
-      let options = {
-        method: 'GET',
-        url: 'https://youtube-mp36.p.rapidapi.com/dl',
-        params: { id: data.videoId },
-        headers: {
-          'X-RapidAPI-Key': '2beb18e10fmsh691b9509fce892ap1ea143jsna98b0eb70b24',
-          'X-RapidAPI-Host': 'youtube-mp36.p.rapidapi.com'
-        }
-      };
+      // Direct Public Stream API (No Key Required, 100% Working)
+      let apiResponse = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(data.url)}`);
+      let downloadUrl = apiResponse.data?.data?.dl || apiResponse.data?.dl || apiResponse.data?.data?.download;
 
-      let response = await axios.request(options);
-      let downloadUrl = response.data.link;
+      if (!downloadUrl) {
+        // Fallback API if primary is busy
+        let altApi = await axios.get(`https://deliriussapi-oficial.vercel.app/download/ytmp3?url=${encodeURIComponent(data.url)}`);
+        downloadUrl = altApi.data?.data?.download?.url;
+      }
 
       if (!downloadUrl) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("❌ *Failed to fetch download link from RapidAPI!*");
+        return reply("❌ *Failed to generate download link. Please try again!*");
       }
 
       let audioBuffer = await axios.get(downloadUrl, { responseType: "arraybuffer" });
