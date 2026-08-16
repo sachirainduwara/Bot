@@ -1,0 +1,52 @@
+const { cmd } = require("../command");
+const { ytmp4 } = require("sadaslk-dlcore");
+const yts = require("yt-search");
+
+cmd(
+  {
+    pattern: "video",
+    alias: ["ytmp4", "ytv"],
+    react: "🎬",
+    desc: "Download YouTube video without external APIs",
+    category: "download",
+    filename: __filename,
+  },
+  async (sachiya, mek, m, { from, q, reply }) => {
+    try {
+      if (!q) return reply("⚠️ *Please provide a Video Name or YouTube Link!*");
+
+      await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
+
+      let search = await yts(q);
+      let data = search.videos[0];
+      if (!data) return reply("❌ *No results found on YouTube!*");
+
+      let caption = `╭━━━〔 *SACHIYA-MD VIDEO* 〕━━━\n` +
+                    `┃\n` +
+                    `┃ 🎬 *Title:* ${data.title}\n` +
+                    `┃ 👤 *Channel:* ${data.author.name}\n` +
+                    `┃ ⏱ *Duration:* ${data.timestamp}\n` +
+                    `┃ 👀 *Views:* ${data.views.toLocaleString()}\n` +
+                    `┃ 📅 *Uploaded:* ${data.ago}\n` +
+                    `┃\n` +
+                    `╰━━━━━━━━━━━━━━━━━━━\n\n` +
+                    `> *Powered by SACHIYA MD 💫*`;
+
+      await sachiya.sendMessage(from, { image: { url: data.thumbnail }, caption }, { quoted: mek });
+
+      let downloadData = await ytmp4(data.url);
+      if (!downloadData || !downloadData.url) {
+        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
+        return reply("❌ *Download failed from core server!*");
+      }
+
+      await sachiya.sendMessage(from, { video: { url: downloadData.url }, mimetype: "video/mp4", caption: `🎬 *${data.title}*\n\n> *Powered by SACHIYA MD 💫*` }, { quoted: mek });
+      await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } });
+
+    } catch (e) {
+      console.log("VIDEO ERROR:", e);
+      await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
+      reply("❌ *Error while processing your request!*");
+    }
+  }
+);
