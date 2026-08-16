@@ -1,14 +1,14 @@
 const { cmd } = require("../command");
 const mongoose = require('mongoose');
+const config = require('../config');
 
 // MongoDB Schema for AntiCall Status
 const AntiCallSchema = new mongoose.Schema({
   _id: { type: String, required: true },
-  status: { type: Boolean, default: false } // Default Disabled (או වෙනස් කරගන්න පුළුවන්)
+  status: { type: Boolean, default: false }
 });
 const AntiCallModel = mongoose.models.AntiCall || mongoose.model('AntiCall', AntiCallSchema);
 
-// Cache for status
 let anticallStatus = false;
 
 async function loadAntiCallStatus() {
@@ -39,7 +39,6 @@ async function saveAntiCallStatus(status) {
   }
 }
 
-// Load status initially after a short delay to ensure DB connection
 setTimeout(() => {
   loadAntiCallStatus();
 }, 3000);
@@ -47,7 +46,6 @@ setTimeout(() => {
 // Anti-Call Event Listener Handler
 function handleAntiCall(sachiya) {
   sachiya.ev.on('call', async (callEvents) => {
-    // Check current status from DB/Cache
     if (!anticallStatus) return;
 
     for (const call of callEvents) {
@@ -74,7 +72,7 @@ function handleAntiCall(sachiya) {
   });
 }
 
-// Command for turning on/off AntiCall (matches user request UI)
+// Command for turning on/off AntiCall with direct config owner check
 cmd(
   {
     pattern: "anticall",
@@ -82,8 +80,17 @@ cmd(
     category: "tools",
     filename: __filename,
   },
-  async (sachiya, mek, m, { from, q, reply, isOwner }) => {
-    if (!isOwner) return reply("❌ *This command is only for the Owner!*");
+  async (sachiya, mek, m, { from, q, reply, senderNumber }) => {
+    // Owner validation directly using config and sender number
+    const ownerNum = (config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
+    const currentSender = (senderNumber || '').replace(/[^0-9]/g, '');
+    const botNumber = (sachiya.user?.id || '').split('@')[0].replace(/[^0-9]/g, '');
+
+    const isTrueOwner = (currentSender === ownerNum) || (currentSender === botNumber);
+
+    if (!isTrueOwner) {
+      return reply("❌ *This command is only for the Owner!*");
+    }
 
     if (!q) {
       const statusText = anticallStatus ? "Enabled ✅" : "Disabled ❌";
