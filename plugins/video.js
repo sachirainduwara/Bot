@@ -1,11 +1,11 @@
 const { cmd } = require('../command');
 const ytSearch = require('yt-search');
-const axios = require('axios');
+const ytdl = require('@distube/ytdl-core');
 
 cmd({
     pattern: "video",
     alias: ["ytmp4", "mp4"],
-    desc: "Download YouTube videos",
+    desc: "Download YouTube videos directly",
     category: "download",
     react: "🎥",
     filename: __filename
@@ -30,11 +30,10 @@ cmd({
 
         await conn.sendMessage(from, { image: { url: data.thumbnail }, caption: desc }, { quoted: mek });
 
-        let res = await axios.get(`https://api.vyturex.com/dl/ytmp4?url=${data.url}`);
-        let downloadUrl = res.data.link;
+        let stream = ytdl(data.url, { filter: 'videoandaudio', quality: highest });
 
         await conn.sendMessage(from, { 
-            video: { url: downloadUrl }, 
+            video: stream, 
             mimetype: 'video/mp4',
             caption: `*🎬 SACHIYA MD 💫*`
         }, { quoted: mek });
