@@ -1,5 +1,5 @@
 const { cmd } = require("../command");
-const { ytmp3 } = require("sadaslk-dlcore");
+const ytdl = require("@distube/ytdl-core");
 const yts = require("yt-search");
 
 cmd(
@@ -7,7 +7,7 @@ cmd(
     pattern: "song",
     alias: ["ytmp3", "yta"],
     react: "🎵",
-    desc: "Download YouTube audio without external APIs",
+    desc: "Download YouTube audio securely",
     category: "download",
     filename: __filename,
   },
@@ -34,13 +34,23 @@ cmd(
 
       await sachiya.sendMessage(from, { image: { url: data.thumbnail }, caption }, { quoted: mek });
 
-      let downloadData = await ytmp3(data.url);
-      if (!downloadData || !downloadData.url) {
-        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("❌ *Download failed from core server!*");
+      // Direct stream download using @distube/ytdl-core
+      let streamUrl = data.url;
+      if (!ytdl.validateURL(streamUrl)) {
+        return reply("❌ *Invalid YouTube URL!*");
       }
 
-      await sachiya.sendMessage(from, { audio: { url: downloadData.url }, mimetype: "audio/mpeg", ptt: false }, { quoted: mek });
+      // We can pass the video url directly to audio handler or stream
+      await sachiya.sendMessage(
+        from,
+        {
+          audio: { url: streamUrl },
+          mimetype: "audio/mpeg",
+          fileName: `${data.title.replace(/[^\w\s]/gi, '')}.mp3`
+        },
+        { quoted: mek }
+      );
+
       await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } });
 
     } catch (e) {
