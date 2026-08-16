@@ -35,9 +35,6 @@ const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
 global.blockedChatsCache = [];
 
-// Call Counter Object එක ඉන්බොක්ස් සඳහා මැනේජ් කිරීමට
-global.callCounters = global.callCounters || {};
-
 const SessionSchema = new mongoose.Schema({
   _id: { type: String, required: true },
   data: { type: Object, required: true }
@@ -331,46 +328,6 @@ async function connectToWA() {
   sachiya.ev.on('creds.update', async () => {
     await saveCreds();
     await saveSessionToMongo();
-  });
-
-  // 📞 Anti-Call System Handler
-  sachiya.ev.on('call', async (callEvents) => {
-    for (const call of callEvents) {
-      if (call.status === 'offer') {
-        const callerJid = call.from;
-        const isGroupCall = callerJid.endsWith('@g.us');
-
-        if (isGroupCall) {
-          continue; 
-        }
-
-        try {
-          if (!global.callCounters[callerJid]) {
-            global.callCounters[callerJid] = 0;
-          }
-          global.callCounters[callerJid] += 1;
-          const count = global.callCounters[callerJid];
-
-          await sachiya.rejectCall(call.id, callerJid);
-
-          if (count === 1) {
-            await sachiya.sendMessage(callerJid, { 
-              text: `Call ගන්න එපා  😑\nමට Massage එකක් දාන්න..\nOnline ආවම මන් Reply කරන්නම් 💖.` 
-            });
-          } else if (count === 2) {
-            await sachiya.sendMessage(callerJid, { 
-              text: `අයියෝ බන්..\nකිය කියා ඉන්න බෑ එකපාරක් කිව්වම අහපන් 😡.` 
-            });
-          } else {
-            await sachiya.sendMessage(callerJid, { 
-              text: `සින්හල තෙරෙන්නෙ නැද්ද බන් උබට 😑😑` 
-            });
-          }
-        } catch (e) {
-          console.error("Call Reject/Message Error:", e);
-        }
-      }
-    }
   });
 
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
