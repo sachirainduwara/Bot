@@ -1,16 +1,25 @@
 const { cmd } = require("../command");
+const mongoose = require('mongoose');
 const config = require('../config');
+
+// MongoDB එකෙන් Block කරපු දත්ත ලබා ගැනීමට Schema එක
+const BlockSchema = new mongoose.Schema({
+  jid: { type: String, required: true, unique: true },
+  type: { type: String, default: 'user' }, // user හෝ group
+  date: { type: String }
+});
+const BlockModel = mongoose.models.Block || mongoose.model('Block', BlockSchema);
 
 cmd(
   {
     pattern: "blocklist",
     alias: ["blist", "blocked"],
-    desc: "View the list of blocked contacts and groups by the bot",
+    desc: "View the list of blocked contacts and groups from Database",
     category: "owner",
     react: "🚫",
     filename: __filename,
   },
-  async (sachiya, mek, m, { reply, senderNumber, sender, isGroup }) => {
+  async (sachiya, mek, m, { reply, senderNumber, sender }) => {
     try {
       // Owner නිවැරදිව පරීක්ෂා කිරීම
       const ownerConfig = String(config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
@@ -25,17 +34,32 @@ cmd(
 
       const from = mek.key.remoteJid;
 
-      // බොට් විසින් බ්ලොක් කර ඇති සියලුම JID (Contacts & Groups) ලබා ගැනීම
-      const blockedContacts = typeof sachiya.fetchBlocklist === 'function' 
-        ? await sachiya.fetchBlocklist() 
-        : (sachiya.blocklist || []);
+      // 1. MongoDB එකෙන් සහ Baileys බ්ලොක් ලිස්ට් දෙකම එකතු කර ගැනීම (Data මගහැරී යාම වැළැක්වීමට)
+      let dbBlocked = [];
+      try {
+        if (mongoose.connection.readyState === 1) {
+          dbBlocked = await BlockModel.find({});
+        }
+      } catch (err) {
+        console.error("DB Fetch Error:", err);
+      }
 
-      if (!blockedContacts || blockedContacts.length === 0) {
+      let baileyBlocked = [];
+      try {
+        if (typeof sachiya.fetchBlocklist === 'function') {
+          baileyBlocked = await sachiya.fetchBlocklist();
+        }
+      } catch (err) {}
+
+      // සියලුම JID එකතු කර ඩුප්ලිකට් ඉවත් කිරීම
+      let allBlockedJids = [...new Set([...dbBlocked.map(b => b.jid), ...(baileyBlocked || [])])]
+
+      if (!allBlockedJids || allBlockedJids.length === 0) {
         return await sachiya.sendMessage(from, {
           image: { url: "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true" },
           caption: `╭━━━〔 *🚫 SACHIYA-MD BLOCK LIST* 〕━━━\n` +
                    `┃\n` +
-                   `┃ ❌ *No blocked contacts or groups found!* \n` +
+                   `┃ ❌ *No blocked contacts or groups found in database!* \n` +
                    `┃\n` +
                    `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                    `> *⚡ Powered by SACHIYA-MD 💫*`
@@ -45,7 +69,8 @@ cmd(
       let contactsList = [];
       let groupsList = [];
 
-      for (let jid of blockedContacts) {
+      for (let jid of allBlockedJids) {
+        if (!jid) continue;
         if (jid.endsWith('@g.us')) {
           let groupName = "Unknown Group";
           try {
@@ -63,7 +88,7 @@ cmd(
 
       let caption = `╭━━━〔 *🚫 SACHIYA-MD BLOCK LIST* 〕━━━\n`;
       caption += `┃\n`;
-      caption += `┃ 📊 *Total Blocked:* \`${blockedContacts.length}\`\n`;
+      caption += `┃ 📊 *Total Blocked:* \`${allBlockedJids.length}\`\n`;
       caption += `┃ • *Blocked Contacts:* \`${contactsList.length}\`\n`;
       caption += `┃ • *Blocked Groups:* \`${groupsList.length}\`\n`;
       caption += `┃\n`;
@@ -89,7 +114,7 @@ cmd(
 
     } catch (e) {
       console.error("Blocklist Error:", e);
-      return reply(`❌ *An error occurred while fetching the block list:* ${e.message}`);
+      return reply(`❌ *An error occurred:* ${e.message}`);
     }
   }
 );
