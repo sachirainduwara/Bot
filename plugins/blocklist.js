@@ -2,24 +2,22 @@ const { cmd } = require("../command");
 const mongoose = require('mongoose');
 const config = require('../config');
 
-// MongoDB එකෙන් Block කරපු දත්ත ලබා ගැනීමට Schema එක
-const BlockSchema = new mongoose.Schema({
-  jid: { type: String, required: true, unique: true },
-  type: { type: String, default: 'user' }, // user හෝ group
-  date: { type: String }
+// සාමාන්‍යයෙන් බොට්ස්ලා block/mute සටහන් කරගන්නා MongoDB Schema එක
+const BlockChatSchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true }
 });
-const BlockModel = mongoose.models.Block || mongoose.model('Block', BlockSchema);
+const BlockChatModel = mongoose.models.BanChats || mongoose.models.BlockChat || mongoose.model('BlockChat', BlockChatSchema);
 
 cmd(
   {
     pattern: "blocklist",
-    alias: ["blist", "blocked"],
-    desc: "View the list of blocked contacts and groups from Database",
+    alias: ["blist", "blockedchats", "bannedchats"],
+    desc: "View the list of chats and groups where bot replies are disabled",
     category: "owner",
     react: "🚫",
     filename: __filename,
   },
-  async (sachiya, mek, m, { reply, senderNumber, sender }) => {
+  async (sachiya, mek, m, { reply, senderNumber, sender, from }) => {
     try {
       // Owner නිවැරදිව පරීක්ෂා කිරීම
       const ownerConfig = String(config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
@@ -32,34 +30,30 @@ cmd(
         return reply("❌ *This command is only for the Owner!*");
       }
 
-      const from = mek.key.remoteJid;
-
-      // 1. MongoDB එකෙන් සහ Baileys බ්ලොක් ලිස්ට් දෙකම එකතු කර ගැනීම (Data මගහැරී යාම වැළැක්වීමට)
-      let dbBlocked = [];
+      // MongoDB එකෙන් බොට් රිප්ලයි නැවැත්වූ (Blocked/Banned) චැට්ස් සහ ගෘප්ස් ලබා ගැනීම
+      let blockedChats = [];
       try {
         if (mongoose.connection.readyState === 1) {
-          dbBlocked = await BlockModel.find({});
+          // විවිධ මොඩල් නම් වලට දත්ත තිබිය හැකි නිසා ඒවා පරීක්ෂා කිරීම
+          const collections = mongoose.connection.collections;
+          
+          if (collections['blockchats'] || collections['banchats'] || collections['chats']) {
+            blockedChats = await BlockChatModel.find({});
+          } else {
+            // වෙනත් විදිහකට save වී ඇත්නම් සියලුම models බලමු
+            blockedChats = await BlockChatModel.find({}).catch(() => []);
+          }
         }
       } catch (err) {
         console.error("DB Fetch Error:", err);
       }
 
-      let baileyBlocked = [];
-      try {
-        if (typeof sachiya.fetchBlocklist === 'function') {
-          baileyBlocked = await sachiya.fetchBlocklist();
-        }
-      } catch (err) {}
-
-      // සියලුම JID එකතු කර ඩුප්ලිකට් ඉවත් කිරීම
-      let allBlockedJids = [...new Set([...dbBlocked.map(b => b.jid), ...(baileyBlocked || [])])]
-
-      if (!allBlockedJids || allBlockedJids.length === 0) {
+      if (!blockedChats || blockedChats.length === 0) {
         return await sachiya.sendMessage(from, {
           image: { url: "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true" },
-          caption: `╭━━━〔 *🚫 SACHIYA-MD BLOCK LIST* 〕━━━\n` +
+          caption: `╭━━━〔 *🚫 BLOCKED CHATS LIST* 〕━━━\n` +
                    `┃\n` +
-                   `┃ ❌ *No blocked contacts or groups found in database!* \n` +
+                   `┃ ❌ *No muted/blocked chats found where bot replies are disabled!* \n` +
                    `┃\n` +
                    `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                    `> *⚡ Powered by SACHIYA-MD 💫*`
@@ -69,8 +63,10 @@ cmd(
       let contactsList = [];
       let groupsList = [];
 
-      for (let jid of allBlockedJids) {
+      for (let item of blockedChats) {
+        let jid = item.id || item.jid || item.chatId;
         if (!jid) continue;
+
         if (jid.endsWith('@g.us')) {
           let groupName = "Unknown Group";
           try {
@@ -82,24 +78,24 @@ cmd(
           groupsList.push(`👥 *Group:* ${groupName}\n   • \`${jid}\``);
         } else {
           let number = jid.split('@')[0];
-          contactsList.push(`👤 *Contact:* \`+${number}\``);
+          contactsList.push(`👤 *Inbox:* \`+${number}\``);
         }
       }
 
-      let caption = `╭━━━〔 *🚫 SACHIYA-MD BLOCK LIST* 〕━━━\n`;
+      let caption = `╭━━━〔 *🚫 BLOCKED CHATS LIST* 〕━━━\n`;
       caption += `┃\n`;
-      caption += `┃ 📊 *Total Blocked:* \`${allBlockedJids.length}\`\n`;
-      caption += `┃ • *Blocked Contacts:* \`${contactsList.length}\`\n`;
-      caption += `┃ • *Blocked Groups:* \`${groupsList.length}\`\n`;
+      caption += `┃ 📊 *Total Blocked Chats:* \`${blockedChats.length}\`\n`;
+      caption += `┃ • *Inbox Chats:* \`${contactsList.length}\`\n`;
+      caption += `┃ • *Groups:* \`${groupsList.length}\`\n`;
       caption += `┃\n`;
 
       if (contactsList.length > 0) {
-        caption += `╠═📂 *BLOCKED CONTACTS:*\n`;
+        caption += `╠═📂 *INBOX (BOT REPLIES STOPPED):*\n`;
         caption += contactsList.join('\n') + `\n`;
       }
 
       if (groupsList.length > 0) {
-        caption += `╠═📂 *BLOCKED GROUPS:*\n`;
+        caption += `╠═📂 *GROUPS (BOT REPLIES STOPPED):*\n`;
         caption += groupsList.join('\n') + `\n`;
       }
 
