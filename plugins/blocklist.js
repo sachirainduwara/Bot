@@ -1,4 +1,5 @@
 const { cmd } = require("../command");
+const config = require('../config');
 
 cmd(
   {
@@ -9,12 +10,20 @@ cmd(
     react: "🚫",
     filename: __filename,
   },
-  async (sachiya, mek, m, { reply, isOwner, from }) => {
+  async (sachiya, mek, m, { reply, senderNumber, sender, isGroup }) => {
     try {
-      // Owner පරීක්ෂාව
-      if (!isOwner) {
+      // Owner නිවැරදිව පරීක්ෂා කිරීම
+      const ownerConfig = String(config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
+      const cleanSender = String(senderNumber || sender || '').replace(/[^0-9]/g, '');
+      const botNumber = String(sachiya.user?.id || '').split('@')[0].replace(/[^0-9]/g, '');
+
+      const isTrueOwner = mek.key.fromMe || cleanSender.includes(ownerConfig) || ownerConfig.includes(cleanSender) || cleanSender === botNumber;
+
+      if (!isTrueOwner) {
         return reply("❌ *This command is only for the Owner!*");
       }
+
+      const from = mek.key.remoteJid;
 
       // බොට් විසින් බ්ලොක් කර ඇති සියලුම JID (Contacts & Groups) ලබා ගැනීම
       const blockedContacts = typeof sachiya.fetchBlocklist === 'function' 
@@ -36,7 +45,6 @@ cmd(
       let contactsList = [];
       let groupsList = [];
 
-      // Contact සහ Group ලෙස වෙන් කර ගැනීම
       for (let jid of blockedContacts) {
         if (jid.endsWith('@g.us')) {
           let groupName = "Unknown Group";
@@ -74,7 +82,6 @@ cmd(
       caption += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
       caption += `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-      // පින්තූරය සමඟ මැසේජ් එක යැවීම
       await sachiya.sendMessage(from, {
         image: { url: "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true" },
         caption: caption
