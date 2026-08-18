@@ -31,7 +31,7 @@ cmd(
             const response = await axios.get(`https://api.github.com/repos/${repoInput}`);
             const repo = response.data;
 
-            await reply(`⏳ *Downloading ${repo.full_name} ZIP file, please wait...*`);
+            await reply(`⏳ *Downloading\n ${repo.full_name} ZIP file, \nplease wait...*`);
 
             // ZIP ෆයිල් එක බෆර් එකක් (Buffer) ලෙස ඩවුන්ලෝඩ් කරගැනීම
             const branch = repo.default_branch || 'main';
@@ -43,7 +43,6 @@ cmd(
             // SACHIYA-MD නම සහ ලස්සන ඉමෝජි සමඟ කැප්ෂන් එක සකස් කිරීම
             let caption = `╭━━━〔 *📦 SACHIYA-MD GITHUB REPO* 〕━━━\n`;
             caption += `┃\n`;
-            caption += `┃ 🚀 *Bot Name:* \`SACHIYA-MD\`\n`;
             caption += `┃ 📌 *Repo Name:* \`${repo.full_name}\`\n`;
             caption += `┃ 📝 *Description:* ${repo.description || 'No description provided'}\n`;
             caption += `┃ ⭐ *Stars:* \`${repo.stargazers_count}\`\n`;
