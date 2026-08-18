@@ -77,7 +77,7 @@ cmd(
   {
     pattern: "anticall",
     desc: "Enable or Disable Anti-Call system",
-    category: "tools",
+    category: "owner",
     react: "⚙️",
     filename: __filename,
   },
