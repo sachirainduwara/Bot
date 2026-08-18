@@ -5,9 +5,9 @@ const config = require("../config");
 cmd(
   {
     pattern: "tiktok",
-    alias: ["tt", "tik"],
+    alias: ["tt", "tik", "tiktokdl"],
     react: "🎵",
-    desc: "Download TikTok Video",
+    desc: "Download TikTok Video without Watermark",
     category: "download",
     filename: __filename,
   },
@@ -42,29 +42,30 @@ cmd(
 
       await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
-      // Using public API for TikTok download
-      const apiResponse = await axios.get(`https://api.tikmate.app/api/lookup?url=${encodeURIComponent(q)}`).catch(() => null);
-      
-      // Fallback or alternative robust fetch if needed, let's use a stable api structure
-      const response = await axios.get(`https://deliri-api-ofc.vercel.app/download/tiktok?url=${encodeURIComponent(q)}`).catch(() => null);
-      
-      if (!response || !response.data || !response.data.status) {
+      // Using a highly stable and powerful API for TikTok downloads
+      const apiUrl = `https://apis.davidcyriltech.my.id/download/tiktok?url=${encodeURIComponent(q)}`;
+      const response = await axios.get(apiUrl).catch(() => null);
+
+      if (!response || !response.data || !response.data.success) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("❌ *Failed to download TikTok video. Please try again later!*");
+        return reply("❌ *Failed to download TikTok video. Please check the URL or try again later!*");
       }
 
-      const videoData = response.data.data;
-      const videoUrl = videoData.play || videoData.wm; // no watermark if available
+      const data = response.data.result;
+      const videoUrl = data.videoUrl || data.hd || data.sd;
+      const title = data.title || "TikTok Video";
+      const author = data.author || "Unknown";
 
       const captionMsg = `╭━━━〔 *TIKTOK DOWNLOADER* 〕━━━\n` +
                          `┃\n` +
-                         `┃ 🎵 *Title:* ${videoData.title || "TikTok Video"}\n` +
-                         `┃ 👤 *Author:* ${videoData.author?.nickname || "Unknown"}\n` +
+                         `┃ 🎵 *Title:* ${title}\n` +
+                         `┃ 👤 *Author:* ${author}\n` +
                          `┃ 👤 *User:* ${userName}\n` +
                          `┃\n` +
                          `╰━━━━━━━━━━━━━━━━━━━\n\n` +
                          `> Powered by SACHIYA MD 💫`;
 
+      // 1. Send Preview Image with Info
       await sachiya.sendMessage(
         from,
         {
@@ -76,11 +77,13 @@ cmd(
         { quoted: mek }
       );
 
+      // 2. Send the High-Quality Video without Watermark
       await sachiya.sendMessage(
         from,
         {
           video: { url: videoUrl },
-          caption: `📥 *TikTok Video Downloaded Successfully!*\n\n> Powered by SACHIYA MD 💫`,
+          mimetype: "video/mp4",
+          caption: `📥 *TikTok Video Downloaded Successfully (HD)*\n\n> Powered by SACHIYA MD 💫`,
         },
         { quoted: mek }
       );
