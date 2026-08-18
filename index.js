@@ -348,6 +348,40 @@ async function connectToWA() {
         if (!mek.key.fromMe) {
           await handleAutoread(sachiya, mek);
           await handleAutoReact(sachiya, mek);
+            sachiya.ev.on('messages.upsert', async (chatUpdate) => {
+    try {
+      const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
+      if (!mek || !mek.message) return;
+
+      // 👁️‍🗨️ Auto Status Read Handler (මේ කොටස ඔයාට ඕන විදිහට දැම්මා)
+      if (mek.key && mek.key.remoteJid === 'status@broadcast') {
+        try {
+          const cfg = await loadAutoStatusConfig();
+          if (cfg.enabled) {
+            let participant = mek.key?.participant || mek.participant || mek.key?.remoteJid;
+            await sachiya.readMessages([{
+              remoteJid: "status@broadcast",
+              id: mek.key.id,
+              participant: participant
+            }]);
+          }
+        } catch (e) {}
+        return; 
+      }
+
+      // ඊට පස්සේ ඔයාගේ ප්ලගින් වැඩ කරන ටික මෙතනින් පල්ලෙහාට ඒ විදිහටම තියෙනවා
+      if (!mek.key.fromMe) {
+          await handleAutoread(sachiya, mek);
+          await handleAutoReact(sachiya, mek);
+      }
+
+      // ... ඔයාගේ අනිත් කෝඩ් එක (commands, sms, plugins) මේ විදිහටම තියන්න ...
+      
+    } catch (err) {
+       console.error("❌ Message Upsert Error:", err);
+    }
+  });
+
         }
       } catch (e) {
         // දෝෂ වැළැක්වීමට
