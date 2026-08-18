@@ -1,12 +1,12 @@
 const axios = require('axios');
 const { cmd } = require("../command");
 
-// 1. WhatsApp Bot Command (.gitrepo <owner/repo>)
+// 1. WhatsApp Bot Command (.gitrepo <owner/repo>) - ZIP ෆයිල් එක සෙන්ඩ් කිරීම
 cmd(
     {
         pattern: "gitrepo",
         alias: ["github", "repo"],
-        desc: "Fetch GitHub repository details and download link",
+        desc: "Download GitHub repository as a ZIP file directly",
         category: "download",
         react: "📦",
         filename: __filename,
@@ -19,34 +19,49 @@ cmd(
 
             let repoInput = q.trim();
             if (repoInput.includes('github.com')) {
-                const urlParts = new URL(repoInput).pathname.split('/').filter(Boolean);
-                if (urlParts.length >= 2) {
-                    repoInput = `${urlParts[0]}/${urlParts[1]}`;
-                }
+                try {
+                    const urlParts = new URL(repoInput).pathname.split('/').filter(Boolean);
+                    if (urlParts.length >= 2) {
+                        repoInput = `${urlParts[0]}/${urlParts[1]}`;
+                    }
+                } catch(e) {}
             }
 
+            // GitHub API එකෙන් රෙපො විස්තර ලබා ගැනීම
             const response = await axios.get(`https://api.github.com/repos/${repoInput}`);
             const repo = response.data;
 
-            let text = `╭━━━〔 *📦 GITHUB REPOSITORY* 〕━━━\n`;
-            text += `┃\n`;
-            text += `┃ 📌 *Name:* \`${repo.full_name}\`\n`;
-            text += `┃ 📝 *Description:* ${repo.description || 'No description'}\n`;
-            text += `┃ ⭐ *Stars:* \`${repo.stargazers_count}\`\n`;
-            text += `┃ 🍴 *Forks:* \`${repo.forks_count}\`\n`;
-            text += `┃ 🌐 *URL:* ${repo.html_url}\n`;
-            text += `┃\n`;
-            text += `┃ 📥 *Download ZIP:* \n`;
-            text += `┃ https://github.com/${repo.full_name}/archive/refs/heads/main.zip\n`;
-            text += `┃\n`;
-            text += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-            text += `> *⚡ Powered by SACHIYA-MD 💫*`;
+            await reply(`⏳ *Downloading ${repo.full_name} ZIP file, please wait...*`);
 
-            await sachiya.sendMessage(m.chat, { text: text }, { quoted: mek });
+            // ZIP ෆයිල් එක බෆර් එකක් (Buffer) ලෙස ඩවුන්ලෝඩ් කරගැනීම (main හෝ default branch එක මඟින්)
+            const branch = repo.default_branch || 'main';
+            const zipUrl = `https://github.com/${repo.full_name}/archive/refs/heads/${branch}.zip`;
+            
+            const zipResponse = await axios.get(zipUrl, { responseType: 'arraybuffer' });
+            const zipBuffer = Buffer.from(zipResponse.data);
+
+            // ඩීටෙයිල්ස් සමඟ ලස්සන කැප්ෂන් එකක් හැදීම
+            let caption = `╭━━━〔 *📦 GITHUB REPOSITORY* 〕━━━\n`;
+            caption += `┃\n`;
+            caption += `┃ 📌 *Name:* \`${repo.full_name}\`\n`;
+            caption += `┃ 📝 *Description:* ${repo.description || 'No description'}\n`;
+            caption += `┃ ⭐ *Stars:* \`${repo.stargazers_count}\`\n`;
+            caption += `┃ 🍴 *Forks:* \`${repo.forks_count}\`\n`;
+            caption += `┃\n`;
+            caption += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+            caption += `> *⚡ Powered by SACHIYA-MD 💫*`;
+
+            // වට්ස්ඇප් චැට් එකට ZIP ෆයිල් එක Document එකක් ලෙස යැවීම
+            await sachiya.sendMessage(m.chat, {
+                document: zipBuffer,
+                mimetype: 'application/zip',
+                fileName: `${repo.name}-${branch}.zip`,
+                caption: caption
+            }, { quoted: mek });
 
         } catch (e) {
             console.error(e);
-            return reply("❌ *Repository not found or invalid GitHub link!*");
+            return reply("❌ *Repository not found, or it's private / branch name mismatch!*");
         }
     }
 );
@@ -149,12 +164,13 @@ module.exports = {
             try {
                 const response = await axios.get(`https://api.github.com/repos/${repo}`);
                 const data = response.data;
+                const branch = data.default_branch || 'main';
                 res.json({
                     name: data.full_name,
                     description: data.description,
                     stars: data.stargazers_count,
                     forks: data.forks_count,
-                    downloadUrl: `https://github.com/${data.full_name}/archive/refs/heads/main.zip`
+                    downloadUrl: `https://github.com/${data.full_name}/archive/refs/heads/${branch}.zip`
                 });
             } catch (err) {
                 res.json({ error: "Repository not found on GitHub!" });
