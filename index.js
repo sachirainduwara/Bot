@@ -4,9 +4,7 @@ const {
   DisconnectReason,
   jidNormalizedUser,
   getContentType,
-  fetchLatestWaWebVersion,
-  makeCacheableSignalKeyStore,
-  delay
+  makeCacheableSignalKeyStore
 } = require('@whiskeysockets/baileys');
 
 const fs = require('fs');
@@ -20,12 +18,10 @@ const config = require('./config');
 const { sms } = require('./lib/msg');
 const { commands } = require('./command');
 
+// --- ප්ලගින් ෆෝල්ඩර් එකෙන් නිවැරදිව ඉම්පෝට් කිරීම ---
 const { storeMessage, handleMessageRevocation } = require('./plugins/antidelete');
-// AutoRead ප්ලගින් එක ඉම්පෝට් කිරීම
 const { handleAutoread } = require('./plugins/autoread');
-// AntiCall ප්ලගින් එක ඉම්පෝට් කිරීම
 const { handleAntiCall } = require('./plugins/anticall');
-// AutoReact ප්ලගින් එක ඉම්පෝට් කිරීම (ඉමෝජි 150+ සමඟ)
 const { handleAutoReact } = require('./plugins/autoreact');
 
 const app = express();
@@ -55,7 +51,7 @@ async function loadSessionFromMongo() {
   if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
     if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(config.SESSION_ID);
+      await mongoose.connect(config.SESSION_ID, { serverSelectionTimeoutMS: 5000 });
     }
     const sessionDoc = await SessionModel.findOne({ _id: 'sachiyamd_creds' });
     if (sessionDoc && sessionDoc.data) {
@@ -81,7 +77,7 @@ async function saveSessionToMongo() {
     const credsData = JSON.parse(rawData);
 
     if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(config.SESSION_ID);
+      await mongoose.connect(config.SESSION_ID, { serverSelectionTimeoutMS: 5000 });
     }
 
     await SessionModel.findOneAndUpdate(
@@ -98,7 +94,7 @@ async function clearMongoSession() {
   if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
     if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(config.SESSION_ID);
+      await mongoose.connect(config.SESSION_ID, { serverSelectionTimeoutMS: 5000 });
     }
     await SessionModel.deleteOne({ _id: 'sachiyamd_creds' });
     console.log("🗑️ MongoDB session cleared due to logout.");
@@ -110,7 +106,7 @@ async function clearMongoSession() {
 async function loadBlockedListIntoCache() {
   try {
     if (mongoose.connection.readyState === 0 && config.SESSION_ID) {
-      await mongoose.connect(config.SESSION_ID);
+      await mongoose.connect(config.SESSION_ID, { serverSelectionTimeoutMS: 5000 });
     }
     const doc = await BlockModel.findOne({ _id: 'sachiyamd_blocks' });
     if (doc && doc.blockedChats) {
@@ -174,9 +170,7 @@ console.warn = function (...args) {
 const handleSilentErrors = (err) => {
   if (!err) return true;
   const msg = err.message || err.toString() || "";
-  if (hiddenKeywords.some(word => msg.includes(word))) {
-    return true;
-  }
+  if (hiddenKeywords.some(word => msg.includes(word))) return true;
   return false;
 };
 
@@ -219,12 +213,9 @@ async function connectToWA() {
     fs.mkdirSync(authFolder, { recursive: true });
   }
 
-  await loadSessionFromMongo();
-  await loadBlockedListIntoCache();
+  await Promise.all([loadSessionFromMongo(), loadBlockedListIntoCache()]);
 
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
-  const { version } = await fetchLatestWaWebVersion();
-  
   const logger = P({ level: 'silent' });
 
   const sachiya = makeWASocket({
@@ -235,18 +226,11 @@ async function connectToWA() {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger),
     },
-    version,
-    syncFullHistory: false,
+    syncFullHistory: false, // ⚡ බොට් ස්ටාර්ට් වෙද්දි history sync වෙලා හිරවීම වැළැක්වීමට
     fireInitQueries: true,
     markOnlineOnConnect: true,
     generateHighQualityLinkPreview: false,
-    getMessage: async (key) => {
-      try {
-        return undefined;
-      } catch (e) {
-        return undefined;
-      }
-    }
+    getMessage: async () => { return undefined; }
   });
 
   if (!sachiya.authState.creds.registered) {
@@ -255,10 +239,9 @@ async function connectToWA() {
     if (!targetNumber) {
       console.log("❌ OWNER_NUM / Phone Number is missing in config.js!");
     } else {
-      console.log(`⚠️ Waiting for socket connection to stabilize before requesting Pairing Code...`);
+      console.log(`⚠️ Requesting Pairing Code instantly for number: ${targetNumber}`);
       setTimeout(async () => {
         try {
-          console.log(`⚠️ Requesting Pairing Code for number: ${targetNumber}`);
           let code = await sachiya.requestPairingCode(targetNumber);
           code = code?.match(/.{1,4}/g)?.join("-") || code;
           console.log("\n========================================");
@@ -267,10 +250,10 @@ async function connectToWA() {
         } catch (err) {
           console.error("❌ Pairing Code generation error:", err.message || err);
         }
-      }, 10000);
+      }, 3000);
     }
   } else {
-    console.log("⚡ Active Session Found! Connecting directly without Pairing Code...");
+    console.log("⚡ Active Session Found! Connected directly without delays...");
   }
 
   let isConnectedOnce = false;
@@ -289,7 +272,7 @@ async function connectToWA() {
         }
         process.exit(1);
       } else {
-        setTimeout(() => connectToWA(), 5000);
+        setTimeout(() => connectToWA(), 3000);
       }
     } else if (connection === 'open') {
       if (isConnectedOnce) return;
@@ -334,7 +317,7 @@ async function connectToWA() {
     await saveSessionToMongo();
   });
 
-  // 📞 Anti-Call Event Listener Handler එක සම්බන්ධ කිරීම
+  // --- AntiCall ප්ලගින් එක කනෙක්ෂන් එකට සම්බන්ධ කිරීම ---
   handleAntiCall(sachiya);
 
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
@@ -343,15 +326,15 @@ async function connectToWA() {
       if (!mek || !mek.message) return;
       if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
 
-      // 👁️‍🗨️ මැසේජ් එක ලැබුණු සැනින් වෙන කිසිදු කොන්දේසියකට යටත් නොවී මුලින්ම AutoRead සහ AutoReact ක්‍රියාත්මක වීම
+      // --- AutoRead සහ AutoReact ප්ලගින්ස් මැසේජ් එකක් ආපු සැනින් ක්‍රියාත්මක වීම ---
       try {
         if (!mek.key.fromMe) {
-          await handleAutoread(sachiya, mek);
-          await handleAutoReact(sachiya, mek);
+          Promise.all([
+            handleAutoread(sachiya, mek),
+            handleAutoReact(sachiya, mek)
+          ]).catch(() => {});
         }
-      } catch (e) {
-        // දෝෂ වැළැක්වීමට
-      }
+      } catch (e) {}
 
       const from = mek.key.remoteJid;
 
@@ -378,11 +361,10 @@ async function connectToWA() {
       if (global.blockedChatsCache && global.blockedChatsCache.includes(from)) {
           const trimmedBody = bodyText.startsWith(prefix) ? bodyText.slice(prefix.length).trim().toLowerCase() : '';
           const isAllowedCmd = trimmedBody.startsWith('block') || trimmedBody.startsWith('unblock');
-          if (!isAllowedCmd) {
-              return; 
-          }
+          if (!isAllowedCmd) return; 
       }
 
+      // --- AntiDelete ප්ලගින් එක මැසේජ් ඩිලීට් වීම හෝ මකා දැමීම් සඳහා ක්‍රියාත්මක වීම ---
       const isRevoke = mek.message?.protocolMessage && mek.message.protocolMessage.type === 0;
       if (isRevoke) {
         await handleMessageRevocation(sachiya, mek);
@@ -415,9 +397,7 @@ async function connectToWA() {
       const isMe = botNumber && senderNumber ? botNumber.includes(senderNumber) : false;
       const isOwner = ownerNumber.includes(senderNumber) || isMe;
 
-      if (workMode === "private" && !isOwner) {
-        return;
-      }
+      if (workMode === "private" && !isOwner) return;
 
       const reply = (text) => sachiya.sendMessage(from, { text }, { quoted: mek });
 
