@@ -1,90 +1,117 @@
-const { cmd } = require("../command");
-const fs = require('fs');
-const path = require('path');
-const config = require("../config"); // config.js එකෙන් mongoDB සහ owner number ගැනීමට
+const { cmd } = require('../command');
+const mongoose = require('mongoose');
+const config = require('../config');
 
-// MongoDB හෝ JSON ෆයිල් එක මඟින් සෙටින්ග්ස් ස්ථිරව තබාගැනීම
-const settingsPath = path.join(__dirname, '../status_settings.json');
+// --- MongoDB Schema for Auto Status Read Setting ---
+const AutoStatusSchema = new mongoose.Schema({
+  _id: { type: String, required: true, default: 'sachiyamd_autostatus_status' },
+  enabled: { type: Boolean, default: true }
+});
+const AutoStatusModel = mongoose.models.AutoStatus || mongoose.model('AutoStatus', AutoStatusSchema);
 
-function getSettings() {
+// Load setting from MongoDB safely
+async function loadAutoStatusConfig() {
+    if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) {
+        return { enabled: true };
+    }
     try {
-        if (fs.existsSync(settingsPath)) {
-            return JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+        if (mongoose.connection.readyState === 0) {
+            await mongoose.connect(config.SESSION_ID);
         }
-    } catch (e) {}
-    return { autoread: true };
+        let doc = await AutoStatusModel.findOne({ _id: 'sachiyamd_autostatus_status' });
+        if (!doc) {
+            doc = await AutoStatusModel.create({ _id: 'sachiyamd_autostatus_status', enabled: true });
+        }
+        return { enabled: doc.enabled };
+    } catch (e) {
+        return { enabled: true };
+    }
 }
 
-function saveSettings(settings) {
+// Save setting to MongoDB safely
+async function saveAutoStatusConfig(isEnabled) {
+    if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
     try {
-        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+        if (mongoose.connection.readyState === 0) {
+            await mongoose.connect(config.SESSION_ID);
+        }
+        await AutoStatusModel.findOneAndUpdate(
+            { _id: 'sachiyamd_autostatus_status' },
+            { enabled: isEnabled },
+            { upsert: true, new: true }
+        );
     } catch (e) {}
 }
 
-// 1. Auto Status Read ලොජික් එක (කිසිදු මැසේජ් එකක් යැවීමෙන් තොරව ස්ටේටස් පමනක් Read කරයි)
+// 1. Auto Status Read ලොජික් එක (Status එකක් වැටුණු සැනින් කිසිදු ඉමෝජියක් හෝ රියැක්ට් එකක් නොමැතිව නිහඬව Read කරයි)
 cmd({
     on: "status"
-}, async (sachiya, mek, m) => {
+}, async (sock, mek, m) => {
     try {
-        const settings = getSettings();
-        if (settings.autoread) {
-            await sachiya.readMessages([mek.key]);
+        const cfg = await loadAutoStatusConfig();
+        if (!cfg.enabled) return;
+
+        if (mek.key && mek.key.remoteJid === "status@broadcast") {
+            await sock.readMessages([{
+                remoteJid: "status@broadcast",
+                id: mek.key.id,
+                participant: mek.key.participant || m.participant || m.sender
+            }]);
         }
     } catch (e) {
-        console.error("Auto Status Read Error: ", e);
+        // Silently catch errors to prevent console spam
     }
 });
 
-// 2. ඔයාට පමණක් (Owner) On / Off කළ හැකි කමාන්ඩ් එක
-cmd(
-    {
-        pattern: "autostatus",
-        alias: ["statusread", "autoreadstatus"],
-        desc: "Turn on or off auto status reading",
-        category: "owner",
-        filename: __filename,
-    },
-    async (sachiya, mek, m, { reply, q }) => {
+// 2. Command handler (.autostatus on/off)
+const { commands } = require('../command');
+commands.push({
+    pattern: 'autostatus',
+    alias: ['statusread', 'autoreadstatus'],
+    desc: 'Enable or disable auto status read system',
+    category: 'owner',
+    react: '👁️',
+    function: async (sock, mek, m, { q, reply, isOwner, senderNumber, from }) => {
         try {
-            // බොට්ගේ ඕනර් නම්බර් එක හෝ සෙන්ඩර් චෙක් කිරීම (Owner විතරක් වැඩ කිරීමට)
-            const senderNumber = m.sender.replace(/[^0-9]/g, "");
-            const ownerNumber = (config.OWNER_NUMBER || "").replace(/[^0-9]/g, "");
-            
-            // සෙන්ඩර් සහ ඕනර් සමාන නැත්නම් සහ බොට්ගේ ඩිවලොපර් නොවේ නම් රිප්ලය් කිරීම නතර කරයි
-            if (ownerNumber && senderNumber !== ownerNumber && !m.key.fromMe) {
-                return reply("❌ *This command is only for the Bot Owner!*");
+            const botNumber = sock.user.id.split(':')[0];
+            const isSelfChat = from === sock.user.id || senderNumber === botNumber;
+
+            if (!isOwner && !isSelfChat && !mek.key.fromMe) {
+                return reply('⚠️ *මෙම විධානය භාවිතා කළ හැක්කේ බොට් හිමිකරුට (Owner) පමණි!*');
             }
 
-            let settings = getSettings();
-            const args = q ? q.trim().toLowerCase() : "";
-
-            if (args === "on") {
-                settings.autoread = true;
-                saveSettings(settings);
-                return reply("✨ *Auto Status Read System successfully Enabled* 🟢!");
-            } else if (args === "off") {
-                settings.autoread = false;
-                saveSettings(settings);
-                return reply("✨ *Auto Status Read System successfully Disabled* 🔴!");
+            const cfg = await loadAutoStatusConfig();
+            if (!q) {
+                return reply(
+                    `╭━━━〔 *✨ SACHIYA-MD AUTO STATUS ✨* 〕━━━\n` +
+                    `┃\n` +
+                    `┃ ⚙️ *Current Status:* ${cfg.enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
+                    `┃\n` +
+                    `┃ *Available Commands:*\n` +
+                    `┃ • \`.autostatus on\` - Enable Auto Status Read 🟢\n` +
+                    `┃ • \`.autostatus off\` - Disable Auto Status Read 🔴\n` +
+                    `┃\n` +
+                    `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                    `> *⚡ Powered by SACHIYA-MD 💫*`
+                );
             }
 
-            // ස්ටේටස් පැනල් මෙනුව
-            let statusText = `╭━━━〔 ✨ *SACHIYA-MD* 〕━━━\n`;
-            statusText += `┃\n`;
-            statusText += `┃ ⚙️ *Current Status:* ${settings.autoread ? "✅ Enabled" : "❌ Disabled"}\n`;
-            statusText += `┃\n`;
-            statusText += `┃ *Available Commands:*\n`;
-            statusText += `┃ ┃ • \`.autostatus on\` - Enable Status Read 🟢\n`;
-            statusText += `┃ ┃ • \`.autostatus off\` - Disable Status Read 🔴\n`;
-            statusText += `┃\n`;
-            statusText += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-            statusText += `> *⚡ Powered by SACHIYA-MD 💫*`;
+            let newStatus = false;
+            if (q.toLowerCase() === 'on') {
+                newStatus = true;
+            } else if (q.toLowerCase() === 'off') {
+                newStatus = false;
+            } else {
+                return reply('⚠️ *වැරදි විධානයකි! භාවිතය සඳහා .autostatus on හෝ off ලෙස යොදන්න.*');
+            }
 
-            return reply(statusText);
+            await saveAutoStatusConfig(newStatus);
+            return reply(`✨ *Auto Status Read System successfully ${newStatus ? 'Enabled 🟢' : 'Disabled 🔴'}!*`);
 
-        } catch (e) {
-            console.error(e);
-            return reply("❌ *An error occurred while executing the command!*");
+        } catch (err) {
+            return reply('❌ *An error occurred while executing the command!*');
         }
     }
-);
+});
+
+module.exports = {};
