@@ -50,7 +50,7 @@ cmd(
             caption += `┃ 🔀 *Branch:* \`${branch}\`\n`;
             caption += `┃\n`;
             caption += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-            caption += `> *©️ ⚡ Powered & Developed by SACHIYA-MD 💫*`;
+            caption += `> *©️ ⚡ Powered by SACHIYA-MD 💫*`;
 
             // වට්ස්ඇප් චැට් එකට ZIP ෆයිල් එක Document එකක් ලෙස සහ ඉමේජ් එක සමඟ යැවීම
             await sachiya.sendMessage(m.chat, {
