@@ -2,10 +2,10 @@ const { cmd } = require("../command");
 const fs = require('fs');
 const path = require('path');
 
-// සටහන් තබාගැනීමේ ෆයිල් එක (MongoDB හෝ Local fallback සඳහා)
+// සටහන් තබාගැනීමේ ෆයිල් එක
 const settingsPath = path.join(__dirname, '../status_settings.json');
 
-// ඩිෆෝල්ට් සෙටින්ග්ස් (Auto Read Status එක Enabled කර ඇත)
+// ඩිෆෝල්ට් සෙටින්ග්ස්
 function getSettings() {
     try {
         if (fs.existsSync(settingsPath)) {
@@ -36,7 +36,7 @@ cmd({
     }
 });
 
-// 2. Antidelete මෝස්තරයට සමාන කරමින් On / Off කිරීමට කමාන්ඩ් එක
+// 2. On / Off කිරීමට කමාන්ඩ් එක (Owner චෙක් කිරීම සම්පූර්ණයෙන්ම ඉවත් කර ඇත)
 cmd(
     {
         pattern: "autostatus",
@@ -45,9 +45,7 @@ cmd(
         category: "owner",
         filename: __filename,
     },
-    async (sachiya, mek, m, { reply, q, isCreator }) => {
-        if (!isCreator) return reply("❌ *This command is only for the Bot Owner!*");
-
+    async (sachiya, mek, m, { reply, q }) => {
         let settings = getSettings();
         const args = q ? q.trim().toLowerCase() : "";
 
@@ -61,14 +59,14 @@ cmd(
             return reply("✨ *Auto Status Read System successfully Disabled* 🔴!");
         }
 
-        // ස්ටේටස් පැනල් මෙනුව (ඔයා ඉල්ලූ ආකෘතියටම)
+        // ස්ටේටස් පැනල් මෙනුව
         let statusText = `╭━━━〔 ✨ *SACHIYA-MD* 〕━━━\n`;
         statusText += `┃\n`;
         statusText += `┃ ⚙️ *Current Status:* ${settings.autoread ? "✅ Enabled" : "❌ Disabled"}\n`;
         statusText += `┃\n`;
         statusText += `┃ *Available Commands:*\n`;
-        statusText += `┃ ┃ • \`.autostatus on\` - Enable Status Read 🟢\n`;
-        statusText += `┃ ┃ • \`.autostatus off\` - Disable Status Read 🔴\n`;
+        statusText += `┃ ┃ • \`${prefix}autostatus on\` - Enable Status Read 🟢\n`;
+        statusText += `┃ ┃ • \`${prefix}autostatus off\` - Disable Status Read 🔴\n`;
         statusText += `┃\n`;
         statusText += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
         statusText += `> *⚡ Powered by SACHIYA-MD 💫*`;
