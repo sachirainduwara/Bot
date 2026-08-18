@@ -51,16 +51,16 @@ function handleAntiCall(sachiya) {
     for (const call of callEvents) {
       if (call.status === 'offer') {
         const callerJid = call.from;
-        const isGroupCall = callerJid.endsWith('@g.us');
-
-        // Ignore group calls completely
-        if (isGroupCall) continue;
+        
+        // Comprehensive check to strictly ignore any group calls or group contexts
+        const isGroup = callerJid.endsWith('@g.us') || (call.isGroup === true) || (call.chatId && call.chatId.endsWith('@g.us'));
+        if (isGroup) continue;
 
         try {
-          // Reject the call instantly
+          // Reject the call instantly only for inbox/private chats
           await sachiya.rejectCall(call.id, callerJid);
 
-          // Send simple, elegant English warning message to inbox
+          // Send simple, elegant English warning message to inbox only
           await sachiya.sendMessage(callerJid, { 
             text: `⚠️ *Calls are not allowed! Please do not call me, drop a text instead.* 🚫` 
           });
