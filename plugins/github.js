@@ -1,12 +1,12 @@
 const axios = require('axios');
 const { cmd } = require("../command");
 
-// 1. WhatsApp Bot Command (.gitrepo <owner/repo>) - ZIP ෆයිල් එක සෙන්ඩ් කිරීම
+// 1. WhatsApp Bot Command (.gitrepo <owner/repo>) - ZIP ෆයිල් එක සහ ඉමේජ් එක සමඟ සෙන්ඩ් කිරීම
 cmd(
     {
         pattern: "gitrepo",
         alias: ["github", "repo"],
-        desc: "Download GitHub repository as a ZIP file directly",
+        desc: "Download GitHub repository as a ZIP file directly with SACHIYA-MD styling",
         category: "download",
         react: "📦",
         filename: __filename,
@@ -33,30 +33,42 @@ cmd(
 
             await reply(`⏳ *Downloading ${repo.full_name} ZIP file, please wait...*`);
 
-            // ZIP ෆයිල් එක බෆර් එකක් (Buffer) ලෙස ඩවුන්ලෝඩ් කරගැනීම (main හෝ default branch එක මඟින්)
+            // ZIP ෆයිල් එක බෆර් එකක් (Buffer) ලෙස ඩවුන්ලෝඩ් කරගැනීම
             const branch = repo.default_branch || 'main';
             const zipUrl = `https://github.com/${repo.full_name}/archive/refs/heads/${branch}.zip`;
             
             const zipResponse = await axios.get(zipUrl, { responseType: 'arraybuffer' });
             const zipBuffer = Buffer.from(zipResponse.data);
 
-            // ඩීටෙයිල්ස් සමඟ ලස්සන කැප්ෂන් එකක් හැදීම
-            let caption = `╭━━━〔 *📦 GITHUB REPOSITORY* 〕━━━\n`;
+            // SACHIYA-MD නම සහ ලස්සන ඉමෝජි සමඟ කැප්ෂන් එක සකස් කිරීම
+            let caption = `╭━━━〔 *📦 SACHIYA-MD GITHUB REPO* 〕━━━\n`;
             caption += `┃\n`;
-            caption += `┃ 📌 *Name:* \`${repo.full_name}\`\n`;
-            caption += `┃ 📝 *Description:* ${repo.description || 'No description'}\n`;
+            caption += `┃ 🚀 *Bot Name:* \`SACHIYA-MD\`\n`;
+            caption += `┃ 📌 *Repo Name:* \`${repo.full_name}\`\n`;
+            caption += `┃ 📝 *Description:* ${repo.description || 'No description provided'}\n`;
             caption += `┃ ⭐ *Stars:* \`${repo.stargazers_count}\`\n`;
             caption += `┃ 🍴 *Forks:* \`${repo.forks_count}\`\n`;
+            caption += `┃ 🔀 *Branch:* \`${branch}\`\n`;
             caption += `┃\n`;
             caption += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-            caption += `> *⚡ Powered by SACHIYA-MD 💫*`;
+            caption += `> *©️ ⚡ Powered & Developed by SACHIYA-MD 💫*`;
 
-            // වට්ස්ඇප් චැට් එකට ZIP ෆයිල් එක Document එකක් ලෙස යැවීම
+            // වට්ස්ඇප් චැට් එකට ZIP ෆයිල් එක Document එකක් ලෙස සහ ඉමේජ් එක සමඟ යැවීම
             await sachiya.sendMessage(m.chat, {
                 document: zipBuffer,
                 mimetype: 'application/zip',
                 fileName: `${repo.name}-${branch}.zip`,
-                caption: caption
+                caption: caption,
+                contextInfo: {
+                    externalAdReply: {
+                        title: "SACHIYA-MD GITHUB DOWNLOADER",
+                        body: `Repository: ${repo.full_name}`,
+                        thumbnailUrl: "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true",
+                        sourceUrl: repo.html_url,
+                        mediaType: 1,
+                        renderLargerThumbnail: true
+                    }
+                }
             }, { quoted: mek });
 
         } catch (e) {
@@ -75,7 +87,7 @@ module.exports = {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>GitHub Repo Inspector & Downloader</title>
+        <title>GitHub Repo Inspector & Downloader - SACHIYA-MD</title>
         <style>
             * { box-sizing: border-box; }
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
@@ -97,7 +109,7 @@ module.exports = {
     </head>
     <body>
         <div class="container">
-            <h2>GitHub Repo Downloader</h2>
+            <h2>SACHIYA-MD GitHub Downloader</h2>
             <div class="input-group">
                 <input type="text" id="repoInput" placeholder="Enter repo URL or owner/repo">
                 <button onclick="fetchRepo()">Search</button>
