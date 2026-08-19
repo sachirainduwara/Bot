@@ -22,13 +22,6 @@ const MultiSessionModel = mongoose.models.MultiSession || mongoose.model('MultiS
 
 global.activeSubSockets = global.activeSubSockets || {};
 
-// Helper function to verify owner strictly
-function checkIsOwner(senderNumber, isOwnerFlag) {
-  const configuredOwner = (config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
-  const cleanSender = (senderNumber || '').replace(/[^0-9]/g, '');
-  return isOwnerFlag || cleanSender === configuredOwner || cleanSender.includes(configuredOwner);
-}
-
 // 1. Pair Command (.pair <number>)
 cmd({
   pattern: "pair",
@@ -37,9 +30,14 @@ cmd({
   category: "owner",
   react: "🔗",
   filename: __filename
-}, async (sachiya, mek, m, { from, q, isOwner, reply, senderNumber }) => {
+}, async (sachiya, mek, m, { from, q, isOwner, reply, sender }) => {
   
-  if (!checkIsOwner(senderNumber, isOwner)) {
+  // Strict Owner Validation based on bot config and framework isOwner
+  const ownerNumber = config.OWNER_NUM || "94760579211";
+  const senderNum = (sender || mek.sender || "").replace(/[^0-9]/g, "");
+  const isTrueOwner = isOwner || senderNum.includes(ownerNumber.replace(/[^0-9]/g, ""));
+
+  if (!isTrueOwner) {
     return reply("❌ This command is only for the bot owner!");
   }
   
@@ -81,7 +79,7 @@ cmd({
         let code = await subSock.requestPairingCode(targetNum);
         code = code?.match(/.{1,4}/g)?.join("-") || code;
 
-        // Clean and clear text layout with code block for easy copying
+        // Clean layout with code block so it can be easily copied
         const pairMsg = `╭━━━〔 *SACHIYA-MD PAIRING* 〕━━━\n` +
                         `┃\n` +
                         `┃ 📱 *Target Number:* +${targetNum}\n` +
@@ -95,6 +93,7 @@ cmd({
 
         const pairImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
         
+        // Send Image with Caption containing the Code block separately
         await sachiya.sendMessage(from, { 
           image: { url: pairImg }, 
           caption: pairMsg 
@@ -160,8 +159,12 @@ cmd({
   category: "owner",
   react: "📋",
   filename: __filename
-}, async (sachiya, mek, m, { from, isOwner, reply, senderNumber }) => {
-  if (!checkIsOwner(senderNumber, isOwner)) {
+}, async (sachiya, mek, m, { from, isOwner, reply, sender }) => {
+  const ownerNumber = config.OWNER_NUM || "94760579211";
+  const senderNum = (sender || mek.sender || "").replace(/[^0-9]/g, "");
+  const isTrueOwner = isOwner || senderNum.includes(ownerNumber.replace(/[^0-9]/g, ""));
+
+  if (!isTrueOwner) {
     return reply("❌ This command is only for the bot owner!");
   }
 
@@ -195,8 +198,12 @@ cmd({
   category: "owner",
   react: "🔌",
   filename: __filename
-}, async (sachiya, mek, m, { from, q, isOwner, reply, senderNumber }) => {
-  if (!checkIsOwner(senderNumber, isOwner)) {
+}, async (sachiya, mek, m, { from, q, isOwner, reply, sender }) => {
+  const ownerNumber = config.OWNER_NUM || "94760579211";
+  const senderNum = (sender || mek.sender || "").replace(/[^0-9]/g, "");
+  const isTrueOwner = isOwner || senderNum.includes(ownerNumber.replace(/[^0-9]/g, ""));
+
+  if (!isTrueOwner) {
     return reply("❌ This command is only for the bot owner!");
   }
   
