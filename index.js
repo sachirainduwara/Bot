@@ -35,7 +35,7 @@ const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
 global.blockedChatsCache = [];
 global.hasSentBootMessage = false; 
-global.isBotStarted = false; // Flag to prevent multiple connection loops in console
+global.hasLoggedConsoleOnce = false; // Flag to ensure console logs print ONLY ONCE per boot
 
 const SessionSchema = new mongoose.Schema({
   _id: { type: String, required: true },
@@ -209,9 +209,9 @@ function loadPlugins() {
 }
 
 async function connectToWA() {
-  if (global.isBotStarted) return; // Prevent multiple re-entrant calls to connectToWA
-  
-  console.log("\n⏳ Connecting SACHIYA MD ✨...");
+  if (!global.hasLoggedConsoleOnce) {
+    console.log("\n⏳ Connecting SACHIYA MD ✨...");
+  }
 
   if (!fs.existsSync(authFolder)) {
     fs.mkdirSync(authFolder, { recursive: true });
@@ -257,7 +257,9 @@ async function connectToWA() {
       }, 3000);
     }
   } else {
-    console.log("⚡ Active Session Found! Connected successfully...");
+    if (!global.hasLoggedConsoleOnce) {
+      console.log("⚡ Active Session Found! Connected successfully...");
+    }
   }
 
   let isConnectedOnce = false;
@@ -277,20 +279,19 @@ async function connectToWA() {
         }
         process.exit(1);
       } else {
-        // Only attempt reconnect if bot hasn't permanently established the main start loop flag awkwardly
-        setTimeout(() => {
-          global.isBotStarted = false;
-          connectToWA();
-        }, 3000);
+        setTimeout(() => connectToWA(), 3000);
       }
     } else if (connection === 'open') {
       if (isConnectedOnce) return;
       isConnectedOnce = true;
-      global.isBotStarted = true; // Lock so it never loops connection logs again
 
-      console.log('\n╭─────────────────────────────────────╮');
-      console.log('│ SACHIYA MD CONNECTED SUCCESSFULLY!  │');
-      console.log('╰─────────────────────────────────────J\n');
+      // Print console log ONLY ONCE per boot, blocking repetitive loop prints
+      if (!global.hasLoggedConsoleOnce) {
+        global.hasLoggedConsoleOnce = true;
+        console.log('\n╭─────────────────────────────────────╮');
+        console.log('│ SACHIYA MD CONNECTED SUCCESSFULLY!  │');
+        console.log('╰─────────────────────────────────────╯\n');
+      }
 
       await saveSessionToMongo();
       await loadBlockedListIntoCache();
@@ -341,6 +342,7 @@ async function connectToWA() {
       if (!mek || !mek.message) return;
       if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
 
+      // --- AutoRead and AutoReact execution ---
       try {
         if (!mek.key.fromMe) {
           Promise.all([
