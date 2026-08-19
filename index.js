@@ -226,7 +226,7 @@ async function connectToWA() {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger),
     },
-    syncFullHistory: false, // ⚡ බොට් ස්ටාර්ට් වෙද්දි history sync වෙලා හිරවීම වැළැක්වීමට
+    syncFullHistory: false,
     fireInitQueries: true,
     markOnlineOnConnect: true,
     generateHighQualityLinkPreview: false,
@@ -262,6 +262,7 @@ async function connectToWA() {
     const { connection, lastDisconnect } = update;
     
     if (connection === 'close') {
+      isConnectedOnce = false;
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       
       if (statusCode === DisconnectReason.loggedOut) {
@@ -350,10 +351,13 @@ async function connectToWA() {
         msgType = getContentType(mek.message);
       }
 
-      const rawBody = msgType === 'conversation' ? mek.message.conversation :
-                      msgType === 'extendedTextMessage' ? mek.message.extendedTextMessage.text :
-                      msgType === 'imageMessage' ? mek.message.imageMessage.caption :
-                      msgType === 'videoMessage' ? mek.message.videoMessage.caption : 
+      // --- Robust body extraction for commands ---
+      const rawBody = (msgType === 'conversation') ? mek.message.conversation :
+                      (msgType === 'extendedTextMessage') ? mek.message.extendedTextMessage.text :
+                      (msgType === 'imageMessage') ? mek.message.imageMessage.caption :
+                      (msgType === 'videoMessage') ? mek.message.videoMessage.caption :
+                      (mek.message?.listResponseMessage?.title) ? mek.message.listResponseMessage.title :
+                      (mek.message?.buttonsResponseMessage?.selectedButtonId) ? mek.message.buttonsResponseMessage.selectedButtonId :
                       mek.text || '';
       
       const bodyText = rawBody ? String(rawBody) : '';
