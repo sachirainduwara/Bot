@@ -35,7 +35,7 @@ const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
 global.blockedChatsCache = [];
 global.hasSentBootMessage = false; 
-global.hasLoggedConsoleOnce = false; // Flag to ensure console logs print ONLY ONCE per boot
+global.hasLoggedConsoleOnce = false; 
 
 const SessionSchema = new mongoose.Schema({
   _id: { type: String, required: true },
@@ -61,7 +61,9 @@ async function loadSessionFromMongo() {
         fs.mkdirSync(authFolder, { recursive: true });
       }
       fs.writeFileSync(path.join(authFolder, 'creds.json'), JSON.stringify(sessionDoc.data, null, 2));
-      console.log("✅ Session loaded successfully from MongoDB Atlas!");
+      if (!global.hasLoggedConsoleOnce) {
+        console.log("✅ Session loaded successfully from MongoDB Atlas!");
+      }
     }
   } catch (e) {
     console.error("❌ MongoDB Session Load Error:", e);
@@ -285,7 +287,6 @@ async function connectToWA() {
       if (isConnectedOnce) return;
       isConnectedOnce = true;
 
-      // Print console log ONLY ONCE per boot, blocking repetitive loop prints
       if (!global.hasLoggedConsoleOnce) {
         global.hasLoggedConsoleOnce = true;
         console.log('\n╭─────────────────────────────────────╮');
@@ -296,7 +297,6 @@ async function connectToWA() {
       await saveSessionToMongo();
       await loadBlockedListIntoCache();
 
-      // Send startup connected message to inbox ONLY ONCE per boot
       if (!global.hasSentBootMessage) {
         global.hasSentBootMessage = true;
 
