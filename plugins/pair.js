@@ -22,6 +22,13 @@ const MultiSessionModel = mongoose.models.MultiSession || mongoose.model('MultiS
 
 global.activeSubSockets = global.activeSubSockets || {};
 
+// Helper function to verify owner strictly
+function checkIsOwner(senderNumber, isOwnerFlag) {
+  const configuredOwner = (config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
+  const cleanSender = (senderNumber || '').replace(/[^0-9]/g, '');
+  return isOwnerFlag || cleanSender === configuredOwner || cleanSender.includes(configuredOwner);
+}
+
 // 1. Pair Command (.pair <number>)
 cmd({
   pattern: "pair",
@@ -31,14 +38,19 @@ cmd({
   react: "🔗",
   filename: __filename
 }, async (sachiya, mek, m, { from, q, isOwner, reply, senderNumber }) => {
-  const ownerNum = config.OWNER_NUM || '94760579211';
-  const checkOwner = isOwner || (senderNumber && senderNumber.includes(ownerNum));
   
-  if (!checkOwner) return reply("❌ This command is only for the bot owner!");
-  if (!q) return reply("❌ Please provide a phone number with country code!\nExample: .pair 94771234567");
+  if (!checkIsOwner(senderNumber, isOwner)) {
+    return reply("❌ This command is only for the bot owner!");
+  }
+  
+  if (!q) {
+    return reply("❌ Please provide a phone number with country code!\nExample: .pair 94771234567");
+  }
 
   const targetNum = q.replace(/[^0-9]/g, '');
-  if (!targetNum || targetNum.length < 10) return reply("❌ Invalid phone number! Please enter a valid number with country code.");
+  if (!targetNum || targetNum.length < 10) {
+    return reply("❌ Invalid phone number! Please enter a valid number with country code.");
+  }
 
   await reply(`⏳ Requesting Pairing Code for *+${targetNum}*... Please wait.`);
 
@@ -69,12 +81,13 @@ cmd({
         let code = await subSock.requestPairingCode(targetNum);
         code = code?.match(/.{1,4}/g)?.join("-") || code;
 
+        // Clean and clear text layout with code block for easy copying
         const pairMsg = `╭━━━〔 *SACHIYA-MD PAIRING* 〕━━━\n` +
                         `┃\n` +
                         `┃ 📱 *Target Number:* +${targetNum}\n` +
                         `┃ 🔑 *Pairing Code:* \`${code}\`\n` +
                         `┃\n` +
-                        `┃ _Enter this code on your WhatsApp_\n` +
+                        `┃ _Tap the code above to copy it_ 👆\n` +
                         `┃ _Linked Devices -> Link with phone number_\n` +
                         `┃\n` +
                         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
@@ -148,9 +161,9 @@ cmd({
   react: "📋",
   filename: __filename
 }, async (sachiya, mek, m, { from, isOwner, reply, senderNumber }) => {
-  const ownerNum = config.OWNER_NUM || '94760579211';
-  const checkOwner = isOwner || (senderNumber && senderNumber.includes(ownerNum));
-  if (!checkOwner) return reply("❌ This command is only for the bot owner!");
+  if (!checkIsOwner(senderNumber, isOwner)) {
+    return reply("❌ This command is only for the bot owner!");
+  }
 
   try {
     if (mongoose.connection.readyState === 1) {
@@ -183,10 +196,13 @@ cmd({
   react: "🔌",
   filename: __filename
 }, async (sachiya, mek, m, { from, q, isOwner, reply, senderNumber }) => {
-  const ownerNum = config.OWNER_NUM || '94760579211';
-  const checkOwner = isOwner || (senderNumber && senderNumber.includes(ownerNum));
-  if (!checkOwner) return reply("❌ This command is only for the bot owner!");
-  if (!q) return reply("❌ Please provide the paired phone number to remove!\nExample: .unpair 94771234567");
+  if (!checkIsOwner(senderNumber, isOwner)) {
+    return reply("❌ This command is only for the bot owner!");
+  }
+  
+  if (!q) {
+    return reply("❌ Please provide the paired phone number to remove!\nExample: .unpair 94771234567");
+  }
 
   const targetNum = q.replace(/[^0-9]/g, '');
   if (!targetNum) return reply("❌ Invalid number provided.");
