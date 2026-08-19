@@ -22,24 +22,15 @@ const MultiSessionModel = mongoose.models.MultiSession || mongoose.model('MultiS
 
 global.activeSubSockets = global.activeSubSockets || {};
 
-// 1. Pair Command (.pair <number>)
+// 1. Pair Command (.pair <number>) - NOW WORKS FOR EVERYONE (හැමෝටම වැඩ කරයි)
 cmd({
   pattern: "pair",
   alias: ["link", "connect"],
-  desc: "Pair another user to the bot via pairing code",
-  category: "owner",
+  desc: "Pair any user to the bot via pairing code",
+  category: "general",
   react: "🔗",
   filename: __filename
-}, async (sachiya, mek, m, { from, q, isOwner, reply, sender }) => {
-  
-  // Strict Owner Validation based on bot config and framework isOwner
-  const ownerNumber = config.OWNER_NUM || "94760579211";
-  const senderNum = (sender || mek.sender || "").replace(/[^0-9]/g, "");
-  const isTrueOwner = isOwner || senderNum.includes(ownerNumber.replace(/[^0-9]/g, ""));
-
-  if (!isTrueOwner) {
-    return reply("❌ This command is only for the bot owner!");
-  }
+}, async (sachiya, mek, m, { from, q, reply }) => {
   
   if (!q) {
     return reply("❌ Please provide a phone number with country code!\nExample: .pair 94771234567");
@@ -93,7 +84,6 @@ cmd({
 
         const pairImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
         
-        // Send Image with Caption containing the Code block separately
         await sachiya.sendMessage(from, { 
           image: { url: pairImg }, 
           caption: pairMsg 
@@ -151,7 +141,14 @@ cmd({
   }
 });
 
-// 2. List Paired Users (.pairedlist)
+// Helper function to check specifically for owner number 94760579211
+function isTheOwner(sender, mek, isOwnerFlag) {
+  const specificOwner = "94760579211";
+  const senderNum = (sender || mek.sender || "").replace(/[^0-9]/g, "");
+  return isOwnerFlag || senderNum.includes(specificOwner);
+}
+
+// 2. List Paired Users (.pairedlist) - ONLY FOR OWNER (94760579211)
 cmd({
   pattern: "pairedlist",
   alias: ["sessions", "linkedlist"],
@@ -160,11 +157,7 @@ cmd({
   react: "📋",
   filename: __filename
 }, async (sachiya, mek, m, { from, isOwner, reply, sender }) => {
-  const ownerNumber = config.OWNER_NUM || "94760579211";
-  const senderNum = (sender || mek.sender || "").replace(/[^0-9]/g, "");
-  const isTrueOwner = isOwner || senderNum.includes(ownerNumber.replace(/[^0-9]/g, ""));
-
-  if (!isTrueOwner) {
+  if (!isTheOwner(sender, mek, isOwner)) {
     return reply("❌ This command is only for the bot owner!");
   }
 
@@ -190,7 +183,7 @@ cmd({
   }
 });
 
-// 3. Logout/Remove Paired User (.unpair <number>)
+// 3. Logout/Remove Paired User (.unpair <number>) - ONLY FOR OWNER (94760579211)
 cmd({
   pattern: "unpair",
   alias: ["removepair", "dellink"],
@@ -199,11 +192,7 @@ cmd({
   react: "🔌",
   filename: __filename
 }, async (sachiya, mek, m, { from, q, isOwner, reply, sender }) => {
-  const ownerNumber = config.OWNER_NUM || "94760579211";
-  const senderNum = (sender || mek.sender || "").replace(/[^0-9]/g, "");
-  const isTrueOwner = isOwner || senderNum.includes(ownerNumber.replace(/[^0-9]/g, ""));
-
-  if (!isTrueOwner) {
+  if (!isTheOwner(sender, mek, isOwner)) {
     return reply("❌ This command is only for the bot owner!");
   }
   
