@@ -226,7 +226,7 @@ async function connectToWA() {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger),
     },
-    syncFullHistory: false,
+    syncFullHistory: false, // ⚡ බොට් ස්ටාර්ට් වෙද්දි history sync වෙලා හිරවීම වැළැක්වීමට
     fireInitQueries: true,
     markOnlineOnConnect: true,
     generateHighQualityLinkPreview: false,
@@ -262,7 +262,6 @@ async function connectToWA() {
     const { connection, lastDisconnect } = update;
     
     if (connection === 'close') {
-      isConnectedOnce = false;
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       
       if (statusCode === DisconnectReason.loggedOut) {
