@@ -9,17 +9,17 @@ const fs = require('fs');
 const path = require('path');
 const P = require('pino');
 const mongoose = require('mongoose');
-const { cmd } = require('../command'); // ඔයාගේ කමාන්ඩ් රෙජිස්ටර් කරන ක්‍රමයට අනුව (command වෙනුවට commands නම් ඒක වෙනස් කරගන්න)
+const { cmd } = require('../command');
+const config = require('../config');
 
 // Multi-User Session Schema for MongoDB
 const MultiSessionSchema = new mongoose.Schema({
-  _id: { type: String, required: true }, // user's phone number or unique id
+  _id: { type: String, required: true },
   creds: { type: Object, required: true },
   pairedNumber: { type: String, required: true }
 });
 const MultiSessionModel = mongoose.models.MultiSession || mongoose.model('MultiSession', MultiSessionSchema);
 
-// Active sub-sessions cache to avoid conflicts
 global.activeSubSockets = global.activeSubSockets || {};
 
 // 1. Pair Command (.pair <number>)
@@ -30,8 +30,11 @@ cmd({
   category: "owner",
   react: "🔗",
   filename: __filename
-}, async (sachiya, mek, m, { from, q, isOwner, reply }) => {
-  if (!isOwner) return reply("❌ This command is only for the bot owner!");
+}, async (sachiya, mek, m, { from, q, isOwner, reply, senderNumber }) => {
+  const ownerNum = config.OWNER_NUM || '94760579211';
+  const checkOwner = isOwner || (senderNumber && senderNumber.includes(ownerNum));
+  
+  if (!checkOwner) return reply("❌ This command is only for the bot owner!");
   if (!q) return reply("❌ Please provide a phone number with country code!\nExample: .pair 94771234567");
 
   const targetNum = q.replace(/[^0-9]/g, '');
@@ -51,7 +54,7 @@ cmd({
     const subSock = makeWASocket({
       logger,
       printQRInTerminal: false,
-      browser: Browsers.macOS("Chrome"), // Professional browser agent
+      browser: Browsers.macOS("Chrome"),
       auth: {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, logger),
@@ -60,7 +63,7 @@ cmd({
       generateHighQualityLinkPreview: false,
     });
 
-    // Request pairing code after a short delay
+    // Request pairing code after socket initialization
     setTimeout(async () => {
       try {
         let code = await subSock.requestPairingCode(targetNum);
@@ -77,8 +80,13 @@ cmd({
                         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                         `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-        const pairImg = "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
-        await sachiya.sendMessage(from, { image: { url: pairImg }, caption: pairMsg }, { quoted: mek });
+        const pairImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
+        
+        await sachiya.sendMessage(from, { 
+          image: { url: pairImg }, 
+          caption: pairMsg 
+        }, { quoted: mek });
+
       } catch (err) {
         console.error("Pairing Code Error:", err);
         reply("❌ Failed to generate pairing code. Please check the number or try again later.");
@@ -87,7 +95,6 @@ cmd({
 
     subSock.ev.on('creds.update', async () => {
       await saveCreds();
-      // Save specific user credentials to MongoDB separately
       try {
         const credsPath = path.join(subAuthFolder, 'creds.json');
         if (fs.existsSync(credsPath)) {
@@ -140,8 +147,10 @@ cmd({
   category: "owner",
   react: "📋",
   filename: __filename
-}, async (sachiya, mek, m, { from, isOwner, reply }) => {
-  if (!isOwner) return reply("❌ This command is only for the bot owner!");
+}, async (sachiya, mek, m, { from, isOwner, reply, senderNumber }) => {
+  const ownerNum = config.OWNER_NUM || '94760579211';
+  const checkOwner = isOwner || (senderNumber && senderNumber.includes(ownerNum));
+  if (!checkOwner) return reply("❌ This command is only for the bot owner!");
 
   try {
     if (mongoose.connection.readyState === 1) {
@@ -173,8 +182,10 @@ cmd({
   category: "owner",
   react: "🔌",
   filename: __filename
-}, async (sachiya, mek, m, { from, q, isOwner, reply }) => {
-  if (!isOwner) return reply("❌ This command is only for the bot owner!");
+}, async (sachiya, mek, m, { from, q, isOwner, reply, senderNumber }) => {
+  const ownerNum = config.OWNER_NUM || '94760579211';
+  const checkOwner = isOwner || (senderNumber && senderNumber.includes(ownerNum));
+  if (!checkOwner) return reply("❌ This command is only for the bot owner!");
   if (!q) return reply("❌ Please provide the paired phone number to remove!\nExample: .unpair 94771234567");
 
   const targetNum = q.replace(/[^0-9]/g, '');
@@ -184,10 +195,9 @@ cmd({
     if (mongoose.connection.readyState === 1) {
       const exists = await MultiSessionModel.findOne({ _id: targetNum });
       if (!exists) {
-        return reply(`❌ Error: Bot එක මේ අංකයින් (*+${targetNum}*) ලින්ක් වී නැත! (Bot එක ලින්ක් වී නොමැත)`);
+        return reply(`❌ Error: Bot එක මේ අංකයින් (*+${targetNum}*) ලින්ක් වී නැත!`);
       }
 
-      // Close active socket if running
       if (global.activeSubSockets[targetNum]) {
         try {
           global.activeSubSockets[targetNum].logout();
@@ -195,10 +205,8 @@ cmd({
         delete global.activeSubSockets[targetNum];
       }
 
-      // Remove from MongoDB
       await MultiSessionModel.deleteOne({ _id: targetNum });
 
-      // Remove local folder
       const subAuthFolder = path.join(__dirname, `../auth_sub_${targetNum}`);
       if (fs.existsSync(subAuthFolder)) {
         fs.rmSync(subAuthFolder, { recursive: true, force: true });
