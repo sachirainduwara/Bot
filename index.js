@@ -34,6 +34,7 @@ const ownerNumber = [config.OWNER_NUM || '94760579211'];
 const authFolder = path.join(__dirname, '/auth_info_baileys/');
 
 global.blockedChatsCache = [];
+global.hasSentBootMessage = false; // Flag to ensure startup message is sent ONLY ONCE per boot
 
 const SessionSchema = new mongoose.Schema({
   _id: { type: String, required: true },
@@ -213,7 +214,6 @@ async function connectToWA() {
     fs.mkdirSync(authFolder, { recursive: true });
   }
 
-  // ⚡ Await both MongoDB session and blocklist loading completely before starting socket
   await Promise.all([loadSessionFromMongo(), loadBlockedListIntoCache()]);
 
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
@@ -254,7 +254,7 @@ async function connectToWA() {
       }, 3000);
     }
   } else {
-    console.log("⚡ Active Session Found! Connected directly without delays...");
+    console.log("⚡ Active Session Found! Connected successfully...");
   }
 
   let isConnectedOnce = false;
@@ -287,29 +287,34 @@ async function connectToWA() {
       await saveSessionToMongo();
       await loadBlockedListIntoCache();
 
-      const ownerJid = ownerNumber[0] + "@s.whatsapp.net";
-      const date = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' });
-      const time = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      // Send startup connected message to inbox ONLY ONCE per boot
+      if (!global.hasSentBootMessage) {
+        global.hasSentBootMessage = true;
 
-      const aliveImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
-      
-      const connectedSuccessMsg = `╭━━━〔 *SACHIYA-MD CONNECTED* 〕━━━\n` +
-                                   `┃\n` +
-                                   `┃ 🤖 *Bot Status:* Online & Active ✅\n` +
-                                   `┃ ⚙️ *Prefix:* [ ${prefix} ]\n` +
-                                   `┃ 📅 *Date:* ${date}\n` +
-                                   `┃ ⏰ *Time:* ${time}\n` +
-                                   `┃\n` +
-                                   `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                                   `> *⚡ Powered by SACHIYA-MD 💫*`;
+        const ownerJid = ownerNumber[0] + "@s.whatsapp.net";
+        const date = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' });
+        const time = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-      try {
-        await sachiya.sendMessage(ownerJid, {
-          image: { url: aliveImg },
-          caption: connectedSuccessMsg
-        });
-      } catch (err) {
-        await sachiya.sendMessage(ownerJid, { text: connectedSuccessMsg }).catch(() => {});
+        const aliveImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
+        
+        const connectedSuccessMsg = `╭━━━〔 *SACHIYA-MD CONNECTED* 〕━━━\n` +
+                                     `┃\n` +
+                                     `┃ 🤖 *Bot Status:* Online & Active ✅\n` +
+                                     `┃ ⚙️ *Prefix:* [ ${prefix} ]\n` +
+                                     `┃ 📅 *Date:* ${date}\n` +
+                                     `┃ ⏰ *Time:* ${time}\n` +
+                                     `┃\n` +
+                                     `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                                     `> *⚡ Powered by SACHIYA-MD 💫*`;
+
+        try {
+          await sachiya.sendMessage(ownerJid, {
+            image: { url: aliveImg },
+            caption: connectedSuccessMsg
+          });
+        } catch (err) {
+          await sachiya.sendMessage(ownerJid, { text: connectedSuccessMsg }).catch(() => {});
+        }
       }
     }
   });
@@ -352,7 +357,6 @@ async function connectToWA() {
         msgType = getContentType(mek.message);
       }
 
-      // --- Robust body extraction ---
       const rawBody = (msgType === 'conversation') ? mek.message.conversation :
                       (msgType === 'extendedTextMessage') ? mek.message.extendedTextMessage.text :
                       (msgType === 'imageMessage') ? mek.message.imageMessage.caption :
@@ -369,7 +373,6 @@ async function connectToWA() {
           if (!isAllowedCmd) return; 
       }
 
-      // --- AntiDelete plugin hook ---
       const isRevoke = mek.message?.protocolMessage && mek.message.protocolMessage.type === 0;
       if (isRevoke) {
         await handleMessageRevocation(sachiya, mek);
