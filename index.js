@@ -18,7 +18,7 @@ const config = require('./config');
 const { sms } = require('./lib/msg');
 const { commands } = require('./command');
 
-// --- ප්ලගින් ෆෝල්ඩර් එකෙන් නිවැරදිව ඉම්පෝට් කිරීම ---
+// --- Plugin imports ---
 const { storeMessage, handleMessageRevocation } = require('./plugins/antidelete');
 const { handleAutoread } = require('./plugins/autoread');
 const { handleAntiCall } = require('./plugins/anticall');
@@ -213,6 +213,7 @@ async function connectToWA() {
     fs.mkdirSync(authFolder, { recursive: true });
   }
 
+  // ⚡ Await both MongoDB session and blocklist loading completely before starting socket
   await Promise.all([loadSessionFromMongo(), loadBlockedListIntoCache()]);
 
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
@@ -318,7 +319,7 @@ async function connectToWA() {
     await saveSessionToMongo();
   });
 
-  // --- AntiCall ප්ලගින් එක කනෙක්ෂන් එකට සම්බන්ධ කිරීම ---
+  // --- AntiCall plugin connection ---
   handleAntiCall(sachiya);
 
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
@@ -327,7 +328,7 @@ async function connectToWA() {
       if (!mek || !mek.message) return;
       if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
 
-      // --- AutoRead සහ AutoReact ප්ලගින්ස් මැසේජ් එකක් ආපු සැනින් ක්‍රියාත්මක වීම ---
+      // --- AutoRead and AutoReact execution ---
       try {
         if (!mek.key.fromMe) {
           Promise.all([
@@ -351,7 +352,7 @@ async function connectToWA() {
         msgType = getContentType(mek.message);
       }
 
-      // --- Robust body extraction for commands ---
+      // --- Robust body extraction ---
       const rawBody = (msgType === 'conversation') ? mek.message.conversation :
                       (msgType === 'extendedTextMessage') ? mek.message.extendedTextMessage.text :
                       (msgType === 'imageMessage') ? mek.message.imageMessage.caption :
@@ -368,7 +369,7 @@ async function connectToWA() {
           if (!isAllowedCmd) return; 
       }
 
-      // --- AntiDelete ප්ලගින් එක මැසේජ් ඩිලීට් වීම හෝ මකා දැමීම් සඳහා ක්‍රියාත්මක වීම ---
+      // --- AntiDelete plugin hook ---
       const isRevoke = mek.message?.protocolMessage && mek.message.protocolMessage.type === 0;
       if (isRevoke) {
         await handleMessageRevocation(sachiya, mek);
