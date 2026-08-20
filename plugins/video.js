@@ -25,70 +25,41 @@ async function tryRequest(getter, attempts = 3) {
     throw lastError;
 }
 
-// 🚀 Advanced Multi-Quality API (Cobalt & Fallbacks)
-async function getDynamicVideoUrl(youtubeUrl, quality = '720') {
-    // 1. Try Cobalt API which supports exact quality mapping
-    try {
-        const cobaltRes = await tryRequest(() => axios.post('https://co.wuk.sh/api/json', {
-            url: youtubeUrl,
-            videoQuality: quality,
-            filenamePattern: 'classic'
-        }, {
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0'
-            },
-            timeout: 15000
-        }));
-
-        if (cobaltRes?.data?.status === 'redirect' || cobaltRes?.data?.status === 'stream') {
-            return {
-                download: cobaltRes.data.url,
-                title: 'YouTube_Video'
-            };
-        }
-    } catch (e) {
-        // Fallback to other APIs if Cobalt fails
+// EliteProTech API - Primary
+async function getEliteProTechVideoByUrl(youtubeUrl) {
+    const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp4`;
+    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    if (res?.data?.success && res?.data?.downloadURL) {
+        return {
+            download: res.data.downloadURL,
+            title: res.data.title
+        };
     }
+    throw new Error('EliteProTech ytdown returned no download');
+}
 
-    // 2. EliteProTech API with quality parameter
-    try {
-        const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp4&quality=${quality}`;
-        const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-        if (res?.data?.success && res?.data?.downloadURL) {
-            return {
-                download: res.data.downloadURL,
-                title: res.data.title
-            };
-        }
-    } catch (e) {}
+// Yupra API - Secondary
+async function getYupraVideoByUrl(youtubeUrl) {
+    const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`;
+    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    if (res?.data?.success && res?.data?.data?.download_url) {
+        return {
+            download: res.data.data.download_url,
+            title: res.data.data.title,
+            thumbnail: res.data.data.thumbnail
+        };
+    }
+    throw new Error('Yupra returned no download');
+}
 
-    // 3. Yupra API Fallback
-    try {
-        const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}&quality=${quality}`;
-        const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-        if (res?.data?.success && res?.data?.data?.download_url) {
-            return {
-                download: res.data.data.download_url,
-                title: res.data.data.title
-            };
-        }
-    } catch (e) {}
-
-    // 4. Okatsu API Final Fallback
-    try {
-        const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`;
-        const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-        if (res?.data?.result?.mp4) {
-            return { 
-                download: res.data.result.mp4, 
-                title: res.data.result.title 
-            };
-        }
-    } catch (e) {}
-
-    throw new Error('All download sources failed to fetch quality link.');
+// Okatsu API - Tertiary
+async function getOkatsuVideoByUrl(youtubeUrl) {
+    const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`;
+    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    if (res?.data?.result?.mp4) {
+        return { download: res.data.result.mp4, title: res.data.result.title };
+    }
+    throw new Error('Okatsu ytmp4 returned no mp4');
 }
 
 cmd({
@@ -112,10 +83,8 @@ cmd({
         let videoAuthor = '';
         let videoSeconds = 0;
 
-        // Smart URL or Search Query Handler
         if (q.startsWith('http://') || q.startsWith('https://')) {
             videoUrl = q;
-            // Fetch video metadata properly using yts for URLs too
             try {
                 const match = q.match(/(?:youtu\.be\/|v=|\/embed\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
                 if (match && match[1]) {
@@ -148,6 +117,19 @@ cmd({
             videoSeconds = firstVideo.seconds;
         }
 
+        if (!videoTitle) {
+            const searchResult = await yts(videoUrl).catch(() => null);
+            if (searchResult?.videos?.[0]) {
+                const firstVideo = searchResult.videos[0];
+                videoTitle = firstVideo.title;
+                videoThumbnail = firstVideo.thumbnail;
+                videoDuration = firstVideo.timestamp;
+                videoViews = firstVideo.views;
+                videoAuthor = firstVideo.author?.name;
+                videoSeconds = firstVideo.seconds;
+            }
+        }
+
         // ⏱️ Check if video duration is less than 6 hours (6 * 3600 = 21600 seconds)
         if (videoSeconds > 21600) {
             await sachiya.sendMessage(from, { react: { text: "⚠️", key: mek.key } }).catch(() => {});
@@ -157,7 +139,7 @@ cmd({
         const ytId = (videoUrl.match(/(?:youtu\.be\/|v=)([a-zA-Z0-9_-]{11})/) || [])[1];
         const thumb = videoThumbnail || (ytId ? `https://i.ytimg.com/vi/${ytId}/sddefault.jpg` : '');
 
-        // Detail Card Message with Quality Options
+        // Detail Card Message with Confirm / Cancel Options
         const descMsg = `╭━━━〔 *SACHIYA-MD VIDEO* 〕━━━\n` +
                         `┃\n` +
                         `┃ 📝 *Title:* ${videoTitle || q}\n` +
@@ -166,15 +148,13 @@ cmd({
                         `┃ 👁️ *Views:* ${videoViews ? videoViews.toLocaleString() : 'N/A'}\n` +
                         `┃ 🔗 *Url:* ${videoUrl}\n` +
                         `┃\n` +
-                        `┣━━━〔 *SELECT QUALITY* 〕━━━\n` +
+                        `┣━━━〔 *CONFIRM DOWNLOAD* 〕━━━\n` +
                         `┃\n` +
-                        `┃ 1️⃣ *1080p (HD)*\n` +
-                        `┃ 2️⃣ *720p (Normal)*\n` +
-                        `┃ 3️⃣ *360p (Low Data)*\n` +
+                        `┃ 1️⃣ *Confirm (Download)*\n` +
+                        `┃ 2️⃣ *Cancel (Abort)*\n` +
                         `┃\n` +
                         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                        `> 💬 *Please reply with the number (1, 2, or 3) to download your video!*\n` +
-                        `> *⚡ Powered by SACHIYA-MD 💫*`;
+                        `> 💬 *Please reply with 1 to Download or 2 to Cancel!*`;
 
         let sentMsg;
         if (thumb) {
@@ -188,7 +168,7 @@ cmd({
 
         await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
 
-        // 🎛️ Listen for user's quality choice response
+        // 🎛️ Listen for user's choice response (1 or 2)
         const messageListener = async (chatUpdate) => {
             try {
                 const msg = chatUpdate.messages[0];
@@ -201,48 +181,58 @@ cmd({
 
                 if (msgSender === from && isReplyToBot) {
                     const choiceText = (msg.message.conversation || msg.message.extendedTextMessage.text || "").trim();
-                    
-                    let selectedQuality = "720";
-                    let qualityName = "720p";
 
-                    if (choiceText === "1") {
-                        selectedQuality = "1080";
-                        qualityName = "1080p";
-                    } else if (choiceText === "2") {
-                        selectedQuality = "720";
-                        qualityName = "720p";
-                    } else if (choiceText === "3") {
-                        selectedQuality = "360";
-                        qualityName = "360p";
-                    } else {
-                        return; // Ignore if other text
+                    if (choiceText === "2") {
+                        sachiya.ev.off("messages.upsert", messageListener);
+                        await sachiya.sendMessage(from, { react: { text: "❌", key: msg.key } }).catch(() => {});
+                        return reply("❌ *Download cancelled successfully!*");
                     }
 
-                    // Remove listener once chosen
+                    if (choiceText !== "1") {
+                        return; // Ignore other inputs
+                    }
+
+                    // Remove listener once confirmed
                     sachiya.ev.off("messages.upsert", messageListener);
 
                     await sachiya.sendMessage(from, { react: { text: "📥", key: msg.key } }).catch(() => {});
 
+                    // Try API methods in order (EliteProTech -> Yupra -> Okatsu)
                     let videoData;
-                    try {
-                        videoData = await getDynamicVideoUrl(videoUrl, selectedQuality);
-                    } catch (apiErr) {
-                        console.log(`[VIDEO API] Failed:`, apiErr.message || apiErr);
+                    let downloadSuccess = false;
+
+                    const apiMethods = [
+                        { name: 'EliteProTech', method: () => getEliteProTechVideoByUrl(videoUrl) },
+                        { name: 'Yupra', method: () => getYupraVideoByUrl(videoUrl) },
+                        { name: 'Okatsu', method: () => getOkatsuVideoByUrl(videoUrl) }
+                    ];
+
+                    for (const apiMethod of apiMethods) {
+                        try {
+                            videoData = await apiMethod.method();
+                            const downloadLink = videoData?.download || videoData?.dl || videoData?.url;
+                            if (downloadLink) {
+                                downloadSuccess = true;
+                                break;
+                            }
+                        } catch (apiErr) {
+                            console.log(`[VIDEO API] ${apiMethod.name} failed:`, apiErr.message || apiErr);
+                        }
                     }
 
-                    if (!videoData || !videoData.download) {
+                    if (!downloadSuccess || !videoData) {
                         await sachiya.sendMessage(from, { react: { text: "❌", key: msg.key } }).catch(() => {});
-                        return sachiya.sendMessage(from, { text: `❌ *Failed to fetch ${qualityName} download link! Please try again later.*` }, { quoted: msg });
+                        return reply("❌ *All download sources failed. Please try again later.*");
                     }
 
-                    const downloadUrl = videoData.download;
-                    const finalTitle = videoData.title !== 'YouTube_Video' ? videoData.title : (videoTitle || 'YouTube_Video');
-                    const cleanFileName = `${finalTitle.replace(/[^\w\s-]/gi, '')}_${qualityName}.mp4`;
+                    const downloadUrl = videoData.download || videoData.dl || videoData.url;
+                    const finalTitle = videoData.title || videoTitle || 'YouTube_Video';
+                    const cleanFileName = `${finalTitle.replace(/[^\w\s-]/gi, '')}.mp4`;
 
                     const captionText = `╭━━━〔 *SACHIYA-MD DOWNLOADED* 〕━━━\n` +
                                         `┃\n` +
                                         `┃ 🎬 *Title:* ${finalTitle}\n` +
-                                        `┃ 📥 *Status:* ${qualityName} download success! ✅\n` +
+                                        `┃ 📥 *Status:* Downloaded Successfully! ✅\n` +
                                         `┃\n` +
                                         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                                         `> *⚡ Powered by SACHIYA-MD 💫*`;
@@ -270,7 +260,7 @@ cmd({
         }, 120000);
 
     } catch (error) {
-        console.error('[VIDEO PLUGIN ERROR]:', error?.message || error);
+        console.log('[VIDEO PLUGIN ERROR]:', error?.message || error);
 
         let errorMessage = '❌ Failed to download video.';
         if (error.message && error.message.includes('blocked')) {
