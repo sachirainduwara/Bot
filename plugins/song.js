@@ -7,7 +7,7 @@ const AXIOS_DEFAULTS = {
     maxRedirects: 10,
     validateStatus: s => s >= 200 && s < 400,
     headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept': '*/*'
     }
 };
@@ -27,32 +27,39 @@ async function tryRequest(getter, attempts = 3) {
     throw lastError;
 }
 
-// Working APIs
-async function getDarkYasiyaDl(youtubeUrl) {
-    const apiUrl = `https://api.dark-yasiya.api.sri-server.com/download/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-    if (res?.data?.status && res?.data?.result?.dl_link) {
-        return { download: res.data.result.dl_link, title: res.data.result.title };
-    }
-    throw new Error('DarkYasiya failed');
-}
+// Reliable Public Download Endpoints
+async function getApiDl(youtubeUrl) {
+    const apis = [
+        `https://api.yupra.my.id/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`,
+        `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`,
+        `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp3`
+    ];
 
-async function getEliteProTechDl(youtubeUrl) {
-    const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp3`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-    if (res?.data?.success && res?.data?.downloadURL) {
-        return { download: res.data.downloadURL, title: res.data.title };
-    }
-    throw new Error('EliteProTech failed');
-}
+    for (const apiUrl of apis) {
+        try {
+            const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS), 2);
+            let downloadUrl = '';
+            let title = '';
 
-async function getOkatsuDl(youtubeUrl) {
-    const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-    if (res?.data?.dl) {
-        return { download: res.data.dl, title: res.data.title };
+            if (res?.data?.success && res?.data?.data?.download_url) {
+                downloadUrl = res.data.data.download_url;
+                title = res.data.data.title;
+            } else if (res?.data?.dl) {
+                downloadUrl = res.data.dl;
+                title = res.data.title;
+            } else if (res?.data?.success && res?.data?.downloadURL) {
+                downloadUrl = res.data.downloadURL;
+                title = res.data.title;
+            }
+
+            if (downloadUrl) {
+                return { download: downloadUrl, title: title };
+            }
+        } catch (e) {
+            continue;
+        }
     }
-    throw new Error('Okatsu failed');
+    throw new Error('All download endpoints failed.');
 }
 
 cmd({
@@ -82,7 +89,7 @@ cmd({
             video = search.videos[0];
         }
 
-        // Send thumbnail card info
+        // Send Card Info First
         const descMsg = "╭━━━〔 *SACHIYA-MD SONG* 〕━━━\n" +
                         "┃\n" +
                         "┃ 🎵 *Title:* " + video.title + "\n" +
@@ -98,46 +105,29 @@ cmd({
             caption: descMsg
         }, { quoted: mek });
 
-        let audioData;
-        let audioBuffer;
-        let downloadSuccess = false;
+        const audioData = await getApiDl(video.url);
+        if (!audioData || !audioData.download) {
+            return reply("❌ *Failed to fetch download link. Please try again later!*");
+        }
 
-        const apiList = [getDarkYasiyaDl, getEliteProTechDl, getOkatsuDl];
-
-        for (const getDl of apiList) {
-            try {
-                audioData = await getDl(video.url);
-                const dlUrl = audioData.download;
-                if (!dlUrl) continue;
-
-                const res = await axios.get(dlUrl, {
-                    responseType: 'arraybuffer',
-                    timeout: 90000,
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-                        'Accept': '*/*'
-                    }
-                });
-
-                audioBuffer = Buffer.from(res.data);
-                if (audioBuffer && audioBuffer.length > 20000) {
-                    downloadSuccess = true;
-                    break;
-                }
-            } catch (err) {
-                continue;
+        const audioResponse = await axios.get(audioData.download, {
+            responseType: 'arraybuffer',
+            timeout: 90000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                'Accept': '*/*'
             }
+        });
+
+        const audioBuffer = Buffer.from(audioResponse.data);
+        if (!audioBuffer || audioBuffer.length < 10000) {
+            return reply("❌ *Downloaded audio file is invalid. Please try another song!*");
         }
 
-        if (!downloadSuccess || !audioBuffer) {
-            return reply("❌ *Failed to fetch song from servers. Please try again!*");
-        }
-
-        const cleanTitle = (audioData?.title || video.title || 'song').replace(/[^\w\s-]/gi, '');
-
+        const cleanTitle = (audioData.title || video.title || 'song').replace(/[^\w\s-]/gi, '');
         const captionText = "🎵 *" + cleanTitle + "*\n\n> *⚡ Powered by SACHIYA-MD 💫*";
 
-        // Send as Document MP3 (Works 100% on both Android and iOS without any "corrupted" or "not available" errors)
+        // Send as Document MP3 (Ensures 100% compatibility across Android, iOS, and Web without any format or player errors)
         await sachiya.sendMessage(from, {
             document: audioBuffer,
             mimetype: 'audio/mpeg',
@@ -150,6 +140,6 @@ cmd({
 
     } catch (err) {
         console.error('[SONG COMMAND ERROR]:', err);
-        reply("❌ *An error occurred while processing your request!*");
+        reply("❌ *Failed to download the song. All servers are currently busy!*");
     }
 });
