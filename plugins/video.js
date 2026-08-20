@@ -25,7 +25,7 @@ async function tryRequest(getter, attempts = 3) {
     throw lastError;
 }
 
-// EliteProTech API - Primary (Updated to accept quality if needed or fallback)
+// EliteProTech API - Primary (Fixed for dynamic quality mapping)
 async function getEliteProTechVideoByUrl(youtubeUrl, quality = '720') {
     const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp4&quality=${quality}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
@@ -35,10 +35,19 @@ async function getEliteProTechVideoByUrl(youtubeUrl, quality = '720') {
             title: res.data.title
         };
     }
+    // Fallback without quality param if specific quality fails
+    const fallbackApi = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp4`;
+    const res2 = await tryRequest(() => axios.get(fallbackApi, AXIOS_DEFAULTS));
+    if (res2?.data?.success && res2?.data?.downloadURL) {
+        return {
+            download: res2.data.downloadURL,
+            title: res2.data.title
+        };
+    }
     throw new Error('EliteProTech ytdown returned no download');
 }
 
-// Yupra API - Secondary
+// Yupra API - Secondary (Fixed for dynamic quality mapping)
 async function getYupraVideoByUrl(youtubeUrl, quality = '720') {
     const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}&quality=${quality}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
