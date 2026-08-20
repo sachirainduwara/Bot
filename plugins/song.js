@@ -3,7 +3,7 @@ const axios = require('axios');
 const yts = require('yt-search');
 const fs = require('fs');
 const path = require('path');
-const { toAudio } = require('../lib/converter');
+const { exec } = require('child_process');
 
 const AXIOS_DEFAULTS = {
     timeout: 60000,
@@ -26,6 +26,35 @@ async function tryRequest(getter, attempts = 3) {
         }
     }
     throw lastError;
+}
+
+// Built-in audio converter using ffmpeg to avoid external missing module errors
+function toAudio(buffer, ext) {
+    return new Promise((resolve, reject) => {
+        const tmpDir = path.join(__dirname, '../temp');
+        if (!fs.existsSync(tmpDir)) {
+            fs.mkdirSync(tmpDir, { recursive: true });
+        }
+        const inputPath = path.join(tmpDir, `${Date.now()}.${ext}`);
+        const outputPath = path.join(tmpDir, `${Date.now()}.mp3`);
+        
+        fs.writeFileSync(inputPath, buffer);
+        
+        exec(`ffmpeg -i "${inputPath}" -vn -ab 128k -ar 44100 -f mp3 "${outputPath}"`, async (err) => {
+            try { if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath); } catch (e) {}
+            if (err) {
+                try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (e) {}
+                return reject(err);
+            }
+            try {
+                const convertedBuffer = fs.readFileSync(outputPath);
+                if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+                resolve(convertedBuffer);
+            } catch (readErr) {
+                reject(readErr);
+            }
+        });
+    });
 }
 
 // APIs
@@ -65,32 +94,31 @@ cmd({
     filename: __filename
 }, async (sachiya, mek, m, { from, quoted, q, reply }) => {
     try {
-        if (!q) return reply("❌ *Please provide a song name or YouTube link!*");
+        if (!q) return reply("❌ *Please provide a song name or YouTube link!*\n\n*Example:* `.song Manike Mage Hithe`");
 
-        // Search or Validate URL
         let video;
         if (q.startsWith('http://') || q.startsWith('https://')) {
-            const search = await yts({ videoId: q.split('v=')[1]?.split('&')[0] || q });
+            const ytId = (q.match(/(?:youtu\.be\/|v=)([a-zA-Z0-9_-]{11})/) || [])[1];
+            if (!ytId) return reply("❌ Invalid YouTube link!");
+            const search = await yts({ videoId: ytId });
             video = search;
         } else {
             const search = await yts(q);
-            if (!search.videos.length) return reply("❌ No results found.");
+            if (!search.videos.length) return reply("❌ No results found matching your query!");
             video = search.videos[0];
         }
 
-        // Send Processing Message
         const descMsg = `╭━━━〔 *SACHIYA-MD SONG* 〕━━━\n` +
                         `┃\n` +
                         `┃ 🎵 *Title:* ${video.title}\n` +
                         `┃ ⏱️ *Duration:* ${video.timestamp}\n` +
-                        `┃ 📥 *Status:* Downloading... ⏳\n` +
+                        `┃ 📥 *Status:* Downloading audio... ⏳\n` +
                         `┃\n` +
                         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                         `> *⚡ Powered by SACHIYA-MD 💫*`;
         
         await sachiya.sendMessage(from, { image: { url: video.thumbnail }, caption: descMsg }, { quoted: mek });
 
-        // API Loop
         let audioData, audioBuffer, downloadSuccess = false;
         const apiMethods = [
             { name: 'EliteProTech', method: () => getEliteProTechDownloadByUrl(video.url) },
@@ -102,23 +130,46 @@ cmd({
             try {
                 audioData = await apiMethod.method();
                 const audioUrl = audioData.download || audioData.dl || audioData.url;
+                if (!audioUrl) continue;
                 const audioResponse = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 90000 });
                 audioBuffer = Buffer.from(audioResponse.data);
-                if (audioBuffer.length > 0) { downloadSuccess = true; break; }
-            } catch (e) { continue; }
+                if (audioBuffer.length > 0) { 
+                    downloadSuccess = true; 
+                    break; 
+                }
+            } catch (e) { 
+                continue; 
+            }
         }
 
-        if (!downloadSuccess) throw new Error("All APIs failed.");
+        if (!downloadSuccess || !audioBuffer) {
+            throw new Error("All download sources failed.");
+        }
 
-        // Convert to MP3
-        let finalBuffer = await toAudio(audioBuffer, 'mp4');
+        // Convert buffer to standard MP3
+        let finalBuffer;
+        try {
+            finalBuffer = await toAudio(audioBuffer, 'mp4');
+        } catch (convErr) {
+            finalBuffer = audioBuffer; // fallback to raw buffer if conversion fails
+        }
+
+        const cleanFileName = `${(video.title || 'song').replace(/[^\w\s-]/gi, '')}.mp3`;
+
+        const captionText = `╭━━━〔 *SACHIYA-MD AUDIO* 〕━━━\n` +
+                            `┃\n` +
+                            `┃ 🎵 *Title:* ${video.title}\n` +
+                            `┃ 📥 *Status:* Downloaded Successfully! ✅\n` +
+                            `┃\n` +
+                            `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                            `> *⚡ Powered by SACHIYA-MD 💫*`;
 
         // Send Audio
         await sachiya.sendMessage(from, {
             audio: finalBuffer,
             mimetype: 'audio/mpeg',
-            fileName: `${video.title.replace(/[^\w\s-]/gi, '')}.mp3`,
-            caption: `*${video.title}*`,
+            fileName: cleanFileName,
+            caption: captionText,
             ptt: false
         }, { quoted: mek });
 
@@ -126,7 +177,7 @@ cmd({
         await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
 
     } catch (err) {
-        console.error(err);
-        reply("❌ *Failed to download the song.*");
+        console.error('[SONG PLUGIN ERROR]:', err?.message || err);
+        reply("❌ *Failed to download the song. Please try again later!*");
     }
 });
