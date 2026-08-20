@@ -1,7 +1,6 @@
 const { cmd } = require('../command');
 const axios = require('axios');
 const yts = require('yt-search');
-const { toAudio } = require('../lib/converter');
 
 const AXIOS_DEFAULTS = {
     timeout: 60000,
@@ -26,34 +25,32 @@ async function tryRequest(getter, attempts = 3) {
     throw lastError;
 }
 
-// EliteProTech API - Primary
+// APIs
 async function getEliteProTechDownloadByUrl(youtubeUrl) {
     const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp3`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     if (res?.data?.success && res?.data?.downloadURL) {
         return { download: res.data.downloadURL, title: res.data.title };
     }
-    throw new Error('EliteProTech ytdown returned no download');
+    throw new Error('EliteProTech failed');
 }
 
-// Yupra API - Secondary
 async function getYupraDownloadByUrl(youtubeUrl) {
     const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     if (res?.data?.success && res?.data?.data?.download_url) {
         return { download: res.data.data.download_url, title: res.data.data.title, thumbnail: res.data.data.thumbnail };
     }
-    throw new Error('Yupra returned no download');
+    throw new Error('Yupra failed');
 }
 
-// Okatsu API - Tertiary
 async function getOkatsuDownloadByUrl(youtubeUrl) {
     const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     if (res?.data?.dl) {
         return { download: res.data.dl, title: res.data.title, thumbnail: res.data.thumb };
     }
-    throw new Error('Okatsu ytmp3 returned no download');
+    throw new Error('Okatsu failed');
 }
 
 cmd({
@@ -126,14 +123,6 @@ cmd({
             throw new Error("All download sources failed.");
         }
 
-        // Convert buffer to standard playable MP3 using converter lib
-        let finalBuffer;
-        try {
-            finalBuffer = await toAudio(audioBuffer, 'mp4');
-        } catch (convErr) {
-            finalBuffer = audioBuffer; // Fallback to raw if ffmpeg fails
-        }
-
         const cleanFileName = `${(audioData?.title || video.title || 'song').replace(/[^\w\s-]/gi, '')}.mp3`;
 
         const captionText = `╭━━━〔 *SACHIYA-MD AUDIO* 〕━━━\n` +
@@ -144,10 +133,10 @@ cmd({
                             `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                             `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-        // Send Audio correctly as MP3
+        // Send Audio correctly with proper mimetype
         await sachiya.sendMessage(from, {
-            audio: finalBuffer,
-            mimetype: 'audio/mpeg',
+            audio: audioBuffer,
+            mimetype: 'audio/mp4',
             fileName: cleanFileName,
             caption: captionText,
             ptt: false
