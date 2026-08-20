@@ -1,204 +1,323 @@
-const { cmd } = require('../command');
-const axios = require('axios');
-const cheerio = require('cheerio');
+const { cmd } = require("../command");
+const puppeteer = require("puppeteer");
 
-const HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Referer': 'https://sinhalasub.lk/'
-};
+const pendingSearch = {};
+const pendingQuality = {};
 
-async function searchMovies(query) {
-    try {
-        const searchUrl = `https://sinhalasub.lk/?s=${encodeURIComponent(query)}`;
-        const { data } = await axios.get(searchUrl, { headers: HEADERS, timeout: 20000 });
-        const $ = cheerio.load(data);
-        const results = [];
-
-        // Comprehensive selectors for WordPress movie themes
-        const selectors = [
-            '.result-item', 
-            'article.item', 
-            '.items.normal article', 
-            '.search-page .item',
-            'div.result-item',
-            '.animation-2.item'
-        ];
-
-        for (const selector of selectors) {
-            $(selector).each((index, element) => {
-                if (results.length >= 5) return;
-                
-                const titleEl = $(element).find('.title a, h3 a, .details h3 a, a.lnk-co');
-                const title = titleEl.text().trim() || $(element).find('h3, .title').text().trim();
-                const link = titleEl.attr('href') || $(element).find('a').attr('href');
-                const image = $(element).find('img').attr('data-src') || $(element).find('img').attr('src');
-                const year = $(element).find('.year, .meta span, span.year').text().trim() || 'N/A';
-
-                if (title && link && !results.some(r => r.link === link)) {
-                    results.push({ title, link, image, year });
-                }
-            });
-            if (results.length > 0) break;
-        }
-
-        // Fallback: search all anchor tags if structured selectors miss
-        if (results.length === 0) {
-            $('a').each((i, el) => {
-                if (results.length >= 5) return;
-                const href = $(el).attr('href');
-                const text = $(el).text().trim();
-                if (href && href.includes('/movie/') && text.length > 3) {
-                    if (!results.some(r => r.link === href)) {
-                        results.push({ title: text, link: href, image: '', year: 'N/A' });
-                    }
-                }
-            });
-        }
-
-        return results;
-    } catch (error) {
-        console.error('Search Error:', error.message);
-        return [];
-    }
+function normalizeQuality(text) {
+  if (!text) return null;
+  text = text.toUpperCase();
+  if (/1080|FHD/.test(text)) return "1080p";
+  if (/720|HD/.test(text)) return "720p";
+  if (/480|SD/.test(text)) return "480p";
+  return text;
 }
 
-async function getMovieDetails(movieUrl) {
-    try {
-        const { data } = await axios.get(movieUrl, { headers: HEADERS, timeout: 20000 });
-        const $ = cheerio.load(data);
-        
-        const title = $('h1.entry-title, h1.title, .sheader h1').text().trim();
-        const poster = $('.poster img, .sheader .poster img, .thumb img').attr('src');
-        const synopsis = $('.wp-content p, .desc p, .wp-synopsis p').first().text().trim() || 'No description available.';
-        
-        const downloadLinks = [];
-        $('table tr, .links_table tr, .download-links a, .s_dl a, .m-b-5 a').each((i, el) => {
-            const quality = $(el).find('td').first().text().trim() || $(el).text().trim() || 'Download Link';
-            const link = $(el).find('a').attr('href') || $(el).attr('href');
-            
-            if (link && link.startsWith('http') && !link.includes('sinhalasub.lk')) {
-                downloadLinks.push({ quality, link });
-            }
-        });
+function getDirectPixeldrainUrl(url) {
+  const match = url.match(/pixeldrain\.com\/u\/(\w+)/);
+  if (!match) return null;
+  return `https://pixeldrain.com/api/file/${match[1]}?download`;
+}
 
-        return { title, poster, synopsis, downloadLinks };
-    } catch (error) {
-        console.error('Details Error:', error.message);
-        return null;
+async function getBrowser() {
+  return await puppeteer.launch({
+    headless: "new",
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-accelerated-2d-canvas",
+      "--no-first-run",
+      "--no-zygote",
+      "--disable-gpu"
+    ]
+  });
+}
+
+async function searchMovies(query) {
+  const searchUrl = `https://sinhalasub.lk/?s=${encodeURIComponent(query)}&post_type=movies`;
+  const browser = await getBrowser();
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+    await page.goto(searchUrl, { waitUntil: "networkidle2", timeout: 30000 });
+    
+    const results = await page.$$eval(".display-item .item-box", boxes =>
+      boxes.slice(0, 10).map((box, index) => {
+        const a = box.querySelector("a");
+        const img = box.querySelector(".thumb");
+        const lang = box.querySelector(".item-desc-giha .language")?.textContent || "";
+        const quality = box.querySelector(".item-desc-giha .quality")?.textContent || "";
+        const qty = box.querySelector(".item-desc-giha .qty")?.textContent || "";
+        return {
+          id: index + 1,
+          title: a?.title?.trim() || a?.textContent?.trim() || "",
+          movieUrl: a?.href || "",
+          thumb: img?.src || "",
+          language: lang.trim(),
+          quality: quality.trim(),
+          qty: qty.trim(),
+        };
+      }).filter(m => m.title && m.movieUrl)
+    );
+    await browser.close();
+    return results;
+  } catch (error) {
+    await browser.close();
+    console.error("Search Movies Error:", error);
+    return [];
+  }
+}
+
+async function getMovieMetadata(url) {
+  const browser = await getBrowser();
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+    
+    const metadata = await page.evaluate(() => {
+      const getText = el => el?.textContent.trim() || "";
+      const getList = selector => Array.from(document.querySelectorAll(selector)).map(el => el.textContent.trim());
+      const title = getText(document.querySelector(".info-details .details-title h3") || document.querySelector("h1.entry-title"));
+      let language = "", directors = [], stars = [];
+      document.querySelectorAll(".info-col p, .custom-field p").forEach(p => {
+        const strong = p.querySelector("strong");
+        if (!strong) return;
+        const txt = strong.textContent.trim();
+        if (txt.includes("Language:")) language = strong.nextSibling?.textContent?.trim() || "";
+        if (txt.includes("Director:")) directors = Array.from(p.querySelectorAll("a")).map(a => a.textContent.trim());
+        if (txt.includes("Stars:")) stars = Array.from(p.querySelectorAll("a")).map(a => a.textContent.trim());
+      });
+      const duration = getText(document.querySelector(".info-details .data-views[itemprop='duration']") || document.querySelector(".duration"));
+      const imdb = getText(document.querySelector(".info-details .data-imdb"))?.replace("IMDb:", "").trim();
+      const genres = getList(".details-genre a, .genres a");
+      const thumbnail = document.querySelector(".splash-bg img")?.src || document.querySelector(".poster img")?.src || "";
+      return { title, language, duration, imdb, genres, directors, stars, thumbnail };
+    });
+    await browser.close();
+    return metadata;
+  } catch (error) {
+    await browser.close();
+    console.error("Get Metadata Error:", error);
+    return null;
+  }
+}
+
+async function getPixeldrainLinks(movieUrl) {
+  const browser = await getBrowser();
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+    await page.goto(movieUrl, { waitUntil: "networkidle2", timeout: 30000 });
+    
+    const linksData = await page.$$eval(".link-pixeldrain tbody tr, .download-links tr", rows =>
+      rows.map(row => {
+        const a = row.querySelector(".link-opt a, a");
+        const quality = row.querySelector(".quality, td:nth-child(2)")?.textContent.trim() || "";
+        const size = row.querySelector("td:nth-child(3) span, td:nth-child(3)")?.textContent.trim() || "";
+        return { pageLink: a?.href || "", quality, size };
+      })
+    );
+    
+    const directLinks = [];
+    for (const l of linksData) {
+      if (!l.pageLink) continue;
+      try {
+        const subPage = await browser.newPage();
+        await subPage.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+        await subPage.goto(l.pageLink, { waitUntil: "networkidle2", timeout: 30000 });
+        await new Promise(r => setTimeout(r, 6000)); // Optimized wait time
+        
+        const finalUrl = await subPage.$eval(".wait-done a[href^='https://pixeldrain.com/'], a[href*='pixeldrain.com/u/']", el => el.href).catch(() => null);
+        if (finalUrl) {
+          let sizeMB = 0;
+          const sizeText = (l.size || "").toUpperCase();
+          if (sizeText.includes("GB")) sizeMB = parseFloat(sizeText) * 1024;
+          else if (sizeText.includes("MB")) sizeMB = parseFloat(sizeText);
+          
+          if (sizeMB <= 2048 || sizeMB === 0) {
+            directLinks.push({ link: finalUrl, quality: normalizeQuality(l.quality) || "HD", size: l.size || "Unknown" });
+          }
+        }
+        await subPage.close();
+      } catch (e) { continue; }
     }
+    await browser.close();
+    return directLinks;
+  } catch (error) {
+    await browser.close();
+    console.error("Get Pixeldrain Links Error:", error);
+    return [];
+  }
 }
 
 cmd({
-    pattern: "movie",
-    alias: ["sinhalasub", "mv", "film"],
-    desc: "Search and download movies from Sinhalasub.lk",
-    category: "download",
-    react: "🎬",
-    filename: __filename
-}, async (sachiya, mek, m, { from, q, reply }) => {
-    try {
-        if (!q) {
-            return reply("❌ *Please provide a movie name!*\n\n*Example:* `.movie Avatar` or `.movie Interstellar`");
-        }
+  pattern: "movie",
+  alias: ["sinhalasub", "films", "cinema"],
+  react: "🎬",
+  desc: "Search and send movies from Sinhalasub.lk",
+  category: "download",
+  filename: __filename
+}, async (danuwa, mek, m, { from, q, sender, reply }) => {
+  try {
+    if (!q) return reply(`*🎬 Movie Search Plugin*\nUsage: .movie <movie_name>\nExample: .movie avengers`);
+    
+    await danuwa.sendMessage(from, { react: { text: "🔍", key: mek.key } }).catch(() => {});
+    await reply("*🔍 Searching for movies on Sinhalasub...*");
 
-        await sachiya.sendMessage(from, { react: { text: "🔍", key: mek.key } }).catch(() => {});
-        await reply("🔍 *Searching for movies on Sinhalasub, please wait...*");
-
-        const movies = await searchMovies(q);
-        if (!movies || movies.length === 0) {
-            await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } }).catch(() => {});
-            return reply("❌ *No movies found matching your query on Sinhalasub!*");
-        }
-
-        let listText = `╭━━━〔 *SINHALASUB SEARCH* 〕━━━\n` +
-                       `┃\n` +
-                       `┃ 🔎 *Query:* ${q}\n` +
-                       `┃ 🔢 *Results Found:* ${movies.length}\n` +
-                       `┃\n` +
-                       `┣━━━〔 *SELECT A MOVIE* 〕━━━\n`;
-
-        movies.forEach((movie, index) => {
-            listText += `┃\n` +
-                        `┃ *${index + 1}️⃣* *${movie.title}* (${movie.year})\n`;
-        });
-
-        listText += `┃\n` +
-                    `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                    `> 💬 *Please reply with the number (1-${movies.length}) of your choice!*`;
-
-        const sentMsg = await sachiya.sendMessage(from, { text: listText }, { quoted: mek });
-        await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
-
-        const searchListener = async (chatUpdate) => {
-            try {
-                const msg = chatUpdate.messages[0];
-                if (!msg || !msg.message) return;
-                
-                const msgSender = msg.key.remoteJid;
-                const isReplyToBot = msg.message.extendedTextMessage && 
-                                   msg.message.extendedTextMessage.contextInfo && 
-                                   msg.message.extendedTextMessage.contextInfo.stanzaId === sentMsg.key.id;
-
-                if (msgSender === from && isReplyToBot) {
-                    const choiceText = (msg.message.conversation || msg.message.extendedTextMessage.text || "").trim();
-                    const choiceIndex = parseInt(choiceText) - 1;
-
-                    if (isNaN(choiceIndex) || choiceIndex < 0 || choiceIndex >= movies.length) {
-                        return;
-                    }
-
-                    sachiya.ev.off("messages.upsert", searchListener);
-
-                    const selectedMovie = movies[choiceIndex];
-                    await sachiya.sendMessage(from, { react: { text: "⏳", key: msg.key } }).catch(() => {});
-                    await reply(`📥 *Fetching details for:* *${selectedMovie.title}*...`);
-
-                    const details = await getMovieDetails(selectedMovie.link);
-                    if (!details) {
-                        return reply("❌ *Failed to fetch movie details. Try another movie.*");
-                    }
-
-                    let dlText = `╭━━━〔 *${selectedMovie.title}* 〕━━━\n` +
-                                 `┃\n` +
-                                 `┃ 📝 *Synopsis:* ${details.synopsis.substring(0, 140)}...\n` +
-                                 `┃\n` +
-                                 `┣━━━〔 *DOWNLOAD LINKS* 〕━━━\n`;
-
-                    if (details.downloadLinks.length === 0) {
-                        dlText += `┃ 🔗 *Direct Link:* ${selectedMovie.link}\n`;
-                    } else {
-                        details.downloadLinks.slice(0, 5).forEach((dl, idx) => {
-                            dlText += `┃ *${idx + 1}️⃣* ${dl.quality}: ${dl.link}\n`;
-                        });
-                    }
-
-                    dlText += `┃\n` +
-                              `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                              `> ⚡ *Powered by SACHIYA-MD*`;
-
-                    const posterImg = details.poster || selectedMovie.image;
-                    if (posterImg) {
-                        await sachiya.sendMessage(from, { image: { url: posterImg }, caption: dlText }, { quoted: msg });
-                    } else {
-                        await reply(dlText);
-                    }
-
-                    await sachiya.sendMessage(from, { react: { text: "🎉", key: msg.key } }).catch(() => {});
-                }
-            } catch (err) {
-                console.log("Selection Listener Error:", err);
-            }
-        };
-
-        sachiya.ev.on("messages.upsert", searchListener);
-        setTimeout(() => {
-            sachiya.ev.off("messages.upsert", searchListener);
-        }, 120000);
-
-    } catch (error) {
-        console.error('[MOVIE PLUGIN ERROR]:', error);
-        reply("❌ *An error occurred while processing your request. Please try again later.*");
+    const searchResults = await searchMovies(q);
+    if (!searchResults.length) {
+      await danuwa.sendMessage(from, { react: { text: "❌", key: mek.key } }).catch(() => {});
+      return reply("*❌ No movies found!*");
     }
+
+    pendingSearch[sender] = { results: searchResults, timestamp: Date.now() };
+
+    let text = `╭━━━〔 *SINHALASUB SEARCH* 〕━━━\n`;
+    searchResults.forEach((item, i) => {
+      text += `┃ *${i + 1}️⃣* *${item.title}*\n` +
+              `┃    📌 Lang: ${item.language || 'N/A'}\n` +
+              `┃    📊 Quality: ${item.quality || 'N/A'}\n` +
+              `┃\n`;
+    });
+    text += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *💬 Reply with the movie number (1-${searchResults.length})!*`;
+
+    const sentMsg = await reply(text);
+    await danuwa.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
+
+    // Step 1: Movie Selection Listener
+    const searchListener = async (chatUpdate) => {
+      try {
+        const msg = chatUpdate.messages[0];
+        if (!msg || !msg.message) return;
+        
+        const msgSender = msg.key.remoteJid;
+        const isReplyToBot = msg.message.extendedTextMessage && 
+                           msg.message.extendedTextMessage.contextInfo && 
+                           msg.message.extendedTextMessage.contextInfo.stanzaId === sentMsg.key.id;
+
+        if (msgSender === from && isReplyToBot) {
+          const bodyText = (msg.message.conversation || msg.message.extendedTextMessage.text || "").trim();
+          const index = parseInt(bodyText) - 1;
+
+          if (isNaN(index) || index < 0 || index >= searchResults.length) return;
+
+          danuwa.ev.off("messages.upsert", searchListener);
+          delete pendingSearch[sender];
+
+          await danuwa.sendMessage(from, { react: { text: "⏳", key: msg.key } }).catch(() => {});
+          const selected = searchResults[index];
+          
+          await danuwa.sendMessage(from, { text: `📥 *Fetching metadata for:* *${selected.title}*...` }, { quoted: msg });
+
+          const metadata = await getMovieMetadata(selected.movieUrl);
+          if (!metadata) {
+            return danuwa.sendMessage(from, { text: "❌ *Failed to fetch movie metadata!*" }, { quoted: msg });
+          }
+
+          let msgText = `╭━━━〔 *${metadata.title || selected.title}* 〕━━━\n` +
+                        `┃ 📌 *Language:* ${metadata.language || 'N/A'}\n` +
+                        `┃ ⏱️ *Duration:* ${metadata.duration || 'N/A'}\n` +
+                        `┃ ⭐ *IMDb:* ${metadata.imdb || 'N/A'}\n` +
+                        `┃ 🎭 *Genres:* ${metadata.genres?.join(", ") || 'N/A'}\n` +
+                        `┃ 🎬 *Directors:* ${metadata.directors?.join(", ") || 'N/A'}\n` +
+                        `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                        `*⏳ Fetching Pixeldrain download links (<2GB), please wait...*`;
+
+          let detailsMsg;
+          if (metadata.thumbnail) {
+            detailsMsg = await danuwa.sendMessage(from, { image: { url: metadata.thumbnail }, caption: msgText }, { quoted: msg });
+          } else {
+            detailsMsg = await danuwa.sendMessage(from, { text: msgText }, { quoted: msg });
+          }
+
+          const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
+          if (!downloadLinks.length) {
+            return danuwa.sendMessage(from, { text: "❌ *No download links found under 2GB!*" }, { quoted: msg });
+          }
+
+          pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
+
+          let qualityMsg = `╭━━━〔 *AVAILABLE QUALITIES* 〕━━━\n`;
+          downloadLinks.forEach((d, i) => {
+            qualityMsg += `┃ *${i + 1}️⃣* ${d.quality} (${d.size})\n`;
+          });
+          qualityMsg += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *💬 Reply with quality number to download as document!*`;
+
+          const qualitySentMsg = await danuwa.sendMessage(from, { text: qualityMsg }, { quoted: detailsMsg });
+
+          // Step 2: Quality Selection Listener
+          const qualityListener = async (qualityUpdate) => {
+            try {
+              const qMsg = qualityUpdate.messages[0];
+              if (!qMsg || !qMsg.message) return;
+              
+              const qSender = qMsg.key.remoteJid;
+              const isQReply = qMsg.message.extendedTextMessage && 
+                               qMsg.message.extendedTextMessage.contextInfo && 
+                               qMsg.message.extendedTextMessage.contextInfo.stanzaId === qualitySentMsg.key.id;
+
+              if (qSender === from && isQReply) {
+                const qText = (qMsg.message.conversation || qMsg.message.extendedTextMessage.text || "").trim();
+                const qIndex = parseInt(qText) - 1;
+
+                if (isNaN(qIndex) || qIndex < 0 || qIndex >= downloadLinks.length) return;
+
+                danuwa.ev.off("messages.upsert", qualityListener);
+                delete pendingQuality[sender];
+
+                await danuwa.sendMessage(from, { react: { text: "📥", key: qMsg.key } }).catch(() => {});
+                const selectedLink = downloadLinks[qIndex];
+
+                await danuwa.sendMessage(from, { text: `📥 *Preparing ${selectedLink.quality} video as document... Please wait.*` }, { quoted: qMsg });
+
+                const directUrl = getDirectPixeldrainUrl(selectedLink.link);
+                if (!directUrl) {
+                  return danuwa.sendMessage(from, { text: "❌ *Failed to generate direct Pixeldrain link!*" }, { quoted: qMsg });
+                }
+
+                const safeTitle = (metadata.title || selected.title).replace(/[^\w\s.-]/gi, '').substring(0, 50);
+                await danuwa.sendMessage(from, {
+                  document: { url: directUrl },
+                  mimetype: "video/mp4",
+                  fileName: `${safeTitle} - ${selectedLink.quality}.mp4`,
+                  caption: `╭━━━〔 *DOWNLOAD SUCCESS* 〕━━━\n` +
+                           `┃ 🎬 *Title:* ${metadata.title || selected.title}\n` +
+                           `┃ 📊 *Quality:* ${selectedLink.quality}\n` +
+                           `┃ 📦 *Size:* ${selectedLink.size}\n` +
+                           `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *✨ Enjoy your movie! 🍿*`
+                }, { quoted: qMsg });
+
+                await danuwa.sendMessage(from, { react: { text: "🎉", key: qMsg.key } }).catch(() => {});
+              }
+            } catch (err) {
+              console.error("Quality Listener Error:", err);
+            }
+          };
+
+          danuwa.ev.on("messages.upsert", qualityListener);
+          setTimeout(() => danuwa.ev.off("messages.upsert", qualityListener), 300000); // 5 mins timeout
+        }
+      } catch (err) {
+        console.error("Search Listener Error:", err);
+      }
+    };
+
+    danuwa.ev.on("messages.upsert", searchListener);
+    setTimeout(() => danuwa.ev.off("messages.upsert", searchListener), 300000); // 5 mins timeout
+
+  } catch (error) {
+    console.error('[MOVIE PLUGIN ERROR]:', error);
+    reply("❌ *An error occurred while processing your request. Please try again later.*");
+  }
 });
+
+setInterval(() => {
+  const now = Date.now();
+  const timeout = 10 * 60 * 1000;
+  for (const s in pendingSearch) if (now - pendingSearch[s].timestamp > timeout) delete pendingSearch[s];
+  for (const s in pendingQuality) if (now - pendingQuality[s].timestamp > timeout) delete pendingQuality[s];
+}, 5 * 60 * 1000);
+
+module.exports = { pendingSearch, pendingQuality };
