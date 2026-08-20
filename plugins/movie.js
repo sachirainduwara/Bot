@@ -7,7 +7,7 @@ const pendingQuality = {};
 const SACHIYA_LOGO = "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
 
 function normalizeQuality(text) {
-  if (!text) return null;
+  if (!text) return "HD";
   text = text.toUpperCase();
   if (/1080|FHD/.test(text)) return "1080p";
   if (/720|HD/.test(text)) return "720p";
@@ -113,12 +113,13 @@ async function getPixeldrainLinks(movieUrl) {
     await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     await page.goto(movieUrl, { waitUntil: "networkidle2", timeout: 30000 });
     
-    const linksData = await page.$$eval(".link-pixeldrain tbody tr, .download-links tr", rows =>
+    // Improved selectors to find table rows for download links across different layouts
+    const linksData = await page.$$eval("table tr, .link-pixeldrain tbody tr, .download-links tr", rows =>
       rows.map(row => {
-        const a = row.querySelector(".link-opt a, a");
-        const quality = row.querySelector(".quality, td:nth-child(2)")?.textContent.trim() || "";
-        const size = row.querySelector("td:nth-child(3) span, td:nth-child(3)")?.textContent.trim() || "";
-        return { pageLink: a?.href || "", quality, size };
+        const a = row.querySelector("a[href*='pixeldrain'], .link-opt a, a");
+        const qualityText = row.querySelector(".quality, td:nth-child(2), td:nth-child(1)")?.textContent.trim() || "";
+        const sizeText = row.querySelector("td:nth-child(3) span, td:nth-child(3), td:nth-child(4)")?.textContent.trim() || "";
+        return { pageLink: a?.href || "", quality: qualityText, size: sizeText };
       })
     );
     
@@ -129,22 +130,32 @@ async function getPixeldrainLinks(movieUrl) {
         const subPage = await browser.newPage();
         await subPage.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
         await subPage.goto(l.pageLink, { waitUntil: "networkidle2", timeout: 30000 });
-        await new Promise(r => setTimeout(r, 6000));
+        await new Promise(r => setTimeout(r, 5000));
         
         const finalUrl = await subPage.$eval(".wait-done a[href^='https://pixeldrain.com/'], a[href*='pixeldrain.com/u/']", el => el.href).catch(() => null);
         if (finalUrl) {
-          let sizeMB = 0;
-          const sizeText = (l.size || "").toUpperCase();
-          if (sizeText.includes("GB")) sizeMB = parseFloat(sizeText) * 1024;
-          else if (sizeText.includes("MB")) sizeMB = parseFloat(sizeText);
-          
-          if (sizeMB <= 2048 || sizeMB === 0) {
-            directLinks.push({ link: finalUrl, quality: normalizeQuality(l.quality) || "HD", size: l.size || "Unknown" });
-          }
+          directLinks.push({ 
+            link: finalUrl, 
+            quality: normalizeQuality(l.quality), 
+            size: l.size || "HD Quality" 
+          });
         }
         await subPage.close();
       } catch (e) { continue; }
     }
+    
+    // Fallback search if table scraping missed direct pixeldrain links
+    if (directLinks.length === 0) {
+      const allPixeldrainLinks = await page.$$eval("a[href*='pixeldrain.com/u/']", anchors => 
+        anchors.map(a => a.href)
+      );
+      for (const url of allPixeldrainLinks) {
+        if (!directLinks.some(d => d.link === url)) {
+          directLinks.push({ link: url, quality: "HD", size: "Unknown Size" });
+        }
+      }
+    }
+
     await browser.close();
     return directLinks;
   } catch (error) {
@@ -188,7 +199,6 @@ cmd({
     });
     text += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *💬 Please reply with the movie number (1-${searchResults.length})!*`;
 
-    // Send search result with SACHIYA MD Logo image and nice caption
     const sentMsg = await danuwa.sendMessage(from, { 
       image: { url: SACHIYA_LOGO }, 
       caption: text 
@@ -196,7 +206,6 @@ cmd({
 
     await danuwa.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
 
-    // Step 1: Movie Selection Listener
     const searchListener = async (chatUpdate) => {
       try {
         const msg = chatUpdate.messages[0];
@@ -233,7 +242,7 @@ cmd({
                         `┃ 🎭 *Genres:* ${metadata.genres?.join(", ") || 'N/A'}\n` +
                         `┃ 🎬 *Directors:* ${metadata.directors?.join(", ") || 'N/A'}\n` +
                         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                        `*⏳ Fetching Pixeldrain download links (<2GB), please wait...*`;
+                        `*⏳ Fetching Pixeldrain download links, please wait...*`;
 
           let detailsMsg;
           const posterToUse = metadata.thumbnail || selected.thumb || SACHIYA_LOGO;
@@ -241,7 +250,7 @@ cmd({
 
           const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
           if (!downloadLinks.length) {
-            return danuwa.sendMessage(from, { text: "❌ *No download links found under 2GB!*" }, { quoted: msg });
+            return danuwa.sendMessage(from, { text: "❌ *No download links found for this movie!*" }, { quoted: msg });
           }
 
           pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
@@ -250,13 +259,12 @@ cmd({
                            `┃ 🎬 *${metadata.title || selected.title}*\n` +
                            `┣━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
           downloadLinks.forEach((d, i) => {
-            qualityMsg += `┃ *${i + 1}️⃣* ${d.quality} 📦 (${d.size})\n`;
+            qualityMsg += `┃ *${i + 1}️⃣* Quality: ${d.quality} 📦 (${d.size})\n`;
           });
           qualityMsg += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *💬 Reply with the quality number to download as document!*`;
 
           const qualitySentMsg = await danuwa.sendMessage(from, { text: qualityMsg }, { quoted: detailsMsg });
 
-          // Step 2: Quality Selection Listener
           const qualityListener = async (qualityUpdate) => {
             try {
               const qMsg = qualityUpdate.messages[0];
