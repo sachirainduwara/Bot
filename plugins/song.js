@@ -4,6 +4,8 @@ const yts = require('yt-search');
 
 const AXIOS_DEFAULTS = {
     timeout: 60000,
+    maxRedirects: 10,
+    validateStatus: s => s >= 200 && s < 400,
     headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/plain, */*'
@@ -25,7 +27,7 @@ async function tryRequest(getter, attempts = 3) {
     throw lastError;
 }
 
-// APIs
+// APIs with 302 Redirect & Status Handling
 async function getEliteProTechDownloadByUrl(youtubeUrl) {
     const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp3`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
@@ -103,6 +105,8 @@ cmd({
                 const audioResponse = await axios.get(audioUrl, { 
                     responseType: 'arraybuffer', 
                     timeout: 90000,
+                    maxRedirects: 10,
+                    validateStatus: s => s >= 200 && s < 400,
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                         'Accept': '*/*'
@@ -115,6 +119,7 @@ cmd({
                     break; 
                 }
             } catch (e) { 
+                console.log(`[${apiMethod.name} Error]:`, e.message);
                 continue; 
             }
         }
@@ -133,7 +138,7 @@ cmd({
                             `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                             `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-        // Send Audio correctly with proper mimetype
+        // Send Audio correctly
         await sachiya.sendMessage(from, {
             audio: audioBuffer,
             mimetype: 'audio/mp4',
