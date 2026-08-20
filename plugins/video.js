@@ -150,7 +150,7 @@ cmd({
                         `┃\n` +
                         `┣━━━〔 *CONFIRM DOWNLOAD* 〕━━━\n` +
                         `┃\n` +
-                        `┃ 1️⃣ *Confirm (Download)*\n` +
+                        `┃ 1️⃣ *Conform (Download)*\n` +
                         `┃ 2️⃣ *Cancel (Abort)*\n` +
                         `┃\n` +
                         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
@@ -246,7 +246,7 @@ cmd({
                     }, { quoted: msg });
 
                     // Success Reaction
-                    await sachiya.sendMessage(from, { react: { text: "🎉", key: msg.key } }).catch(() => {});
+                    await sachiya.sendMessage(from, { react: { text: "✅", key: msg.key } }).catch(() => {});
                 }
             } catch (err) {
                 console.log("Listener Error:", err);
