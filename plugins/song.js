@@ -86,7 +86,7 @@ cmd({
         const descMsg = `╭━━━〔 *SACHIYA-MD SONG* 〕━━━\n` +
                         `┃\n` +
                         `┃ 🎵 *Title:* ${video.title}\n` +
-                        `┃ ⏱️ *Duration:* `${video.timestamp}\n` +
+                        `┃ ⏱️ *Duration:* ${video.timestamp}\n` +
                         `┃ 👤 *Channel:* ${video.author?.name || 'N/A'}\n` +
                         `┃ 📥 *Status:* Downloading Audio... ⏳\n` +
                         `┃\n` +
@@ -120,7 +120,7 @@ cmd({
                 });
 
                 audioBuffer = Buffer.from(res.data);
-                if (audioBuffer && audioBuffer.length > 20000) { // Ensure buffer is complete and valid
+                if (audioBuffer && audioBuffer.length > 20000) {
                     downloadSuccess = true;
                     break;
                 }
@@ -135,7 +135,7 @@ cmd({
 
         const cleanTitle = (audioData?.title || video.title || 'song').replace(/[^\w\s-]/gi, '');
 
-        // Send ONLY ONE clean Audio message formatted properly for both Android and iOS
+        // Send Audio cleanly for both Android & iOS
         await sachiya.sendMessage(from, {
             audio: audioBuffer,
             mimetype: 'audio/mpeg',
