@@ -1,9 +1,7 @@
 const { cmd } = require('../command');
 const axios = require('axios');
 const yts = require('yt-search');
-const fs = require('fs');
-const path = require('path');
-const { exec } = require('child_process');
+const { toAudio } = require('../lib/converter');
 
 const AXIOS_DEFAULTS = {
     timeout: 60000,
@@ -28,61 +26,34 @@ async function tryRequest(getter, attempts = 3) {
     throw lastError;
 }
 
-// Built-in audio converter using ffmpeg to avoid external missing module errors
-function toAudio(buffer, ext) {
-    return new Promise((resolve, reject) => {
-        const tmpDir = path.join(__dirname, '../temp');
-        if (!fs.existsSync(tmpDir)) {
-            fs.mkdirSync(tmpDir, { recursive: true });
-        }
-        const inputPath = path.join(tmpDir, `${Date.now()}.${ext}`);
-        const outputPath = path.join(tmpDir, `${Date.now()}.mp3`);
-        
-        fs.writeFileSync(inputPath, buffer);
-        
-        exec(`ffmpeg -i "${inputPath}" -vn -ab 128k -ar 44100 -f mp3 "${outputPath}"`, async (err) => {
-            try { if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath); } catch (e) {}
-            if (err) {
-                try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (e) {}
-                return reject(err);
-            }
-            try {
-                const convertedBuffer = fs.readFileSync(outputPath);
-                if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-                resolve(convertedBuffer);
-            } catch (readErr) {
-                reject(readErr);
-            }
-        });
-    });
-}
-
-// APIs
+// EliteProTech API - Primary
 async function getEliteProTechDownloadByUrl(youtubeUrl) {
     const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp3`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     if (res?.data?.success && res?.data?.downloadURL) {
         return { download: res.data.downloadURL, title: res.data.title };
     }
-    throw new Error('EliteProTech failed');
+    throw new Error('EliteProTech ytdown returned no download');
 }
 
+// Yupra API - Secondary
 async function getYupraDownloadByUrl(youtubeUrl) {
     const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     if (res?.data?.success && res?.data?.data?.download_url) {
         return { download: res.data.data.download_url, title: res.data.data.title, thumbnail: res.data.data.thumbnail };
     }
-    throw new Error('Yupra failed');
+    throw new Error('Yupra returned no download');
 }
 
+// Okatsu API - Tertiary
 async function getOkatsuDownloadByUrl(youtubeUrl) {
     const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     if (res?.data?.dl) {
         return { download: res.data.dl, title: res.data.title, thumbnail: res.data.thumb };
     }
-    throw new Error('Okatsu failed');
+    throw new Error('Okatsu ytmp3 returned no download');
 }
 
 cmd({
@@ -131,9 +102,18 @@ cmd({
                 audioData = await apiMethod.method();
                 const audioUrl = audioData.download || audioData.dl || audioData.url;
                 if (!audioUrl) continue;
-                const audioResponse = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 90000 });
+                
+                const audioResponse = await axios.get(audioUrl, { 
+                    responseType: 'arraybuffer', 
+                    timeout: 90000,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': '*/*'
+                    }
+                });
+                
                 audioBuffer = Buffer.from(audioResponse.data);
-                if (audioBuffer.length > 0) { 
+                if (audioBuffer && audioBuffer.length > 5000) { 
                     downloadSuccess = true; 
                     break; 
                 }
@@ -146,25 +126,25 @@ cmd({
             throw new Error("All download sources failed.");
         }
 
-        // Convert buffer to standard MP3
+        // Convert buffer to standard playable MP3 using converter lib
         let finalBuffer;
         try {
             finalBuffer = await toAudio(audioBuffer, 'mp4');
         } catch (convErr) {
-            finalBuffer = audioBuffer; // fallback to raw buffer if conversion fails
+            finalBuffer = audioBuffer; // Fallback to raw if ffmpeg fails
         }
 
-        const cleanFileName = `${(video.title || 'song').replace(/[^\w\s-]/gi, '')}.mp3`;
+        const cleanFileName = `${(audioData?.title || video.title || 'song').replace(/[^\w\s-]/gi, '')}.mp3`;
 
         const captionText = `╭━━━〔 *SACHIYA-MD AUDIO* 〕━━━\n` +
                             `┃\n` +
-                            `┃ 🎵 *Title:* ${video.title}\n` +
+                            `┃ 🎵 *Title:* ${audioData?.title || video.title}\n` +
                             `┃ 📥 *Status:* Downloaded Successfully! ✅\n` +
                             `┃\n` +
                             `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                             `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-        // Send Audio
+        // Send Audio correctly as MP3
         await sachiya.sendMessage(from, {
             audio: finalBuffer,
             mimetype: 'audio/mpeg',
