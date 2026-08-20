@@ -25,9 +25,9 @@ async function tryRequest(getter, attempts = 3) {
     throw lastError;
 }
 
-// EliteProTech API - Primary
-async function getEliteProTechVideoByUrl(youtubeUrl) {
-    const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp4`;
+// EliteProTech API - Primary (Updated to accept quality if needed or fallback)
+async function getEliteProTechVideoByUrl(youtubeUrl, quality = '720') {
+    const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp4&quality=${quality}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     if (res?.data?.success && res?.data?.downloadURL) {
         return {
@@ -39,8 +39,8 @@ async function getEliteProTechVideoByUrl(youtubeUrl) {
 }
 
 // Yupra API - Secondary
-async function getYupraVideoByUrl(youtubeUrl) {
-    const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`;
+async function getYupraVideoByUrl(youtubeUrl, quality = '720') {
+    const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}&quality=${quality}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     if (res?.data?.success && res?.data?.data?.download_url) {
         return {
@@ -81,6 +81,7 @@ cmd({
         let videoDuration = '';
         let videoViews = '';
         let videoAuthor = '';
+        let videoSeconds = 0;
 
         if (q.startsWith('http://') || q.startsWith('https://')) {
             videoUrl = q;
@@ -97,6 +98,7 @@ cmd({
             videoDuration = firstVideo.timestamp;
             videoViews = firstVideo.views;
             videoAuthor = firstVideo.author?.name;
+            videoSeconds = firstVideo.seconds;
         }
 
         if (!videoTitle) {
@@ -108,13 +110,20 @@ cmd({
                 videoDuration = firstVideo.timestamp;
                 videoViews = firstVideo.views;
                 videoAuthor = firstVideo.author?.name;
+                videoSeconds = firstVideo.seconds;
             }
+        }
+
+        // ⏱️ Check if video duration is less than 6 hours (6 * 3600 = 21600 seconds)
+        if (videoSeconds > 21600) {
+            await sachiya.sendMessage(from, { react: { text: "⚠️", key: mek.key } }).catch(() => {});
+            return reply(`❌ *Video is too long!* \n\n⏱ *Duration:* ${videoDuration}\n⚠️ *Please select a video shorter than 6 hours (Max 6 hours allowed).*`);
         }
 
         const ytId = (videoUrl.match(/(?:youtu\.be\/|v=)([a-zA-Z0-9_-]{11})/) || [])[1];
         const thumb = videoThumbnail || (ytId ? `https://i.ytimg.com/vi/${ytId}/sddefault.jpg` : '');
 
-        // Detail Card Message with Thumbnail
+        // Detail Card Message with Quality Options
         const descMsg = `╭━━━〔 *SACHIYA-MD VIDEO* 〕━━━\n` +
                         `┃\n` +
                         `┃ 📝 *Title:* ${videoTitle || q}\n` +
@@ -123,67 +132,124 @@ cmd({
                         `┃ 👁️ *Views:* ${videoViews ? videoViews.toLocaleString() : 'N/A'}\n` +
                         `┃ 🔗 *Url:* ${videoUrl}\n` +
                         `┃\n` +
+                        `┣━━━〔 *SELECT QUALITY* 〕━━━\n` +
+                        `┃\n` +
+                        `┃ 1️⃣ *1080p (HD)*\n` +
+                        `┃ 2️⃣ *720p (Normal)*\n` +
+                        `┃ 3️⃣ *360p (Low Data)*\n` +
+                        `┃\n` +
                         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                        `> ⏳ *Downloading video, please wait...* 🎬`;
+                        `> 💬 *Please reply with the number (1, 2, or 3) to download your video!*\n` +
+                        `> *⚡ Powered by SACHIYA-MD 💫*`;
 
+        let sentMsg;
         if (thumb) {
-            await sachiya.sendMessage(from, {
+            sentMsg = await sachiya.sendMessage(from, {
                 image: { url: thumb },
                 caption: descMsg
             }, { quoted: mek });
         } else {
-            await reply(descMsg);
+            sentMsg = await reply(descMsg);
         }
 
-        // Try API methods in order (EliteProTech -> Yupra -> Okatsu)
-        let videoData;
-        let downloadSuccess = false;
-
-        const apiMethods = [
-            { name: 'EliteProTech', method: () => getEliteProTechVideoByUrl(videoUrl) },
-            { name: 'Yupra', method: () => getYupraVideoByUrl(videoUrl) },
-            { name: 'Okatsu', method: () => getOkatsuVideoByUrl(videoUrl) }
-        ];
-
-        for (const apiMethod of apiMethods) {
-            try {
-                videoData = await apiMethod.method();
-                const downloadLink = videoData?.download || videoData?.dl || videoData?.url;
-                if (downloadLink) {
-                    downloadSuccess = true;
-                    break;
-                }
-            } catch (apiErr) {
-                console.log(`[VIDEO API] ${apiMethod.name} failed:`, apiErr.message || apiErr);
-            }
-        }
-
-        if (!downloadSuccess || !videoData) {
-            throw new Error('All download sources failed. Content may be blocked or unavailable.');
-        }
-
-        const downloadUrl = videoData.download || videoData.dl || videoData.url;
-        const finalTitle = videoData.title || videoTitle || 'YouTube_Video';
-        const cleanFileName = `${finalTitle.replace(/[^\w\s-]/gi, '')}.mp4`;
-
-        const captionText = `╭━━━〔 *SACHIYA-MD DOWNLOADED* 〕━━━\n` +
-                            `┃\n` +
-                            `┃ 🎬 *Title:* ${finalTitle}\n` +
-                            `┃ 📥 *Status:* Downloaded Successfully! ✅\n` +
-                            `┃\n` +
-                            `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                            `> *⚡ Powered by SACHIYA-MD 💫*`;
-
-        // Send video directly
-        await sachiya.sendMessage(from, {
-            video: { url: downloadUrl },
-            mimetype: 'video/mp4',
-            fileName: cleanFileName,
-            caption: captionText
-        }, { quoted: mek });
-
-        // Success Reaction
         await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
+
+        // 🎛️ Listen for user's quality choice response
+        const messageListener = async (chatUpdate) => {
+            try {
+                const msg = chatUpdate.messages[0];
+                if (!msg || !msg.message) return;
+                
+                const msgSender = msg.key.remoteJid;
+                const isReplyToBot = msg.message.extendedTextMessage && 
+                                   msg.message.extendedTextMessage.contextInfo && 
+                                   msg.message.extendedTextMessage.contextInfo.stanzaId === sentMsg.key.id;
+
+                if (msgSender === from && isReplyToBot) {
+                    const choiceText = (msg.message.conversation || msg.message.extendedTextMessage.text || "").trim();
+                    
+                    let selectedQuality = "720";
+                    let qualityName = "720p";
+
+                    if (choiceText === "1") {
+                        selectedQuality = "1080";
+                        qualityName = "1080p";
+                    } else if (choiceText === "2") {
+                        selectedQuality = "720";
+                        qualityName = "720p";
+                    } else if (choiceText === "3") {
+                        selectedQuality = "360";
+                        qualityName = "360p";
+                    } else {
+                        return; // Ignore if other text
+                    }
+
+                    // Remove listener once chosen
+                    sachiya.ev.off("messages.upsert", messageListener);
+
+                    await sachiya.sendMessage(from, { react: { text: "📥", key: msg.key } }).catch(() => {});
+
+                    // Try API methods in order with selected quality
+                    let videoData;
+                    let downloadSuccess = false;
+
+                    const apiMethods = [
+                        { name: 'EliteProTech', method: () => getEliteProTechVideoByUrl(videoUrl, selectedQuality) },
+                        { name: 'Yupra', method: () => getYupraVideoByUrl(videoUrl, selectedQuality) },
+                        { name: 'Okatsu', method: () => getOkatsuVideoByUrl(videoUrl) }
+                    ];
+
+                    for (const apiMethod of apiMethods) {
+                        try {
+                            videoData = await apiMethod.method();
+                            const downloadLink = videoData?.download || videoData?.dl || videoData?.url;
+                            if (downloadLink) {
+                                downloadSuccess = true;
+                                break;
+                            }
+                        } catch (apiErr) {
+                            console.log(`[VIDEO API] ${apiMethod.name} failed:`, apiErr.message || apiErr);
+                        }
+                    }
+
+                    if (!downloadSuccess || !videoData) {
+                        await sachiya.sendMessage(from, { react: { text: "❌", key: msg.key } }).catch(() => {});
+                        return sachiya.sendMessage(from, { text: `❌ *Failed to fetch ${qualityName} download link! Please try again later.*` }, { quoted: msg });
+                    }
+
+                    const downloadUrl = videoData.download || videoData.dl || videoData.url;
+                    const finalTitle = videoData.title || videoTitle || 'YouTube_Video';
+                    const cleanFileName = `${finalTitle.replace(/[^\w\s-]/gi, '')}_${qualityName}.mp4`;
+
+                    const captionText = `╭━━━〔 *SACHIYA-MD DOWNLOADED* 〕━━━\n` +
+                                        `┃\n` +
+                                        `┃ 🎬 *Title:* ${finalTitle}\n` +
+                                        `┃ 📥 *Status:* ${qualityName} download success! ✅\n` +
+                                        `┃\n` +
+                                        `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                                        `> *⚡ Powered by SACHIYA-MD 💫*`;
+
+                    // Send video directly
+                    await sachiya.sendMessage(from, {
+                        video: { url: downloadUrl },
+                        mimetype: 'video/mp4',
+                        fileName: cleanFileName,
+                        caption: captionText
+                    }, { quoted: msg });
+
+                    // Success Reaction
+                    await sachiya.sendMessage(from, { react: { text: "🎉", key: msg.key } }).catch(() => {});
+                }
+            } catch (err) {
+                console.log("Listener Error:", err);
+            }
+        };
+
+        // Register listener with 2 minutes timeout
+        sachiya.ev.on("messages.upsert", messageListener);
+        setTimeout(() => {
+            sachiya.ev.off("messages.upsert", messageListener);
+        }, 120000);
 
     } catch (error) {
         console.error('[VIDEO PLUGIN ERROR]:', error?.message || error);
