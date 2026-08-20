@@ -27,43 +27,32 @@ async function tryRequest(getter, attempts = 3) {
     throw lastError;
 }
 
-// 1. Dark Yasiya / Ytdl Working Direct API
+// APIs
 async function getDarkYasiyaDl(youtubeUrl) {
     const apiUrl = `https://api.dark-yasiya.api.sri-server.com/download/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     if (res?.data?.status && res?.data?.result?.dl_link) {
-        return {
-            download: res.data.result.dl_link,
-            title: res.data.result.title
-        };
+        return { download: res.data.result.dl_link, title: res.data.result.title };
     }
-    throw new Error('DarkYasiya API failed');
+    throw new Error('DarkYasiya failed');
 }
 
-// 2. EliteProTech API
 async function getEliteProTechDl(youtubeUrl) {
     const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp3`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     if (res?.data?.success && res?.data?.downloadURL) {
-        return {
-            download: res.data.downloadURL,
-            title: res.data.title
-        };
+        return { download: res.data.downloadURL, title: res.data.title };
     }
-    throw new Error('EliteProTech API failed');
+    throw new Error('EliteProTech failed');
 }
 
-// 3. Okatsu API
 async function getOkatsuDl(youtubeUrl) {
     const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     if (res?.data?.dl) {
-        return {
-            download: res.data.dl,
-            title: res.data.title
-        };
+        return { download: res.data.dl, title: res.data.title };
     }
-    throw new Error('Okatsu API failed');
+    throw new Error('Okatsu failed');
 }
 
 cmd({
@@ -97,7 +86,7 @@ cmd({
         const descMsg = `╭━━━〔 *SACHIYA-MD SONG* 〕━━━\n` +
                         `┃\n` +
                         `┃ 🎵 *Title:* ${video.title}\n` +
-                        `┃ ⏱️ *Duration:* ${video.timestamp}\n` +
+                        `┃ ⏱️ *Duration:* `${video.timestamp}\n` +
                         `┃ 👤 *Channel:* ${video.author?.name || 'N/A'}\n` +
                         `┃ 📥 *Status:* Downloading Audio... ⏳\n` +
                         `┃\n` +
@@ -113,11 +102,7 @@ cmd({
         let audioBuffer;
         let downloadSuccess = false;
 
-        const apiList = [
-            getDarkYasiyaDl,
-            getEliteProTechDl,
-            getOkatsuDl
-        ];
+        const apiList = [getDarkYasiyaDl, getEliteProTechDl, getOkatsuDl];
 
         for (const getDl of apiList) {
             try {
@@ -125,7 +110,6 @@ cmd({
                 const dlUrl = audioData.download;
                 if (!dlUrl) continue;
 
-                // Download Stream as Buffer
                 const res = await axios.get(dlUrl, {
                     responseType: 'arraybuffer',
                     timeout: 90000,
@@ -136,12 +120,11 @@ cmd({
                 });
 
                 audioBuffer = Buffer.from(res.data);
-                if (audioBuffer && audioBuffer.length > 10000) {
+                if (audioBuffer && audioBuffer.length > 20000) { // Ensure buffer is complete and valid
                     downloadSuccess = true;
                     break;
                 }
             } catch (err) {
-                console.log("[SONG DL ERROR]:", err.message);
                 continue;
             }
         }
@@ -152,22 +135,15 @@ cmd({
 
         const cleanTitle = (audioData?.title || video.title || 'song').replace(/[^\w\s-]/gi, '');
 
-        // 1. Send as Playable WhatsApp Audio (WITHOUT CAPTION - Crucial for WhatsApp Audio Player)
+        // Send ONLY ONE clean Audio message formatted properly for both Android and iOS
         await sachiya.sendMessage(from, {
             audio: audioBuffer,
             mimetype: 'audio/mpeg',
+            fileName: `${cleanTitle}.mp3`,
             ptt: false
         }, { quoted: mek });
 
-        // 2. Send as Document (MP3 File) as Backup so user can download directly
-        await sachiya.sendMessage(from, {
-            document: audioBuffer,
-            mimetype: 'audio/mpeg',
-            fileName: `${cleanTitle}.mp3`,
-            caption: `🎵 *${cleanTitle}*\n\n> *⚡ Powered by SACHIYA-MD 💫*`
-        }, { quoted: mek });
-
-        // React Success
+        // Success Reaction
         await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
 
     } catch (err) {
