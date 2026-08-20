@@ -8,7 +8,7 @@ const AXIOS_DEFAULTS = {
     validateStatus: s => s >= 200 && s < 400,
     headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*'
+        'Accept': '*/*'
     }
 };
 
@@ -27,8 +27,21 @@ async function tryRequest(getter, attempts = 3) {
     throw lastError;
 }
 
-// EliteProTech API - Primary
-async function getEliteProTechDownloadByUrl(youtubeUrl) {
+// 1. Dark Yasiya / Ytdl Working Direct API
+async function getDarkYasiyaDl(youtubeUrl) {
+    const apiUrl = `https://api.dark-yasiya.api.sri-server.com/download/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
+    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    if (res?.data?.status && res?.data?.result?.dl_link) {
+        return {
+            download: res.data.result.dl_link,
+            title: res.data.result.title
+        };
+    }
+    throw new Error('DarkYasiya API failed');
+}
+
+// 2. EliteProTech API
+async function getEliteProTechDl(youtubeUrl) {
     const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp3`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     if (res?.data?.success && res?.data?.downloadURL) {
@@ -37,35 +50,20 @@ async function getEliteProTechDownloadByUrl(youtubeUrl) {
             title: res.data.title
         };
     }
-    throw new Error('EliteProTech ytdown returned no download');
+    throw new Error('EliteProTech API failed');
 }
 
-// Yupra API - Secondary
-async function getYupraDownloadByUrl(youtubeUrl) {
-    const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-    if (res?.data?.success && res?.data?.data?.download_url) {
-        return {
-            download: res.data.data.download_url,
-            title: res.data.data.title,
-            thumbnail: res.data.data.thumbnail
-        };
-    }
-    throw new Error('Yupra returned no download');
-}
-
-// Okatsu API - Tertiary
-async function getOkatsuDownloadByUrl(youtubeUrl) {
+// 3. Okatsu API
+async function getOkatsuDl(youtubeUrl) {
     const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     if (res?.data?.dl) {
         return {
             download: res.data.dl,
-            title: res.data.title,
-            thumbnail: res.data.thumb
+            title: res.data.title
         };
     }
-    throw new Error('Okatsu ytmp3 returned no download');
+    throw new Error('Okatsu API failed');
 }
 
 cmd({
@@ -95,13 +93,13 @@ cmd({
             video = search.videos[0];
         }
 
-        // Inform user with thumbnail & details card
+        // Send Card Info First
         const descMsg = `╭━━━〔 *SACHIYA-MD SONG* 〕━━━\n` +
                         `┃\n` +
                         `┃ 🎵 *Title:* ${video.title}\n` +
                         `┃ ⏱️ *Duration:* ${video.timestamp}\n` +
                         `┃ 👤 *Channel:* ${video.author?.name || 'N/A'}\n` +
-                        `┃ 📥 *Status:* Downloading audio... ⏳\n` +
+                        `┃ 📥 *Status:* Downloading Audio... ⏳\n` +
                         `┃\n` +
                         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                         `> *⚡ Powered by SACHIYA-MD 💫*`;
@@ -115,70 +113,65 @@ cmd({
         let audioBuffer;
         let downloadSuccess = false;
 
-        const apiMethods = [
-            { name: 'EliteProTech', method: () => getEliteProTechDownloadByUrl(video.url) },
-            { name: 'Yupra', method: () => getYupraDownloadByUrl(video.url) },
-            { name: 'Okatsu', method: () => getOkatsuDownloadByUrl(video.url) }
+        const apiList = [
+            getDarkYasiyaDl,
+            getEliteProTechDl,
+            getOkatsuDl
         ];
 
-        for (const apiMethod of apiMethods) {
+        for (const getDl of apiList) {
             try {
-                audioData = await apiMethod.method();
-                const audioUrl = audioData.download || audioData.dl || audioData.url;
-                
-                if (!audioUrl) continue;
+                audioData = await getDl(video.url);
+                const dlUrl = audioData.download;
+                if (!dlUrl) continue;
 
-                const audioResponse = await axios.get(audioUrl, {
+                // Download Stream as Buffer
+                const res = await axios.get(dlUrl, {
                     responseType: 'arraybuffer',
                     timeout: 90000,
-                    maxRedirects: 10,
-                    validateStatus: s => s >= 200 && s < 400,
                     headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
                         'Accept': '*/*'
                     }
                 });
 
-                audioBuffer = Buffer.from(audioResponse.data);
-                if (audioBuffer && audioBuffer.length > 5000) {
+                audioBuffer = Buffer.from(res.data);
+                if (audioBuffer && audioBuffer.length > 10000) {
                     downloadSuccess = true;
                     break;
                 }
-            } catch (apiErr) {
-                console.log(`[SONG API] ${apiMethod.name} failed:`, apiErr.message);
+            } catch (err) {
+                console.log("[SONG DL ERROR]:", err.message);
                 continue;
             }
         }
 
         if (!downloadSuccess || !audioBuffer) {
-            throw new Error('All download sources failed.');
+            return reply("❌ *Failed to fetch song from servers. Please try again!*");
         }
 
-        const finalTitle = audioData?.title || video.title || 'song';
-        const cleanFileName = `${finalTitle.replace(/[^\w\s-]/gi, '')}.m4a`;
+        const cleanTitle = (audioData?.title || video.title || 'song').replace(/[^\w\s-]/gi, '');
 
-        const captionText = `╭━━━〔 *SACHIYA-MD AUDIO* 〕━━━\n` +
-                            `┃\n` +
-                            `┃ 🎵 *Title:* ${finalTitle}\n` +
-                            `┃ 📥 *Status:* Downloaded Successfully! ✅\n` +
-                            `┃\n` +
-                            `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                            `> *⚡ Powered by SACHIYA-MD 💫*`;
-
-        // Send Audio directly as buffer with audio/mp4 (Universal playable format for WhatsApp)
+        // 1. Send as Playable WhatsApp Audio (WITHOUT CAPTION - Crucial for WhatsApp Audio Player)
         await sachiya.sendMessage(from, {
             audio: audioBuffer,
-            mimetype: 'audio/mp4',
-            fileName: cleanFileName,
-            caption: captionText,
+            mimetype: 'audio/mpeg',
             ptt: false
         }, { quoted: mek });
 
-        // Success Reaction
+        // 2. Send as Document (MP3 File) as Backup so user can download directly
+        await sachiya.sendMessage(from, {
+            document: audioBuffer,
+            mimetype: 'audio/mpeg',
+            fileName: `${cleanTitle}.mp3`,
+            caption: `🎵 *${cleanTitle}*\n\n> *⚡ Powered by SACHIYA-MD 💫*`
+        }, { quoted: mek });
+
+        // React Success
         await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
 
     } catch (err) {
-        console.error('[SONG PLUGIN ERROR]:', err?.message || err);
-        reply("❌ *Failed to download the song. Please try again later!*");
+        console.error('[SONG COMMAND ERROR]:', err);
+        reply("❌ *An error occurred while processing your request!*");
     }
 });
