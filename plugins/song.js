@@ -112,8 +112,8 @@ cmd({
         }, { quoted: mek });
 
         let audioData;
+        let audioBuffer;
         let downloadSuccess = false;
-        let downloadUrl = '';
 
         const apiMethods = [
             { name: 'EliteProTech', method: () => getEliteProTechDownloadByUrl(video.url) },
@@ -124,9 +124,23 @@ cmd({
         for (const apiMethod of apiMethods) {
             try {
                 audioData = await apiMethod.method();
-                downloadUrl = audioData.download || audioData.dl || audioData.url;
+                const audioUrl = audioData.download || audioData.dl || audioData.url;
                 
-                if (downloadUrl) {
+                if (!audioUrl) continue;
+
+                const audioResponse = await axios.get(audioUrl, {
+                    responseType: 'arraybuffer',
+                    timeout: 90000,
+                    maxRedirects: 10,
+                    validateStatus: s => s >= 200 && s < 400,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': '*/*'
+                    }
+                });
+
+                audioBuffer = Buffer.from(audioResponse.data);
+                if (audioBuffer && audioBuffer.length > 5000) {
                     downloadSuccess = true;
                     break;
                 }
@@ -136,12 +150,12 @@ cmd({
             }
         }
 
-        if (!downloadSuccess || !downloadUrl) {
+        if (!downloadSuccess || !audioBuffer) {
             throw new Error('All download sources failed.');
         }
 
         const finalTitle = audioData?.title || video.title || 'song';
-        const cleanFileName = `${finalTitle.replace(/[^\w\s-]/gi, '')}.mp3`;
+        const cleanFileName = `${finalTitle.replace(/[^\w\s-]/gi, '')}.m4a`;
 
         const captionText = `╭━━━〔 *SACHIYA-MD AUDIO* 〕━━━\n` +
                             `┃\n` +
@@ -151,10 +165,10 @@ cmd({
                             `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                             `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-        // Send Audio via Direct URL to prevent "audio no longer available" bug
+        // Send Audio as Buffer with audio/mp4 to guarantee 100% playability in WhatsApp
         await sachiya.sendMessage(from, {
-            audio: { url: downloadUrl },
-            mimetype: 'audio/mpeg',
+            audio: audioBuffer,
+            mimetype: 'audio/mp4',
             fileName: cleanFileName,
             caption: captionText,
             ptt: false
