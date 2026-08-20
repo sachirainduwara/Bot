@@ -112,8 +112,8 @@ cmd({
         }, { quoted: mek });
 
         let audioData;
-        let audioBuffer;
         let downloadSuccess = false;
+        let downloadUrl = '';
 
         const apiMethods = [
             { name: 'EliteProTech', method: () => getEliteProTechDownloadByUrl(video.url) },
@@ -124,23 +124,9 @@ cmd({
         for (const apiMethod of apiMethods) {
             try {
                 audioData = await apiMethod.method();
-                const audioUrl = audioData.download || audioData.dl || audioData.url;
+                downloadUrl = audioData.download || audioData.dl || audioData.url;
                 
-                if (!audioUrl) continue;
-
-                const audioResponse = await axios.get(audioUrl, {
-                    responseType: 'arraybuffer',
-                    timeout: 90000,
-                    maxRedirects: 10,
-                    validateStatus: s => s >= 200 && s < 400,
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': '*/*'
-                    }
-                });
-
-                audioBuffer = Buffer.from(audioResponse.data);
-                if (audioBuffer && audioBuffer.length > 10000) {
+                if (downloadUrl) {
                     downloadSuccess = true;
                     break;
                 }
@@ -150,22 +136,12 @@ cmd({
             }
         }
 
-        if (!downloadSuccess || !audioBuffer) {
+        if (!downloadSuccess || !downloadUrl) {
             throw new Error('All download sources failed.');
         }
 
-        // Detect Mimetype cleanly without external converters
-        let actualMimetype = 'audio/mp4';
-        let fileExtension = 'm4a';
-
-        const firstBytes = audioBuffer.slice(0, 4).toString('ascii');
-        if (firstBytes.includes('ID3') || (audioBuffer[0] === 0xFF && (audioBuffer[1] & 0xE0) === 0xE0)) {
-            actualMimetype = 'audio/mpeg';
-            fileExtension = 'mp3';
-        }
-
         const finalTitle = audioData?.title || video.title || 'song';
-        const cleanFileName = `${finalTitle.replace(/[^\w\s-]/gi, '')}.${fileExtension}`;
+        const cleanFileName = `${finalTitle.replace(/[^\w\s-]/gi, '')}.mp3`;
 
         const captionText = `╭━━━〔 *SACHIYA-MD AUDIO* 〕━━━\n` +
                             `┃\n` +
@@ -175,10 +151,10 @@ cmd({
                             `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                             `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-        // Send Audio directly to chat
+        // Send Audio via Direct URL to prevent "audio no longer available" bug
         await sachiya.sendMessage(from, {
-            audio: audioBuffer,
-            mimetype: actualMimetype,
+            audio: { url: downloadUrl },
+            mimetype: 'audio/mpeg',
             fileName: cleanFileName,
             caption: captionText,
             ptt: false
