@@ -113,53 +113,47 @@ async function getPixeldrainLinks(movieUrl) {
     await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     await page.goto(movieUrl, { waitUntil: "networkidle2", timeout: 30000 });
     
-    // Improved selectors to find table rows for download links across different layouts
-    const linksData = await page.$$eval("table tr, .link-pixeldrain tbody tr, .download-links tr", rows =>
-      rows.map(row => {
-        const a = row.querySelector("a[href*='pixeldrain'], .link-opt a, a");
-        const qualityText = row.querySelector(".quality, td:nth-child(2), td:nth-child(1)")?.textContent.trim() || "";
-        const sizeText = row.querySelector("td:nth-child(3) span, td:nth-child(3), td:nth-child(4)")?.textContent.trim() || "";
-        return { pageLink: a?.href || "", quality: qualityText, size: sizeText };
-      })
-    );
-    
+    // Extract all anchor links directly from the page content
+    const allLinks = await page.$$eval("a", anchors => anchors.map(a => ({
+      href: a.href || "",
+      text: a.textContent || "",
+      parentText: a.parentElement ? a.parentElement.textContent : ""
+    })));
+
+    await browser.close();
+
     const directLinks = [];
-    for (const l of linksData) {
-      if (!l.pageLink) continue;
-      try {
-        const subPage = await browser.newPage();
-        await subPage.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-        await subPage.goto(l.pageLink, { waitUntil: "networkidle2", timeout: 30000 });
-        await new Promise(r => setTimeout(r, 5000));
-        
-        const finalUrl = await subPage.$eval(".wait-done a[href^='https://pixeldrain.com/'], a[href*='pixeldrain.com/u/']", el => el.href).catch(() => null);
-        if (finalUrl) {
-          directLinks.push({ 
-            link: finalUrl, 
-            quality: normalizeQuality(l.quality), 
-            size: l.size || "HD Quality" 
-          });
-        }
-        await subPage.close();
-      } catch (e) { continue; }
-    }
-    
-    // Fallback search if table scraping missed direct pixeldrain links
-    if (directLinks.length === 0) {
-      const allPixeldrainLinks = await page.$$eval("a[href*='pixeldrain.com/u/']", anchors => 
-        anchors.map(a => a.href)
-      );
-      for (const url of allPixeldrainLinks) {
-        if (!directLinks.some(d => d.link === url)) {
-          directLinks.push({ link: url, quality: "HD", size: "Unknown Size" });
+    const seenUrls = new Set();
+
+    for (const item of allLinks) {
+      const fullLink = item.href;
+      // Check if it's a pixeldrain link or a redirect link to pixeldrain
+      if (fullLink && (fullLink.includes('pixeldrain.com') || fullLink.includes('pixeldrain'))) {
+        const match = fullLink.match(/pixeldrain\.com\/u\/(\w+)/);
+        if (match) {
+          const cleanUrl = `https://pixeldrain.com/u/${match[1]}`;
+          if (!seenUrls.has(cleanUrl)) {
+            seenUrls.add(cleanUrl);
+            
+            // Detect quality from text or parent text
+            let quality = "HD";
+            const combinedText = (item.text + " " + item.parentText).toUpperCase();
+            if (/1080|FHD/.test(combinedText)) quality = "1080p";
+            else if (/720|HD/.test(combinedText)) quality = "720p";
+            else if (/480|SD/.test(combinedText)) quality = "480p";
+
+            directLinks.push({ 
+              link: cleanUrl, 
+              quality: quality, 
+              size: "HD Quality" 
+            });
+          }
         }
       }
     }
 
-    await browser.close();
     return directLinks;
   } catch (error) {
-    await browser.close();
     console.error("Get Pixeldrain Links Error:", error);
     return [];
   }
