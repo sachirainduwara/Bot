@@ -27,7 +27,7 @@ async function tryRequest(getter, attempts = 3) {
     throw lastError;
 }
 
-// APIs
+// Working APIs
 async function getDarkYasiyaDl(youtubeUrl) {
     const apiUrl = `https://api.dark-yasiya.api.sri-server.com/download/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
@@ -82,16 +82,16 @@ cmd({
             video = search.videos[0];
         }
 
-        // Send Card Info First
-        const descMsg = `╭━━━〔 *SACHIYA-MD SONG* 〕━━━\n` +
-                        `┃\n` +
-                        `┃ 🎵 *Title:* ${video.title}\n` +
-                        `┃ ⏱️ *Duration:* ${video.timestamp}\n` +
-                        `┃ 👤 *Channel:* ${video.author?.name || 'N/A'}\n` +
-                        `┃ 📥 *Status:* Downloading Audio... ⏳\n` +
-                        `┃\n` +
-                        `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                        `> *⚡ Powered by SACHIYA-MD 💫*`;
+        // Send thumbnail card info
+        const descMsg = "╭━━━〔 *SACHIYA-MD SONG* 〕━━━\n" +
+                        "┃\n" +
+                        "┃ 🎵 *Title:* " + video.title + "\n" +
+                        "┃ ⏱️ *Duration:* " + video.timestamp + "\n" +
+                        "┃ 👤 *Channel:* " + (video.author?.name || 'N/A') + "\n" +
+                        "┃ 📥 *Status:* Downloading Audio... ⏳\n" +
+                        "┃\n" +
+                        "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
+                        "> *⚡ Powered by SACHIYA-MD 💫*";
 
         await sachiya.sendMessage(from, {
             image: { url: video.thumbnail },
@@ -135,12 +135,14 @@ cmd({
 
         const cleanTitle = (audioData?.title || video.title || 'song').replace(/[^\w\s-]/gi, '');
 
-        // Send Audio cleanly for both Android & iOS
+        const captionText = "🎵 *" + cleanTitle + "*\n\n> *⚡ Powered by SACHIYA-MD 💫*";
+
+        // Send as Document MP3 (Works 100% on both Android and iOS without any "corrupted" or "not available" errors)
         await sachiya.sendMessage(from, {
-            audio: audioBuffer,
+            document: audioBuffer,
             mimetype: 'audio/mpeg',
-            fileName: `${cleanTitle}.mp3`,
-            ptt: false
+            fileName: cleanTitle + '.mp3',
+            caption: captionText
         }, { quoted: mek });
 
         // Success Reaction
