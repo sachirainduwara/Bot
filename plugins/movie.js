@@ -4,6 +4,8 @@ const puppeteer = require("puppeteer");
 const pendingSearch = {};
 const pendingQuality = {};
 
+const SACHIYA_LOGO = "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
+
 function normalizeQuality(text) {
   if (!text) return null;
   text = text.toUpperCase();
@@ -127,7 +129,7 @@ async function getPixeldrainLinks(movieUrl) {
         const subPage = await browser.newPage();
         await subPage.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
         await subPage.goto(l.pageLink, { waitUntil: "networkidle2", timeout: 30000 });
-        await new Promise(r => setTimeout(r, 6000)); // Optimized wait time
+        await new Promise(r => setTimeout(r, 6000));
         
         const finalUrl = await subPage.$eval(".wait-done a[href^='https://pixeldrain.com/'], a[href*='pixeldrain.com/u/']", el => el.href).catch(() => null);
         if (finalUrl) {
@@ -161,29 +163,37 @@ cmd({
   filename: __filename
 }, async (danuwa, mek, m, { from, q, sender, reply }) => {
   try {
-    if (!q) return reply(`*🎬 Movie Search Plugin*\nUsage: .movie <movie_name>\nExample: .movie avengers`);
+    if (!q) return reply(`*🎬 SACHIYA MD - MOVIE SYSTEM*\n\n*Usage:* \`.movie <movie_name>\`\n*Example:* \`.movie avengers\``);
     
     await danuwa.sendMessage(from, { react: { text: "🔍", key: mek.key } }).catch(() => {});
-    await reply("*🔍 Searching for movies on Sinhalasub...*");
 
     const searchResults = await searchMovies(q);
     if (!searchResults.length) {
       await danuwa.sendMessage(from, { react: { text: "❌", key: mek.key } }).catch(() => {});
-      return reply("*❌ No movies found!*");
+      return reply("*❌ No movies found matching your query on Sinhalasub!*");
     }
 
     pendingSearch[sender] = { results: searchResults, timestamp: Date.now() };
 
-    let text = `╭━━━〔 *SINHALASUB SEARCH* 〕━━━\n`;
+    let text = `╭━━━〔 *SACHIYA-MD MOVIE SEARCH* 〕━━━\n` +
+               `┃ 🔎 *Query:* ${q}\n` +
+               `┃ 🔢 *Found:* ${searchResults.length} Movies\n` +
+               `┣━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+
     searchResults.forEach((item, i) => {
       text += `┃ *${i + 1}️⃣* *${item.title}*\n` +
               `┃    📌 Lang: ${item.language || 'N/A'}\n` +
               `┃    📊 Quality: ${item.quality || 'N/A'}\n` +
               `┃\n`;
     });
-    text += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *💬 Reply with the movie number (1-${searchResults.length})!*`;
+    text += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *💬 Please reply with the movie number (1-${searchResults.length})!*`;
 
-    const sentMsg = await reply(text);
+    // Send search result with SACHIYA MD Logo image and nice caption
+    const sentMsg = await danuwa.sendMessage(from, { 
+      image: { url: SACHIYA_LOGO }, 
+      caption: text 
+    }, { quoted: mek });
+
     await danuwa.sendMessage(from, { react: { text: "✅", key: mek.key } }).catch(() => {});
 
     // Step 1: Movie Selection Listener
@@ -209,7 +219,7 @@ cmd({
           await danuwa.sendMessage(from, { react: { text: "⏳", key: msg.key } }).catch(() => {});
           const selected = searchResults[index];
           
-          await danuwa.sendMessage(from, { text: `📥 *Fetching metadata for:* *${selected.title}*...` }, { quoted: msg });
+          await danuwa.sendMessage(from, { text: `📥 *Fetching details and metadata for:* *${selected.title}*...` }, { quoted: msg });
 
           const metadata = await getMovieMetadata(selected.movieUrl);
           if (!metadata) {
@@ -226,11 +236,8 @@ cmd({
                         `*⏳ Fetching Pixeldrain download links (<2GB), please wait...*`;
 
           let detailsMsg;
-          if (metadata.thumbnail) {
-            detailsMsg = await danuwa.sendMessage(from, { image: { url: metadata.thumbnail }, caption: msgText }, { quoted: msg });
-          } else {
-            detailsMsg = await danuwa.sendMessage(from, { text: msgText }, { quoted: msg });
-          }
+          const posterToUse = metadata.thumbnail || selected.thumb || SACHIYA_LOGO;
+          detailsMsg = await danuwa.sendMessage(from, { image: { url: posterToUse }, caption: msgText }, { quoted: msg });
 
           const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
           if (!downloadLinks.length) {
@@ -239,11 +246,13 @@ cmd({
 
           pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
 
-          let qualityMsg = `╭━━━〔 *AVAILABLE QUALITIES* 〕━━━\n`;
+          let qualityMsg = `╭━━━〔 *SACHIYA-MD QUALITIES* 〕━━━\n` +
+                           `┃ 🎬 *${metadata.title || selected.title}*\n` +
+                           `┣━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
           downloadLinks.forEach((d, i) => {
-            qualityMsg += `┃ *${i + 1}️⃣* ${d.quality} (${d.size})\n`;
+            qualityMsg += `┃ *${i + 1}️⃣* ${d.quality} 📦 (${d.size})\n`;
           });
-          qualityMsg += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *💬 Reply with quality number to download as document!*`;
+          qualityMsg += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *💬 Reply with the quality number to download as document!*`;
 
           const qualitySentMsg = await danuwa.sendMessage(from, { text: qualityMsg }, { quoted: detailsMsg });
 
@@ -270,7 +279,7 @@ cmd({
                 await danuwa.sendMessage(from, { react: { text: "📥", key: qMsg.key } }).catch(() => {});
                 const selectedLink = downloadLinks[qIndex];
 
-                await danuwa.sendMessage(from, { text: `📥 *Preparing ${selectedLink.quality} video as document... Please wait.*` }, { quoted: qMsg });
+                await danuwa.sendMessage(from, { text: `📥 *Preparing ${selectedLink.quality} video file... Please wait, uploading as document.*` }, { quoted: qMsg });
 
                 const directUrl = getDirectPixeldrainUrl(selectedLink.link);
                 if (!directUrl) {
@@ -282,11 +291,13 @@ cmd({
                   document: { url: directUrl },
                   mimetype: "video/mp4",
                   fileName: `${safeTitle} - ${selectedLink.quality}.mp4`,
-                  caption: `╭━━━〔 *DOWNLOAD SUCCESS* 〕━━━\n` +
+                  caption: `╭━━━〔 *SACHIYA-MD DOWNLOAD* 〕━━━\n` +
                            `┃ 🎬 *Title:* ${metadata.title || selected.title}\n` +
                            `┃ 📊 *Quality:* ${selectedLink.quality}\n` +
                            `┃ 📦 *Size:* ${selectedLink.size}\n` +
-                           `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *✨ Enjoy your movie! 🍿*`
+                           `┣━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                           `┃ ✨ *Powered by SACHIYA MD* 🚀\n` +
+                           `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *Enjoy your movie! 🍿*`
                 }, { quoted: qMsg });
 
                 await danuwa.sendMessage(from, { react: { text: "🎉", key: qMsg.key } }).catch(() => {});
@@ -297,7 +308,7 @@ cmd({
           };
 
           danuwa.ev.on("messages.upsert", qualityListener);
-          setTimeout(() => danuwa.ev.off("messages.upsert", qualityListener), 300000); // 5 mins timeout
+          setTimeout(() => danuwa.ev.off("messages.upsert", qualityListener), 300000);
         }
       } catch (err) {
         console.error("Search Listener Error:", err);
@@ -305,7 +316,7 @@ cmd({
     };
 
     danuwa.ev.on("messages.upsert", searchListener);
-    setTimeout(() => danuwa.ev.off("messages.upsert", searchListener), 300000); // 5 mins timeout
+    setTimeout(() => danuwa.ev.off("messages.upsert", searchListener), 300000);
 
   } catch (error) {
     console.error('[MOVIE PLUGIN ERROR]:', error);
