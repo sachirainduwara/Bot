@@ -139,7 +139,7 @@ cmd({
         const ytId = (videoUrl.match(/(?:youtu\.be\/|v=)([a-zA-Z0-9_-]{11})/) || [])[1];
         const thumb = videoThumbnail || (ytId ? `https://i.ytimg.com/vi/${ytId}/sddefault.jpg` : '');
 
-        // Detail Card Message with Confirm / Cancel Options
+        // Detail Card Message with Format Selection Options
         const descMsg = `╭━━━〔 *SACHIYA-MD VIDEO* 〕━━━\n` +
                         `┃\n` +
                         `┃ 📝 *Title:* ${videoTitle || q}\n` +
@@ -148,13 +148,13 @@ cmd({
                         `┃ 👁️ *Views:* ${videoViews ? videoViews.toLocaleString() : 'N/A'}\n` +
                         `┃ 🔗 *Url:* ${videoUrl}\n` +
                         `┃\n` +
-                        `┣━━━〔 *CONFIRM DOWNLOAD* 〕━━━\n` +
+                        `┣━━━〔 *SELECT FORMAT* 〕━━━\n` +
                         `┃\n` +
-                        `┃ 1️⃣ *Conform (Download)*\n` +
-                        `┃ 2️⃣ *Cancel (Abort)*\n` +
+                        `┃ 1️⃣ *MP4 Video Format*\n` +
+                        `┃ 2️⃣ *Document File Format*\n` +
                         `┃\n` +
                         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                        `> 💬 *Please reply with 1 to Download or 2 to Cancel!*`;
+                        `> 💬 *Please reply with 1 for MP4 Video or 2 for Document!*`;
 
         let sentMsg;
         if (thumb) {
@@ -182,17 +182,11 @@ cmd({
                 if (msgSender === from && isReplyToBot) {
                     const choiceText = (msg.message.conversation || msg.message.extendedTextMessage.text || "").trim();
 
-                    if (choiceText === "2") {
-                        sachiya.ev.off("messages.upsert", messageListener);
-                        await sachiya.sendMessage(from, { react: { text: "❌", key: msg.key } }).catch(() => {});
-                        return reply("❌ *Download cancelled successfully!*");
-                    }
-
-                    if (choiceText !== "1") {
+                    if (!["1", "2"].includes(choiceText)) {
                         return; // Ignore other inputs
                     }
 
-                    // Remove listener once confirmed
+                    // Remove listener once choice is made
                     sachiya.ev.off("messages.upsert", messageListener);
 
                     await sachiya.sendMessage(from, { react: { text: "📥", key: msg.key } }).catch(() => {});
@@ -237,13 +231,23 @@ cmd({
                                         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                                         `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-                    // Send video directly
-                    await sachiya.sendMessage(from, {
-                        video: { url: downloadUrl },
-                        mimetype: 'video/mp4',
-                        fileName: cleanFileName,
-                        caption: captionText
-                    }, { quoted: msg });
+                    if (choiceText === '1') {
+                        await sachiya.sendMessage(from, { react: { text: "🎬", key: msg.key } }).catch(() => {});
+                        await sachiya.sendMessage(from, {
+                            video: { url: downloadUrl },
+                            mimetype: 'video/mp4',
+                            fileName: cleanFileName,
+                            caption: captionText
+                        }, { quoted: msg });
+                    } else if (choiceText === '2') {
+                        await sachiya.sendMessage(from, { react: { text: "📁", key: msg.key } }).catch(() => {});
+                        await sachiya.sendMessage(from, {
+                            document: { url: downloadUrl },
+                            mimetype: 'video/mp4',
+                            fileName: cleanFileName,
+                            caption: captionText
+                        }, { quoted: msg });
+                    }
 
                     // Success Reaction
                     await sachiya.sendMessage(from, { react: { text: "✅", key: msg.key } }).catch(() => {});
