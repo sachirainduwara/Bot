@@ -1,6 +1,6 @@
 const { cmd } = require('../command');
-const fg = require('api-dylux');
 const ytSearch = require('yt-search');
+const axios = require('axios');
 
 cmd({
     pattern: "song",
@@ -13,10 +13,8 @@ cmd({
     try {
         if (!q) return await reply("*❌ Please provide a song name or YouTube link!* \n\n*Example:* `.song lelena`");
         
-        // 1. Send loading react
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
-        // 2. Search YouTube
         const search = await ytSearch(q);
         if (!search || search.videos.length === 0) {
             return await reply("*❌ No results found for your query!*");
@@ -25,7 +23,6 @@ cmd({
         const data = search.videos[0];
         const url = data.url;
 
-        // 3. UI Box Design
         let cap = `╭━━━〔 *SACHIYA-MD AUDIO* 〕━━━┈⊷
 ┃
 ┃ 🎵 *Title:* ${data.title}
@@ -38,24 +35,34 @@ cmd({
 
 > *⚡ Powered by SACHIYA-MD 💫*`;
 
-        // 4. Send Thumbnail and Details
         await conn.sendMessage(from, {
             image: { url: data.thumbnail },
             caption: cap
         }, { quoted: mek });
 
-        // 5. Fetch Audio Downloader Link
-        let down = await fg.yta(url);
-        if (!down || !down.dl_url) return await reply("*❌ Download failed! Try another song.*");
+        // Using a reliable public API endpoint to bypass 403 errors
+        let apiUrl = `https://api.davidcyriltech.my.id/download/ytmp3?url=${url}`;
+        let response = await axios.get(apiUrl);
+        
+        if (!response.data || !response.data.success || !response.data.result.downloadUrl) {
+            // Fallback API if first fails
+            apiUrl = `https://api.siputzx.my.id/api/d/ytmp3?url=${url}`;
+            response = await axios.get(apiUrl);
+        }
 
-        // 6. Send Audio File directly
+        const downloadUrl = response.data.result?.downloadUrl || response.data.data?.dl || response.data.result?.dl;
+
+        if (!downloadUrl) {
+            return await reply("*❌ Download failed due to API restriction. Try another song!*");
+        }
+
+        // Send Audio File
         await conn.sendMessage(from, {
-            audio: { url: down.dl_url },
+            audio: { url: downloadUrl },
             mimetype: 'audio/mpeg',
             fileName: `${data.title}.mp3`
         }, { quoted: mek });
 
-        // 7. Success React
         await conn.sendMessage(from, { react: { text: '✔', key: mek.key } });
 
     } catch (e) {
