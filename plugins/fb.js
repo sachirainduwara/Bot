@@ -31,7 +31,7 @@ cmd(
     }
   ) => {
     try {
-      if (!q) return reply("⚠️ *Please provide a valid Facebook video URL!*");
+      if (!q) return reply("⚠️ *Please provide a valid Facebook video URL!*\n\n*Example:* `.fb https://fb.watch/...`");
 
       // 🔍 Enhanced Facebook URL Validation Regex
       const fbRegex = /(https?:\/\/)?(www\.|m\.)?(facebook|fb)\.(com|watch|share|reel)\/.+/;
@@ -51,20 +51,24 @@ cmd(
       }
 
       const { title, sd, hd } = result;
-      const bestQualityUrl = hd || sd;
-      const qualityText = hd ? "HD High Quality" : "SD Standard Quality";
+      const videoTitle = title || "Facebook Video";
 
-      const captionMsg = `╭━━━〔 *FACEBOOK DOWNLOADER* 〕━━━\n` +
+      const captionMsg = `╭━━━〔 *📥 FACEBOOK DOWNLOADER* 〕━━━\n` +
                          `┃\n` +
-                         `┃ 🎬 *Title:* ${title || "Facebook Video"}\n` +
-                         `┃ 📊 *Quality:* ${qualityText}\n` +
-                         `┃ 👤 *User:* ${userName}\n` +
+                         `┃ 🎬 *Title:* ${videoTitle}\n` +
+                         `┃ 👤 *Requested by:* ${userName}\n` +
                          `┃\n` +
-                         `╰━━━━━━━━━━━━━━━━━━━\n\n` +
-                         `> Powered by SACHIYA MD 💫`;
+                         `┃ *Reply with the number you want:*\n` +
+                         `┃\n` +
+                         `┃ 1️⃣ *->* 🎬 SD Video (Normal Quality)\n` +
+                         `┃ 2️⃣ *->* 🎥 HD Video (High Quality)\n` +
+                         `┃ 3️⃣ *->* 📁 Document File (File Format)\n` +
+                         `┃\n` +
+                         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                         `> *Powered by SACHIYA MD 💫*`;
 
-      // 1. Send Preview Card with Info
-      await sachiya.sendMessage(
+      // 1. Send Preview Card with Options Menu
+      const sentMsg = await sachiya.sendMessage(
         from,
         {
           image: {
@@ -75,17 +79,52 @@ cmd(
         { quoted: mek }
       );
 
-      // 2. Send the Actual Video File
-      await sachiya.sendMessage(
-        from,
-        {
-          video: { url: bestQualityUrl },
-          caption: `📥 *Downloaded in ${qualityText}*\n\n> Powered by SACHIYA MD 💫`,
-        },
-        { quoted: mek }
-      );
-
       await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } });
+
+      // 2. Listen for User Reply (1, 2, or 3)
+      const messageID = sentMsg.key.id;
+      
+      sachiya.ev.on("messages.upsert", async (chatUpdate) => {
+        const mekResponse = chatUpdate.messages[0];
+        if (!mekResponse.message) return;
+
+        const responseMessage = mekResponse.message.conversation || mekResponse.message.extendedTextMessage?.text;
+        const senderID = mekResponse.key.remoteJid;
+        const isReplyToSent = mekResponse.message.extendedTextMessage?.contextInfo?.stanzaId === messageID;
+
+        if (isReplyToSent && senderID === from) {
+          await sachiya.sendMessage(from, { react: { text: "⬇️", key: mekResponse.key } });
+
+          if (responseMessage === "1") {
+            if (!sd) return reply("❌ *SD quality is not available for this video!*");
+            await sachiya.sendMessage(from, {
+              video: { url: sd },
+              caption: `╭━━━〔 *SD VIDEO DOWNLOADED* 〕━━━\n┃ 🎬 *Title:* ${videoTitle}\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *Powered by SACHIYA MD 💫*`,
+            }, { quoted: mekResponse });
+            await sachiya.sendMessage(from, { react: { text: "✅", key: mekResponse.key } });
+
+          } else if (responseMessage === "2") {
+            const bestHd = hd || sd; // fallback to sd if hd not available
+            if (!bestHd) return reply("❌ *HD quality is not available for this video!*");
+            await sachiya.sendMessage(from, {
+              video: { url: bestHd },
+              caption: `╭━━━〔 *HD VIDEO DOWNLOADED* 〕━━━\n┃ 🎬 *Title:* ${videoTitle}\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *Powered by SACHIYA MD 💫*`,
+            }, { quoted: mekResponse });
+            await sachiya.sendMessage(from, { react: { text: "✅", key: mekResponse.key } });
+
+          } else if (responseMessage === "3") {
+            const bestDoc = hd || sd;
+            if (!bestDoc) return reply("❌ *Document file is not available for this video!*");
+            await sachiya.sendMessage(from, {
+              document: { url: bestDoc },
+              mimetype: "video/mp4",
+              fileName: `${videoTitle.replace(/[^a-zA-Z0-9]/g, "_")}.mp4`,
+              caption: `╭━━━〔 *DOCUMENT FILE DOWNLOADED* 〕━━━\n┃ 🎬 *Title:* ${videoTitle}\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *Powered by SACHIYA MD 💫*`,
+            }, { quoted: mekResponse });
+            await sachiya.sendMessage(from, { react: { text: "✅", key: mekResponse.key } });
+          }
+        }
+      });
 
     } catch (e) {
       console.error("FB Downloader Error:", e);
