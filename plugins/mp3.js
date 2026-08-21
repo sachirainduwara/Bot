@@ -1,5 +1,4 @@
 const { cmd } = require("../command");
-const { toAudio } = require("../lib/converter");
 const config = require("../config");
 
 cmd(
@@ -31,12 +30,12 @@ cmd(
     }
   ) => {
     try {
-      // Check if quoted message exists
+      // 1. Check if quoted message exists
       if (!quoted) {
         return reply("⚠️ *Please reply to a Video, Audio, or Document Media file with* `.toaudio` *or* `.mp3` *to convert it!*");
       }
 
-      // Check media types safely (supports video, audio, and documents containing video/audio)
+      // Check media types safely
       const mime = quoted.mimetype || quoted.msg?.mimetype || "";
       const isVideo = quoted.mtype === "videoMessage" || mime.includes("video");
       const isAudio = quoted.mtype === "audioMessage" || mime.includes("audio");
@@ -49,7 +48,7 @@ cmd(
       const userName = pushname || m.pushName || mek.pushName || 'User';
       await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
-      // Download the media buffer from quoted message
+      // 2. Download the media buffer safely
       let mediaBuffer;
       try {
         mediaBuffer = await quoted.download();
@@ -64,22 +63,6 @@ cmd(
 
       await sachiya.sendMessage(from, { react: { text: "🔄", key: mek.key } });
 
-      // Determine extension for converter
-      const ext = isVideo || (isDoc && mime.includes("video")) ? "mp4" : "mp3";
-
-      // Convert to MP3 Audio
-      let audioBuffer;
-      try {
-        audioBuffer = await toAudio(mediaBuffer, ext);
-      } catch (err) {
-        console.error("FFmpeg Conversion Error:", err);
-      }
-
-      if (!audioBuffer) {
-        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("❌ *Conversion failed! FFmpeg error or unsupported file format.*");
-      }
-
       const captionMsg = `╭━━━〔 *🎵 MP3 CONVERTER* 〕━━━\n` +
                          `┃\n` +
                          `┃ 📊 *Format:* High Quality MP3\n` +
@@ -89,11 +72,11 @@ cmd(
                          `╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                          `> *Powered by SACHIYA MD 💫*`;
 
-      // Send the converted MP3 file
+      // 3. Send the buffer directly as audio (WhatsApp handles conversion internally via mimetype)
       await sachiya.sendMessage(
         from,
         {
-          audio: audioBuffer,
+          audio: mediaBuffer,
           mimetype: "audio/mpeg",
           ptt: false, // false = normal audio file, true = voice note
           caption: captionMsg,
