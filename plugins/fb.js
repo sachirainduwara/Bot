@@ -41,6 +41,7 @@ cmd(
 
       // Fix for User Name
       const userName = pushname || m.pushName || mek.pushName || 'User';
+      const currentTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Colombo' });
 
       await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
@@ -57,6 +58,8 @@ cmd(
                          `┃\n` +
                          `┃ 🎬 *Title:* ${videoTitle}\n` +
                          `┃ 👤 *Requested by:* ${userName}\n` +
+                         `┃ 🕒 *Time:* ${currentTime}\n` +
+                         `┃ ⚡ *Status:* Ready to Download\n` +
                          `┃\n` +
                          `┃ *Reply with the number you want:*\n` +
                          `┃\n` +
@@ -79,7 +82,7 @@ cmd(
         { quoted: mek }
       );
 
-      await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } });
+      await sachiya.sendMessage(from, { react: { text: "✨", key: mek.key } });
 
       // 2. Listen for User Reply (1, 2, or 3)
       const messageID = sentMsg.key.id;
@@ -93,24 +96,40 @@ cmd(
         const isReplyToSent = mekResponse.message.extendedTextMessage?.contextInfo?.stanzaId === messageID;
 
         if (isReplyToSent && senderID === from) {
-          await sachiya.sendMessage(from, { react: { text: "⬇️", key: mekResponse.key } });
+          await sachiya.sendMessage(from, { react: { text: "📥", key: mekResponse.key } });
 
           if (responseMessage === "1") {
             if (!sd) return reply("❌ *SD quality is not available for this video!*");
             await sachiya.sendMessage(from, {
               video: { url: sd },
-              caption: `╭━━━〔 *SD VIDEO DOWNLOADED* 〕━━━\n┃ 🎬 *Title:* ${videoTitle}\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *Powered by SACHIYA MD 💫*`,
+              caption: `╭━━━〔 *✅ SD VIDEO DOWNLOADED* 〕━━━\n` +
+                       `┃\n` +
+                       `┃ 🎬 *Title:* ${videoTitle}\n` +
+                       `┃ 📊 *Quality:* SD (Normal)\n` +
+                       `┃ 👤 *User:* ${userName}\n` +
+                       `┃ 🕒 *Time:* ${currentTime}\n` +
+                       `┃\n` +
+                       `╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                       `> *Powered by SACHIYA MD 💫*`,
             }, { quoted: mekResponse });
-            await sachiya.sendMessage(from, { react: { text: "✅", key: mekResponse.key } });
+            await sachiya.sendMessage(from, { react: { text: "🚀", key: mekResponse.key } });
 
           } else if (responseMessage === "2") {
-            const bestHd = hd || sd; // fallback to sd if hd not available
+            const bestHd = hd || sd; 
             if (!bestHd) return reply("❌ *HD quality is not available for this video!*");
             await sachiya.sendMessage(from, {
               video: { url: bestHd },
-              caption: `╭━━━〔 *HD VIDEO DOWNLOADED* 〕━━━\n┃ 🎬 *Title:* ${videoTitle}\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *Powered by SACHIYA MD 💫*`,
+              caption: `╭━━━〔 *✅ HD VIDEO DOWNLOADED* 〕━━━\n` +
+                       `┃\n` +
+                       `┃ 🎬 *Title:* ${videoTitle}\n` +
+                       `┃ 📊 *Quality:* HD (High Quality)\n` +
+                       `┃ 👤 *User:* ${userName}\n` +
+                       `┃ 🕒 *Time:* ${currentTime}\n` +
+                       `┃\n` +
+                       `╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                       `> *Powered by SACHIYA MD 💫*`,
             }, { quoted: mekResponse });
-            await sachiya.sendMessage(from, { react: { text: "✅", key: mekResponse.key } });
+            await sachiya.sendMessage(from, { react: { text: "🚀", key: mekResponse.key } });
 
           } else if (responseMessage === "3") {
             const bestDoc = hd || sd;
@@ -119,9 +138,17 @@ cmd(
               document: { url: bestDoc },
               mimetype: "video/mp4",
               fileName: `${videoTitle.replace(/[^a-zA-Z0-9]/g, "_")}.mp4`,
-              caption: `╭━━━〔 *DOCUMENT FILE DOWNLOADED* 〕━━━\n┃ 🎬 *Title:* ${videoTitle}\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n> *Powered by SACHIYA MD 💫*`,
+              caption: `╭━━━〔 *✅ DOCUMENT FILE DOWNLOADED* 〕━━━\n` +
+                       `┃\n` +
+                       `┃ 🎬 *Title:* ${videoTitle}\n` +
+                       `┃ 📊 *Format:* Document (.mp4)\n` +
+                       `┃ 👤 *User:* ${userName}\n` +
+                       `┃ 🕒 *Time:* ${currentTime}\n` +
+                       `┃\n` +
+                       `╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                       `> *Powered by SACHIYA MD 💫*`,
             }, { quoted: mekResponse });
-            await sachiya.sendMessage(from, { react: { text: "✅", key: mekResponse.key } });
+            await sachiya.sendMessage(from, { react: { text: "📂", key: mekResponse.key } });
           }
         }
       });
