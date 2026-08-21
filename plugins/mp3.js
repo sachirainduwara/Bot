@@ -1,5 +1,5 @@
 const { cmd } = require("../command");
-const { toAudio } = require("../lib/converter"); // Bot එකේ converter lib එක (ಸಾමාන්‍යයෙන් Baileys bot වල මේක තියෙනවා)
+const { toAudio } = require("../lib/converter");
 const config = require("../config");
 
 cmd(
@@ -31,22 +31,32 @@ cmd(
     }
   ) => {
     try {
-      // 1. Check if a media or quoted media exists
-      const isQuotedVideo = quoted && quoted.mtype === "videoMessage";
-      const isQuotedAudio = quoted && quoted.mtype === "audioMessage";
-      const isMedia = mek.msg?.mtype === "videoMessage" || mek.msg?.mtype === "audioMessage";
+      // Check if quoted message exists
+      if (!quoted) {
+        return reply("⚠️ *Please reply to a Video, Audio, or Document Media file with* `.toaudio` *or* `.mp3` *to convert it!*");
+      }
 
-      if (!isMedia && !isQuotedVideo && !isQuotedAudio) {
-        return reply("⚠️ *Please reply to a Video or Audio file with* `.toaudio` *or* `.mp3` *to convert it!*");
+      // Check media types safely (supports video, audio, and documents containing video/audio)
+      const mime = quoted.mimetype || quoted.msg?.mimetype || "";
+      const isVideo = quoted.mtype === "videoMessage" || mime.includes("video");
+      const isAudio = quoted.mtype === "audioMessage" || mime.includes("audio");
+      const isDoc = quoted.mtype === "documentMessage" && (mime.includes("video") || mime.includes("audio"));
+
+      if (!isVideo && !isAudio && !isDoc) {
+        return reply("❌ *The replied file is not a valid Video or Audio media! Please reply to a media file.*");
       }
 
       const userName = pushname || m.pushName || mek.pushName || 'User';
       await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
-      // 2. Download the media file
-      const targetMessage = isQuotedVideo || isQuotedAudio ? quoted : mek;
-      const mediaBuffer = await targetMessage.download();
-      
+      // Download the media buffer from quoted message
+      let mediaBuffer;
+      try {
+        mediaBuffer = await quoted.download();
+      } catch (err) {
+        console.error("Download Error:", err);
+      }
+
       if (!mediaBuffer) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
         return reply("❌ *Failed to download the media file. Please try again!*");
@@ -54,36 +64,38 @@ cmd(
 
       await sachiya.sendMessage(from, { react: { text: "🔄", key: mek.key } });
 
-      // 3. Convert to MP3 Audio using converter utility
+      // Determine extension for converter
+      const ext = isVideo || (isDoc && mime.includes("video")) ? "mp4" : "mp3";
+
+      // Convert to MP3 Audio
       let audioBuffer;
       try {
-        audioBuffer = await toAudio(mediaBuffer, "mp4"); // Converter handles video/audio streams
+        audioBuffer = await toAudio(mediaBuffer, ext);
       } catch (err) {
-        // Fallback or secondary attempt if direct conversion fails
-        console.error("Conversion Warning:", err);
+        console.error("FFmpeg Conversion Error:", err);
       }
 
       if (!audioBuffer) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("❌ *Conversion failed! The media might be corrupted or unsupported.*");
+        return reply("❌ *Conversion failed! FFmpeg error or unsupported file format.*");
       }
 
       const captionMsg = `╭━━━〔 *🎵 MP3 CONVERTER* 〕━━━\n` +
                          `┃\n` +
-                         `┃ 📊 *Format:* MP3 Audio\n` +
+                         `┃ 📊 *Format:* High Quality MP3\n` +
                          `┃ 👤 *Requested by:* ${userName}\n` +
-                         `┃ ⚡ *Status:* Successfully Converted\n` +
+                         `┃ ⚡ *Status:* Successfully Converted!\n` +
                          `┃\n` +
                          `╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                          `> *Powered by SACHIYA MD 💫*`;
 
-      // 4. Send the converted Audio file as a Voice Note or Audio file
+      // Send the converted MP3 file
       await sachiya.sendMessage(
         from,
         {
           audio: audioBuffer,
           mimetype: "audio/mpeg",
-          ptt: false, // true දැමුවොත් Voice Note (PTT) එකක් ලෙස යයි, false දැමුවොත් සාමාන්‍ය Audio song එකක් ලෙස යයි.
+          ptt: false, // false = normal audio file, true = voice note
           caption: captionMsg,
         },
         { quoted: mek }
@@ -92,7 +104,7 @@ cmd(
       await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } });
 
     } catch (e) {
-      console.error("Audio Converter Error:", e);
+      console.error("Audio Converter Plugin Error:", e);
       await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
       reply(`❌ *Error:* ${e.message || "An unexpected error occurred during conversion!"}`);
     }
