@@ -46,6 +46,8 @@ cmd(
       }
 
       const userName = pushname || m.pushName || mek.pushName || 'User';
+      const currentTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Colombo' });
+
       await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
       // 2. Download the media buffer safely
@@ -67,19 +69,31 @@ cmd(
                          `┃\n` +
                          `┃ 📊 *Format:* High Quality MP3\n` +
                          `┃ 👤 *Requested by:* ${userName}\n` +
+                         `┃ 🕒 *Time:* ${currentTime}\n` +
                          `┃ ⚡ *Status:* Successfully Converted!\n` +
                          `┃\n` +
                          `╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                          `> *Powered by SACHIYA MD 💫*`;
 
-      // 3. Send the buffer directly as audio (WhatsApp handles conversion internally via mimetype)
+      // 3. Send Image Preview Card first (like FB downloader)
+      await sachiya.sendMessage(
+        from,
+        {
+          image: {
+            url: config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true",
+          },
+          caption: captionMsg,
+        },
+        { quoted: mek }
+      );
+
+      // 4. Send the converted MP3 file right after
       await sachiya.sendMessage(
         from,
         {
           audio: mediaBuffer,
           mimetype: "audio/mpeg",
-          ptt: false, // false = normal audio file, true = voice note
-          caption: captionMsg,
+          ptt: false,
         },
         { quoted: mek }
       );
