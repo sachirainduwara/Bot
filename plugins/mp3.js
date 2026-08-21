@@ -46,7 +46,15 @@ cmd(
       }
 
       const userName = pushname || m.pushName || mek.pushName || 'User';
-      const currentTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Colombo' });
+      
+      // Get Sri Lanka Time only (Without Date)
+      const currentTime = new Date().toLocaleTimeString('en-US', { 
+        timeZone: 'Asia/Colombo', 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit',
+        hour12: true 
+      });
 
       await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
@@ -70,12 +78,12 @@ cmd(
                          `┃ 📊 *Format:* High Quality MP3\n` +
                          `┃ 👤 *Requested by:* ${userName}\n` +
                          `┃ 🕒 *Time:* ${currentTime}\n` +
-                         `┃ ⚡ *Status:* Successfully Converted!\n` +
+                         `┃ ⚡ *Status:* Successfully Converted ✅\n` +
                          `┃\n` +
                          `╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                          `> *Powered by SACHIYA MD 💫*`;
 
-      // 3. Send Image Preview Card first (like FB downloader)
+      // 3. Send Image Card with Details first (or with audio)
       await sachiya.sendMessage(
         from,
         {
@@ -87,13 +95,13 @@ cmd(
         { quoted: mek }
       );
 
-      // 4. Send the converted MP3 file right after
+      // 4. Send the converted Audio file
       await sachiya.sendMessage(
         from,
         {
           audio: mediaBuffer,
           mimetype: "audio/mpeg",
-          ptt: false,
+          ptt: false, // false = normal audio file, true = voice note
         },
         { quoted: mek }
       );
