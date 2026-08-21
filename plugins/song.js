@@ -13,8 +13,10 @@ cmd({
     try {
         if (!q) return await reply("*❌ Please provide a song name or YouTube link!* \n\n*Example:* `.song lelena`");
         
+        // 1. Send loading react
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
+        // 2. Search YouTube
         const search = await ytSearch(q);
         if (!search || search.videos.length === 0) {
             return await reply("*❌ No results found for your query!*");
@@ -23,6 +25,7 @@ cmd({
         const data = search.videos[0];
         const url = data.url;
 
+        // 3. UI Box Design
         let cap = `╭━━━〔 *SACHIYA-MD AUDIO* 〕━━━┈⊷
 ┃
 ┃ 🎵 *Title:* ${data.title}
@@ -33,83 +36,31 @@ cmd({
 ┃
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━┈⊷
 
-═ 🔢 *REPLY WITH NUMBER* ═
-
-01 ❯❯ *AUDIO (MP3)* 🎧
-02 ❯❯ *DOCUMENT (File)* 📁
-03 ❯❯ *VOICE NOTE (PTT)* 🎤
-
 > *⚡ Powered by SACHIYA-MD 💫*`;
 
-        const sentMsg = await conn.sendMessage(from, {
+        // 4. Send Thumbnail and Details
+        await conn.sendMessage(from, {
             image: { url: data.thumbnail },
             caption: cap
         }, { quoted: mek });
 
-        const messageID = sentMsg.key.id;
+        // 5. Fetch Audio Downloader Link
+        let down = await fg.yta(url);
+        if (!down || !down.dl_url) return await reply("*❌ Download failed! Try another song.*");
 
-        // Message listener for number replies
-        const subListener = async (chatUpdate) => {
-            try {
-                const mek_reply = chatUpdate.messages[0];
-                if (!mek_reply.message) return;
-                
-                const messageType = mek_reply.message.conversation || mek_reply.message.extendedTextMessage?.text;
-                const sender = mek_reply.key.remoteJid;
-                const contextInfo = mek_reply.message.extendedTextMessage?.contextInfo;
-                
-                const isReplyToMe = contextInfo && contextInfo.stanzaId === messageID;
-                
-                if (isReplyToMe && sender === from) {
-                    if (messageType === '1' || messageType === '01') {
-                        await conn.sendMessage(from, { react: { text: '⬇️', key: mek_reply.key } });
-                        let down = await fg.yta(url);
-                        if (!down || !down.dl_url) return await reply("❌ *Download failed!*");
-                        
-                        await conn.sendMessage(from, {
-                            audio: { url: down.dl_url },
-                            mimetype: 'audio/mpeg',
-                            fileName: `${data.title}.mp3`
-                        }, { quoted: mek_reply });
-                        await conn.sendMessage(from, { react: { text: '✔', key: mek_reply.key } });
-                    } 
-                    else if (messageType === '2' || messageType === '02') {
-                        await conn.sendMessage(from, { react: { text: '⬇️', key: mek_reply.key } });
-                        let down = await fg.yta(url);
-                        if (!down || !down.dl_url) return await reply("❌ *Download failed!*");
-                        
-                        await conn.sendMessage(from, {
-                            document: { url: down.dl_url },
-                            mimetype: 'audio/mpeg',
-                            fileName: `${data.title}.mp3`,
-                            caption: `*🎵 ${data.title}* \n*⚡ Powered by SACHIYA-MD 💫*`
-                        }, { quoted: mek_reply });
-                        await conn.sendMessage(from, { react: { text: '✔', key: mek_reply.key } });
-                    } 
-                    else if (messageType === '3' || messageType === '03') {
-                        await conn.sendMessage(from, { react: { text: '⬇️', key: mek_reply.key } });
-                        let down = await fg.yta(url);
-                        if (!down || !down.dl_url) return await reply("❌ *Download failed!*");
-                        
-                        await conn.sendMessage(from, {
-                            audio: { url: down.dl_url },
-                            mimetype: 'audio/mp4',
-                            ptt: true
-                        }, { quoted: mek_reply });
-                        await conn.sendMessage(from, { react: { text: '✔', key: mek_reply.key } });
-                    }
-                }
-            } catch (err) {
-                console.log("Listener Error:", err);
-            }
-        };
+        // 6. Send Audio File directly
+        await conn.sendMessage(from, {
+            audio: { url: down.dl_url },
+            mimetype: 'audio/mpeg',
+            fileName: `${data.title}.mp3`
+        }, { quoted: mek });
 
-        conn.ev.on('messages.upsert', subListener);
-
+        // 7. Success React
         await conn.sendMessage(from, { react: { text: '✔', key: mek.key } });
 
     } catch (e) {
         console.log(e);
         await reply(`*❌ An error occurred:* ${e.message || e}`);
+        await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
     }
 });
