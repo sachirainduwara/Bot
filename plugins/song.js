@@ -1,11 +1,11 @@
 const { cmd } = require('../command');
 const ytSearch = require('yt-search');
-const axios = require('axios');
+const ytdl = require('@distube/ytdl-core'); // හෝ 'ytdl-core' (ඔබේ package.json එකේ ඇති පරිදි)
 
 cmd({
     pattern: "song",
     alias: ["play", "audio"],
-    desc: "Download YouTube songs universally playable on all devices",
+    desc: "Download YouTube songs directly without external APIs",
     category: "download",
     react: "🎶",
     filename: __filename
@@ -15,6 +15,7 @@ cmd({
         
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
+        // Search YouTube
         const search = await ytSearch(q);
         if (!search || search.videos.length === 0) {
             return await reply("*❌ No results found for your query!*");
@@ -35,31 +36,22 @@ cmd({
 
 > *⚡ Powered by SACHIYA-MD 💫*`;
 
+        // Send Thumbnail and Details
         await conn.sendMessage(from, {
             image: { url: data.thumbnail },
             caption: cap
         }, { quoted: mek });
 
-        // Using a stable working media endpoint to fetch direct stream buffer
-        let apiUrl = `https://api.siputzx.my.id/api/d/ytmp3?url=${url}`;
-        let res = await axios.get(apiUrl).catch(() => null);
-        
-        let downloadUrl = res?.data?.data?.dl || res?.data?.result?.dl || res?.data?.dl;
+        // Direct stream download using ytdl-core buffer (No APIs needed!)
+        const stream = ytdl(url, {
+            filter: 'audioonly',
+            quality: 'highestaudio',
+            highWaterMark: 1 << 25
+        });
 
-        if (!downloadUrl) {
-            // Backup stable endpoint
-            let apiUrl2 = `https://Widipe.com/downloader/ytmp3?url=${url}`;
-            let res2 = await axios.get(apiUrl2).catch(() => null);
-            downloadUrl = res2?.data?.result?.url || res2?.data?.url;
-        }
-
-        if (!downloadUrl) {
-            return await reply("*❌ Download failed! Please try again with a different song.*");
-        }
-
-        // Send audio as audio/mp4 with ptt: false so it acts like a normal playable/shareable audio file on all devices
+        // Send audio buffer directly to WhatsApp
         await conn.sendMessage(from, {
-            audio: { url: downloadUrl },
+            audio: stream,
             mimetype: 'audio/mp4',
             fileName: `${data.title}.mp4`,
             ptt: false
