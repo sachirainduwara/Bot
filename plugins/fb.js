@@ -41,7 +41,6 @@ cmd(
 
       // Fix for User Name
       const userName = pushname || m.pushName || mek.pushName || 'User';
-      const currentTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Colombo' });
 
       await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
@@ -51,33 +50,38 @@ cmd(
         return reply("❌ *Failed to download video. Video might be private, deleted, or invalid!*");
       }
 
-      const { title, sd, hd } = result;
+      // Extracting details from fb-downloader response
+      const { title, sd, hd, owner, time, description } = result;
       const videoTitle = title || "Facebook Video";
+      const pageOwner = owner || "Unknown Page / User";
+      const postTime = time || "Recent";
+      const postDesc = description ? (description.length > 100 ? description.substring(0, 100) + "..." : description) : "No description available";
 
-      const captionMsg = `╭━━━〔 *📥 FACEBOOK DOWNLOADER* 〕━━━\n` +
-                         `┃\n` +
-                         `┃ 🎬 *Title:* ${videoTitle}\n` +
-                         `┃ 👤 *Requested by:* ${userName}\n` +
-                         `┃ 🕒 *Time:* ${currentTime}\n` +
-                         `┃ ⚡ *Status:* Ready to Download\n` +
-                         `┃\n` +
-                         `┃ *Reply with the number you want:*\n` +
-                         `┃\n` +
-                         `┃ 1️⃣ *->* 🎬 SD Video (Normal Quality)\n` +
-                         `┃ 2️⃣ *->* 🎥 HD Video (High Quality)\n` +
-                         `┃ 3️⃣ *->* 📁 Document File (File Format)\n` +
-                         `┃\n` +
-                         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                         `> *Powered by SACHIYA MD 💫*`;
+      const menuCaption = `╭━━━〔 *📥 FACEBOOK DOWNLOADER* 〕━━━\n` +
+                          `┃\n` +
+                          `┃ 🎬 *Title:* ${videoTitle}\n` +
+                          `┃ 👤 *Page/Owner:* ${pageOwner}\n` +
+                          `┃ 🕒 *Posted Time:* ${postTime}\n` +
+                          `┃ 📝 *Description:* ${postDesc}\n` +
+                          `┃\n` +
+                          `┃ 👤 *Requested by:* ${userName}\n` +
+                          `┃\n` +
+                          `┃ *Reply with the number you want:*\n` +
+                          `┃ 1️⃣ *->* 🎬 SD Video (Normal Quality)\n` +
+                          `┃ 2️⃣ *->* 🎥 HD Video (High Quality)\n` +
+                          `┃ 3️⃣ *->* 📁 Document File (File Format)\n` +
+                          `┃\n` +
+                          `╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                          `> *Powered by SACHIYA MD 💫*`;
 
-      // 1. Send Preview Card with Options Menu
+      // 1. Send Preview Card with Menu
       const sentMsg = await sachiya.sendMessage(
         from,
         {
           image: {
             url: config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true",
           },
-          caption: captionMsg,
+          caption: menuCaption,
         },
         { quoted: mek }
       );
@@ -105,9 +109,9 @@ cmd(
               caption: `╭━━━〔 *✅ SD VIDEO DOWNLOADED* 〕━━━\n` +
                        `┃\n` +
                        `┃ 🎬 *Title:* ${videoTitle}\n` +
-                       `┃ 📊 *Quality:* SD (Normal)\n` +
+                       `┃ 👤 *Page:* ${pageOwner}\n` +
+                       `┃ 📊 *Quality:* SD Video\n` +
                        `┃ 👤 *User:* ${userName}\n` +
-                       `┃ 🕒 *Time:* ${currentTime}\n` +
                        `┃\n` +
                        `╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                        `> *Powered by SACHIYA MD 💫*`,
@@ -122,9 +126,9 @@ cmd(
               caption: `╭━━━〔 *✅ HD VIDEO DOWNLOADED* 〕━━━\n` +
                        `┃\n` +
                        `┃ 🎬 *Title:* ${videoTitle}\n` +
-                       `┃ 📊 *Quality:* HD (High Quality)\n` +
+                       `┃ 👤 *Page:* ${pageOwner}\n` +
+                       `┃ 📊 *Quality:* HD Video\n` +
                        `┃ 👤 *User:* ${userName}\n` +
-                       `┃ 🕒 *Time:* ${currentTime}\n` +
                        `┃\n` +
                        `╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                        `> *Powered by SACHIYA MD 💫*`,
@@ -141,9 +145,9 @@ cmd(
               caption: `╭━━━〔 *✅ DOCUMENT FILE DOWNLOADED* 〕━━━\n` +
                        `┃\n` +
                        `┃ 🎬 *Title:* ${videoTitle}\n` +
-                       `┃ 📊 *Format:* Document (.mp4)\n` +
+                       `┃ 👤 *Page:* ${pageOwner}\n` +
+                       `┃ 📊 *Format:* Document File (.mp4)\n` +
                        `┃ 👤 *User:* ${userName}\n` +
-                       `┃ 🕒 *Time:* ${currentTime}\n` +
                        `┃\n` +
                        `╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                        `> *Powered by SACHIYA MD 💫*`,
