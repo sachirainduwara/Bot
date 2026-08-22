@@ -1,4 +1,5 @@
 const { cmd } = require('../command');
+const config = require('../config'); // config file එකෙන් data ගන්න
 const mongoose = require('mongoose');
 
 // MongoDB Schema for Settings
@@ -22,9 +23,6 @@ async function getSettings() {
     return settings;
 }
 
-// Owner Number Check Helper
-const OWNER_NUMBER = "94760579211";
-
 // 1. Settings Panel Command
 cmd({
     pattern: "settings",
@@ -35,21 +33,23 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, sender, reply }) => {
     try {
-        // Clean sender number to match properly
+        // Config එකේ තියෙන OWNER_NUM එකයි sender ගේ නම්බර් එකයි සසඳා බැලීම
         let senderNum = sender.replace(/[^0-9]/g, "");
-        if (!senderNum.includes(OWNER_NUMBER)) {
+        let ownerNum = config.OWNER_NUM.replace(/[^0-9]/g, "");
+
+        if (senderNum !== ownerNum) {
             return await reply("❌ This command is only for the Owner!");
         }
 
-        const config = await getSettings();
+        const botConfig = await getSettings();
 
         let menu = `╭─── 〔 *SETTINGS* 〕 ───╮
 │
-│ 1️⃣ *Anti-Call* ➪ ${config.anticall ? '🟢 *ON*' : '🔴 *OFF*'}
-│ 2️⃣ *Auto-Read* ➪ ${config.autoread ? '🟢 *ON*' : '🔴 *OFF*'}
-│ 3️⃣ *Auto-React* ➪ ${config.autoreact ? '🟢 *ON*' : '🔴 *OFF*'}
-│ 4️⃣ *Group-React* ➪ ${config.greact ? '🟢 *ON*' : '🔴 *OFF*'}
-│ 5️⃣ *Anti-Delete* ➪ ${config.antidelete ? '🟢 *ON*' : '🔴 *OFF*'}
+│ 1️⃣ *Anti-Call* ➪ ${botConfig.anticall ? '🟢 *ON*' : '🔴 *OFF*'}
+│ 2️⃣ *Auto-Read* ➪ ${botConfig.autoread ? '🟢 *ON*' : '🔴 *OFF*'}
+│ 3️⃣ *Auto-React* ➪ ${botConfig.autoreact ? '🟢 *ON*' : '🔴 *OFF*'}
+│ 4️⃣ *Group-React* ➪ ${botConfig.greact ? '🟢 *ON*' : '🔴 *OFF*'}
+│ 5️⃣ *Anti-Delete* ➪ ${botConfig.antidelete ? '🟢 *ON*' : '🔴 *OFF*'}
 │
 ╰─────────────────────╯
 
@@ -58,7 +58,7 @@ cmd({
 
 ⚡ *Powered by SACHIYA-MD 💫*`;
 
-        let imageUrl = "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
+        let imageUrl = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
 
         return await conn.sendMessage(from, {
             image: { url: imageUrl },
@@ -75,7 +75,9 @@ cmd({
 cmd({ on: "body" }, async (conn, mek, m, { from, body, sender, reply, quoted }) => {
     try {
         let senderNum = sender.replace(/[^0-9]/g, "");
-        if (!senderNum.includes(OWNER_NUMBER)) return;
+        let ownerNum = config.OWNER_NUM.replace(/[^0-9]/g, "");
+
+        if (senderNum !== ownerNum) return;
         if (!quoted || !quoted.text || !quoted.text.includes("〔 *SETTINGS* 〕")) return;
 
         let args = body.trim().toLowerCase().split(" ");
@@ -88,36 +90,36 @@ cmd({ on: "body" }, async (conn, mek, m, { from, body, sender, reply, quoted }) 
             return await reply("❌ Invalid action! Please use `on` or `off` (Ex: `1 on`)");
         }
 
-        let config = await getSettings();
+        let botConfig = await getSettings();
         let updatedField = "";
         let state = action === "on";
 
         switch (num) {
             case "1":
-                config.anticall = state;
+                botConfig.anticall = state;
                 updatedField = "Anti-Call";
                 break;
             case "2":
-                config.autoread = state;
+                botConfig.autoread = state;
                 updatedField = "Auto-Read";
                 break;
             case "3":
-                config.autoreact = state;
+                botConfig.autoreact = state;
                 updatedField = "Auto-React";
                 break;
             case "4":
-                config.greact = state;
+                botConfig.greact = state;
                 updatedField = "Group-React";
                 break;
             case "5":
-                config.antidelete = state;
+                botConfig.antidelete = state;
                 updatedField = "Anti-Delete";
                 break;
             default:
                 return await reply("❌ Invalid number! Choose between 1 and 5.");
         }
 
-        await config.save();
+        await botConfig.save();
 
         let successMsg = `╭─── 〔 *UPDATE SUCCESS* 〕 ───╮
 │
