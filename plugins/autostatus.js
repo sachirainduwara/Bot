@@ -1,4 +1,5 @@
 const { cmd } = require('../command');
+const config = require('../config');
 const mongoose = require('mongoose');
 
 // 1. MongoDB Schema for Auto Status View & Native Like
@@ -18,7 +19,7 @@ async function getStatusSettings() {
     return settings;
 }
 
-// 2. Settings Panel (.autostatus)
+// 2. Settings Panel (.autostatus) - Owner Only via Direct Number Match
 cmd({
     pattern: "autostatus",
     alias: ["statusview", "autoview"],
@@ -26,9 +27,19 @@ cmd({
     category: "owner",
     react: "🔄",
     filename: __filename
-}, async (conn, mek, m, { args, reply, isOwner }) => {
+}, async (conn, mek, m, { args, reply, sender, from }) => {
     try {
-        if (!isOwner) return await reply("❌ This command is only for the Owner!");
+        // බේස් එකේ isOwner පාවිච්චි නොකර, කෙළින්ම config එකේ අංකය සහ සෙන්ඩර් අංකය සංසන්දනය කිරීම
+        const ownerNum = config.OWNER_NUM ? config.OWNER_NUM.replace(/[^0-9]/g, "") : "";
+        let senderNum = sender ? sender.replace(/[^0-9]/g, "") : "";
+        let chatNum = from ? from.replace(/[^0-9]/g, "") : "";
+        let botNumber = conn.user ? conn.user.id.replace(/[^0-9]/g, "") : "";
+
+        let isMyNumber = senderNum.includes(ownerNum) || chatNum.includes(ownerNum) || chatNum.includes(botNumber);
+
+        if (!isMyNumber) {
+            return await reply("❌ This command is only for the Owner!");
+        }
 
         let botConfig = await getStatusSettings();
         let query = args[0] ? args[0].toLowerCase() : "";
@@ -66,7 +77,7 @@ cmd({
     }
 });
 
-// 3. Background Handler for Auto View & Button Click (Native Like)
+// 3. Background Handler for Auto View & Native Button Like (Green Heart)
 cmd({ on: "status" }, async (conn, mek, m) => {
     try {
         let botConfig = await getStatusSettings();
@@ -76,16 +87,16 @@ cmd({ on: "status" }, async (conn, mek, m) => {
 
         let participant = mek.key.participant || mek.participant || m.key.remoteJid;
 
-        // 1. Status එක View කිරීම
+        // 1. Status එක View කිරීම (Seen දැමීම)
         await conn.readMessages([mek.key]);
 
-        // 2. හරියටම අර Green Heart Button එක Click කිරීම (Reaction Method)
+        // 2. ස්ටේටස් එකට අදාළ අර Green Heart (Like) බටන් එක ක්ලික් කිරීම
         try {
             await conn.sendMessage(
                 'status@broadcast',
                 {
                     react: {
-                        text: '💚', // මේකෙන් මැසේජ් එකක් යන්නේ නෑ, අර බටන් එක කොළ පාට වෙනවා.
+                        text: '💚',
                         key: mek.key
                     }
                 },
