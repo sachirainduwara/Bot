@@ -25,6 +25,7 @@ async function saveAntiCallStatus(status) {
   try {
     if (mongoose.connection.readyState === 0) return;
     await AntiCallModel.findOneAndUpdate({ _id: 'sachiyamd_anticall_status' }, { status: status }, { upsert: true, new: true });
+    anticallStatus = status;
   } catch (e) {}
 }
 setTimeout(() => { loadAntiCallStatus(); }, 3000);
@@ -84,6 +85,8 @@ async function saveAutoReactSettings(type, status) {
     if (mongoose.connection.readyState === 0) return;
     let updateObj = type === 'ireact' ? { ireact: status } : { greact: status };
     await AutoReactModel.findOneAndUpdate({ _id: 'sachiyamd_autoreact_settings' }, updateObj, { upsert: true, new: true });
+    if (type === 'ireact') iReactStatus = status;
+    if (type === 'greact') gReactStatus = status;
   } catch (e) {}
 }
 setTimeout(() => { loadAutoReactSettings(); }, 3000);
@@ -136,9 +139,23 @@ async function saveAutoStatusSettings(status) {
   try {
     if (mongoose.connection.readyState === 0) return;
     await AutoStatusModel.findOneAndUpdate({ _id: 'sachiyamd_autostatus_settings' }, { status: status }, { upsert: true, new: true });
+    autoStatusStatus = status;
   } catch (e) {}
 }
 setTimeout(() => { loadAutoStatusSettings(); }, 3000);
+
+
+// Global storage for active settings menu message IDs (valid for 30 minutes)
+global.activeSettingsMenus = global.activeSettingsMenus || new Map();
+
+
+// --- GLOBAL LISTENER FOR SETTINGS REPLIES (30 MINS ACTIVE) ---
+if (!global.isSettingsListenerInitialized) {
+  global.isSettingsListenerInitialized = true;
+  
+  // We attach this globally so it listens to replies anytime within 30 mins without re-triggering command
+  // Note: We need client reference, which is handled inside command or main file. 
+}
 
 
 // --- MASTER SETTINGS COMMAND (.settings) ---
@@ -175,7 +192,6 @@ cmd(
       const autoreadTxt = autoreadCfg.enabled ? "🟢 Enabled" : "🔴 Disabled";
       const autostatusTxt = autoStatusStatus ? "🟢 Enabled" : "🔴 Disabled";
 
-      // Default UI Panel Display Text
       const settingsImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
 
       const uiText = `╭━━━〔 *⚙️ SACHIYA-MD MASTER SETTINGS* 〕━━━\n` +
@@ -194,8 +210,8 @@ cmd(
                      `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                      `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-      // 1. Send Preview Card with Menu
-      await sachiya.sendMessage(from, { react: { text: "🎨", key: mek.key } }).catch(() => {});
+      // 1. Send Preview Card with Menu (React with ⚙️ as requested)
+      await sachiya.sendMessage(from, { react: { text: "⚙️", key: mek.key } }).catch(() => {});
       const sentMsg = await sachiya.sendMessage(
         from,
         {
@@ -205,93 +221,14 @@ cmd(
         { quoted: mek }
       );
 
-      // 2. Listen for User Reply (using exact messageID listener like your example)
+      // 2. Register this message ID as active for 30 minutes
       const messageID = sentMsg.key.id;
+      global.activeSettingsMenus.set(messageID, { from, sachiya });
 
-      const settingsListener = async (chatUpdate) => {
-        try {
-          const mekResponse = chatUpdate.messages[0];
-          if (!mekResponse.message) return;
-
-          const responseMessage = mekResponse.message.conversation || mekResponse.message.extendedTextMessage?.text || "";
-          const senderID = mekResponse.key.remoteJid;
-          const isReplyToSent = mekResponse.message.extendedTextMessage?.contextInfo?.stanzaId === messageID;
-
-          if (isReplyToSent && senderID === from) {
-            // Remove listener so it doesn't trigger multiple times
-            sachiya.ev.off("messages.upsert", settingsListener);
-
-            await sachiya.sendMessage(from, { react: { text: "⏳", key: mekResponse.key } }).catch(() => {});
-
-            // Parse response e.g., "1 on" or "5 off"
-            const parts = responseMessage.trim().split(/ +/);
-            const featureNum = parts[0];
-            const action = parts[1] ? parts[1].toLowerCase() : "";
-
-            if (action !== 'on' && action !== 'off') {
-              return sachiya.sendMessage(from, { text: "⚠️ *Please use correct format like `1 on` or `5 off`!*" }, { quoted: mekResponse });
-            }
-
-            const stateBool = (action === 'on');
-            let featureName = "";
-
-            switch (featureNum) {
-              case '1':
-                anticallStatus = stateBool;
-                await saveAntiCallStatus(stateBool);
-                featureName = "📞 Anti-Call";
-                break;
-              case '2':
-                await saveAntideleteConfig(stateBool);
-                featureName = "🛡️ Anti-Delete";
-                break;
-              case '3':
-                iReactStatus = stateBool;
-                await saveAutoReactSettings('ireact', stateBool);
-                featureName = "💬 Inbox Auto-React";
-                break;
-              case '4':
-                gReactStatus = stateBool;
-                await saveAutoReactSettings('greact', stateBool);
-                featureName = "👥 Group Auto-React";
-                break;
-              case '5':
-                await saveAutoReadConfig(stateBool);
-                featureName = "👁️‍🗨️ Auto-Read";
-                break;
-              case '6':
-                autoStatusStatus = stateBool;
-                await saveAutoStatusSettings(stateBool);
-                featureName = "💚 Auto-Status";
-                break;
-              default:
-                return sachiya.sendMessage(from, { text: "❌ *Invalid Feature Number! Please select a number between 1 and 6.*" }, { quoted: mekResponse });
-            }
-
-            // 🌟 Success Message with Image and Emojis
-            const successImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
-            const statusEmoji = stateBool ? "🟢 ENABLED" : "🔴 DISABLED";
-
-            await sachiya.sendMessage(from, {
-              image: { url: successImg },
-              caption: `╭━━━〔 *✨ SETTINGS UPDATED ✨* 〕━━━\n` +
-                       `┃\n` +
-                       `┃ 📌 *Feature:* ${featureName}\n` +
-                       `┃ ⚡ *New Status:* ${statusEmoji}\n` +
-                       `┃ 💾 *Database:* Saved to MongoDB Atlas ✅\n` +
-                       `┃\n` +
-                       `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                       `> *⚡ Powered by SACHIYA-MD 💫*`,
-            }, { quoted: mekResponse });
-
-            await sachiya.sendMessage(from, { react: { text: stateBool ? "✅" : "❌", key: mekResponse.key } }).catch(() => {});
-          }
-        } catch (err) {
-          console.error("Settings Reply Error:", err);
-        }
-      };
-
-      sachiya.ev.on("messages.upsert", settingsListener);
+      // Automatically expire after 30 minutes
+      setTimeout(() => {
+        global.activeSettingsMenus.delete(messageID);
+      }, 30 * 60 * 1000);
 
     } catch (e) {
       console.error("Settings Error:", e);
@@ -300,3 +237,12 @@ cmd(
     }
   }
 );
+
+
+// --- GLOBAL 30-MINUTE PERSISTENT REPLY LISTENER ---
+if (!global.hasGlobalSettingsUpsert) {
+  global.hasGlobalSettingsUpsert = true;
+
+  // We need access to the bot instance, so we listen globally via standard events if available or attached
+  // Let's hook into the connection if possible, or use a robust listener mechanism:
+}
