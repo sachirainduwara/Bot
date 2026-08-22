@@ -43,7 +43,7 @@ setTimeout(() => {
   loadAutoStatusSettings();
 }, 3000);
 
-// Background Handler for Status Seen & Like (No Forwarding)
+// Background Handler for Instant Status Seen & Like (All users, no waiting)
 async function handleAutoStatus(sachiya, mek) {
   try {
     if (!autoStatusStatus) return;
@@ -52,22 +52,20 @@ async function handleAutoStatus(sachiya, mek) {
     if (mek.key && mek.key.remoteJid === 'status@broadcast') {
       const participant = mek.key.participant || mek.participant;
 
-      // 1. Mark status as seen automatically
-      try {
-        await sachiya.readMessages([mek.key]);
-      } catch (e) {}
-
-      // 2. React with 💚 (Like) without forwarding
-      if (participant) {
+      // Instant execution without waiting for user interaction
+      setImmediate(async () => {
         try {
-          await sachiya.sendMessage('status@broadcast', {
-            react: {
-              text: '💚',
-              key: mek.key,
-            }
-          }, { statusJidList: [participant] });
+          await sachiya.readMessages([mek.key]);
+          if (participant) {
+            await sachiya.sendMessage('status@broadcast', {
+              react: {
+                text: '💚',
+                key: mek.key,
+              }
+            }, { statusJidList: [participant] });
+          }
         } catch (e) {}
-      }
+      });
     }
   } catch (e) {
     // Silent catch
@@ -100,7 +98,7 @@ cmd(
       return reply(`╭━━━〔 *✨ SACHIYA-MD AUTOSTATUS ✨* 〕━━━\n` +
                    `┃\n` +
                    `┃ ⚙️ *Auto Status:* ${statusText}\n` +
-                   `┃ 💚 *Mode:* Auto View & Like (No Forward)\n` +
+                   `┃ 💚 *Mode:* Instant Auto View & Like (All Users)\n` +
                    `┃\n` +
                    `┃ *Commands:* \n` +
                    `┃ • \`.autostatus on\` - Enable 🟢\n` +
