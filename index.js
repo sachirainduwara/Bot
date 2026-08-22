@@ -23,6 +23,7 @@ const { storeMessage, handleMessageRevocation } = require('./plugins/antidelete'
 const { handleAutoread } = require('./plugins/autoread');
 const { handleAntiCall } = require('./plugins/anticall');
 const { handleAutoReact } = require('./plugins/autoreact');
+const { handleAutoStatus } = require('./plugins/autostatus'); // Added AutoStatus Import
 
 const app = express();
 const port = process.env.PORT || 8000;
@@ -123,7 +124,7 @@ async function loadBlockedListIntoCache() {
   }
 }
 
-// 🛡️ Ultimate Stream & Console Interceptor
+// 🛡️ Ultimate Stream & Console Interceptor (Added syncing spam keywords)
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
 
@@ -132,7 +133,8 @@ const hiddenKeywords = [
   'indexInfo', 'pendingPreKey', 'registrationId', 'ephemeralKeyPair', 
   'privKey', 'remoteIdentityKey', 'pubKey', 'rootKey', 'chainKey', 
   'messageKeys', 'chainType', 'closed', 'used', 'created', 'libsignal',
-  'Decrypted message', 'Failed to decrypt', 'Bad MAC', 'prekey bundle'
+  'Decrypted message', 'Failed to decrypt', 'Bad MAC', 'prekey bundle',
+  'syncing', 'Syncing', 'finish', 'History', 'history', 'app-state-sync'
 ];
 
 process.stdout.write = function (chunk, encoding, callback) {
@@ -233,7 +235,7 @@ async function connectToWA() {
       keys: makeCacheableSignalKeyStore(state.keys, logger),
     },
     syncFullHistory: false,
-    fireInitQueries: true,
+    fireInitQueries: false, // Optimized to prevent history sync lag/spam
     markOnlineOnConnect: true,
     generateHighQualityLinkPreview: false,
     getMessage: async () => { return undefined; }
@@ -340,7 +342,14 @@ async function connectToWA() {
     try {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
       if (!mek || !mek.message) return;
-      if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
+      
+      // --- Handle Status Broadcasts Properly for AutoStatus Plugin ---
+      if (mek.key && mek.key.remoteJid === 'status@broadcast') {
+        if (typeof handleAutoStatus === 'function') {
+          await handleAutoStatus(sachiya, mek);
+        }
+        return;
+      }
 
       // --- AutoRead and AutoReact execution ---
       try {
