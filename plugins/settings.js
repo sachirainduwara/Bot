@@ -33,12 +33,14 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, sender, isOwner, reply }) => {
     try {
-        // Owner Verification (Handles both isOwner flag and config match & Self-chat)
+        // Base එකෙන් එන isOwner හෝ Config එකේ අංකය හරියටම චෙක් කිරීම
+        const ownerNum = config.OWNER_NUM ? config.OWNER_NUM.replace(/[^0-9]/g, "") : "";
         let senderNum = sender ? sender.replace(/[^0-9]/g, "") : "";
-        let ownerNum = config.OWNER_NUM ? config.OWNER_NUM.replace(/[^0-9]/g, "") : "";
-        let isTrueOwner = isOwner || (senderNum === ownerNum) || (from.includes(ownerNum));
+        let chatNum = from ? from.replace(/[^0-9]/g, "") : "";
 
-        if (!isTrueOwner) {
+        let checkOwner = isOwner || senderNum.includes(ownerNum) || chatNum.includes(ownerNum);
+        
+        if (!checkOwner) {
             return await reply("❌ This command is only for the Owner!");
         }
 
@@ -75,11 +77,13 @@ cmd({
 // 2. Interactive Update Handler
 cmd({ on: "body" }, async (conn, mek, m, { from, body, sender, isOwner, reply, quoted }) => {
     try {
+        const ownerNum = config.OWNER_NUM ? config.OWNER_NUM.replace(/[^0-9]/g, "") : "";
         let senderNum = sender ? sender.replace(/[^0-9]/g, "") : "";
-        let ownerNum = config.OWNER_NUM ? config.OWNER_NUM.replace(/[^0-9]/g, "") : "";
-        let isTrueOwner = isOwner || (senderNum === ownerNum) || (from.includes(ownerNum));
+        let chatNum = from ? from.replace(/[^0-9]/g, "") : "";
 
-        if (!isTrueOwner) return;
+        let checkOwner = isOwner || senderNum.includes(ownerNum) || chatNum.includes(ownerNum);
+        if (!checkOwner) return;
+
         if (!quoted || !quoted.text || !quoted.text.includes("〔 *SETTINGS* 〕")) return;
 
         let args = body.trim().toLowerCase().split(" ");
