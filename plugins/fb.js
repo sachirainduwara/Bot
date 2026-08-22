@@ -50,21 +50,14 @@ cmd(
         return reply("❌ *Failed to download video. Video might be private, deleted, or invalid!*");
       }
 
-      // Extracting details safely with proper fallbacks
-      const { title, sd, hd, owner, time, description, thumbnail } = result;
-      const videoTitle = title && title.trim() !== "" ? title : "Facebook Video / Reel";
-      const pageOwner = owner && owner.trim() !== "" ? owner : "Facebook Creator / Page";
-      const postTime = time && time.trim() !== "" ? time : "Recently Uploaded";
-      const postDesc = description && description.trim() !== "" ? (description.length > 120 ? description.substring(0, 120) + "..." : description) : "Check out this amazing video from Facebook!";
+      // Extracting clean details
+      const { title, sd, hd, thumbnail } = result;
+      const videoTitle = title && title.trim() !== "" ? title : "Facebook Downloaded Video";
       const videoThumb = thumbnail || config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
 
       const menuCaption = `╭━━━〔 *📥 FACEBOOK DOWNLOADER* 〕━━━\n` +
                           `┃\n` +
                           `┃ 🎬 *Title:* ${videoTitle}\n` +
-                          `┃ 👤 *Page/Owner:* ${pageOwner}\n` +
-                          `┃ 🕒 *Posted Time:* ${postTime}\n` +
-                          `┃ 📝 *Description:* ${postDesc}\n` +
-                          `┃\n` +
                           `┃ 👤 *Requested by:* ${userName}\n` +
                           `┃\n` +
                           `┃ *Reply with the number you want:*\n` +
@@ -75,7 +68,7 @@ cmd(
                           `╰━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                           `> *Powered by SACHIYA MD 💫*`;
 
-      // 1. Send Preview Card with Menu (Using video thumbnail if available)
+      // 1. Send Preview Card with Menu
       const sentMsg = await sachiya.sendMessage(
         from,
         {
@@ -108,9 +101,6 @@ cmd(
               caption: `╭━━━〔 *✅ SD VIDEO DOWNLOADED* 〕━━━\n` +
                        `┃\n` +
                        `┃ 🎬 *Title:* ${videoTitle}\n` +
-                       `┃ 👤 *Page:* ${pageOwner}\n` +
-                       `┃ 🕒 *Time:* ${postTime}\n` +
-                       `┃ 📝 *Desc:* ${postDesc}\n` +
                        `┃ 📊 *Quality:* SD Video\n` +
                        `┃ 👤 *User:* ${userName}\n` +
                        `┃\n` +
@@ -127,9 +117,6 @@ cmd(
               caption: `╭━━━〔 *✅ HD VIDEO DOWNLOADED* 〕━━━\n` +
                        `┃\n` +
                        `┃ 🎬 *Title:* ${videoTitle}\n` +
-                       `┃ 👤 *Page:* ${pageOwner}\n` +
-                       `┃ 🕒 *Time:* ${postTime}\n` +
-                       `┃ 📝 *Desc:* ${postDesc}\n` +
                        `┃ 📊 *Quality:* HD Video\n` +
                        `┃ 👤 *User:* ${userName}\n` +
                        `┃\n` +
@@ -148,9 +135,6 @@ cmd(
               caption: `╭━━━〔 *✅ DOCUMENT FILE DOWNLOADED* 〕━━━\n` +
                        `┃\n` +
                        `┃ 🎬 *Title:* ${videoTitle}\n` +
-                       `┃ 👤 *Page:* ${pageOwner}\n` +
-                       `┃ 🕒 *Time:* ${postTime}\n` +
-                       `┃ 📝 *Desc:* ${postDesc}\n` +
                        `┃ 📊 *Format:* Document File (.mp4)\n` +
                        `┃ 👤 *User:* ${userName}\n` +
                        `┃\n` +
