@@ -22,6 +22,9 @@ async function getSettings() {
     return settings;
 }
 
+// Owner Number Check Helper
+const OWNER_NUMBER = "94760579211";
+
 // 1. Settings Panel Command
 cmd({
     pattern: "settings",
@@ -30,9 +33,13 @@ cmd({
     category: "owner",
     react: "⚙️",
     filename: __filename
-}, async (conn, mek, m, { from, isOwner, reply }) => {
+}, async (conn, mek, m, { from, sender, reply }) => {
     try {
-        if (!isOwner) return await reply("❌ This command is only for the Owner!");
+        // Clean sender number to match properly
+        let senderNum = sender.replace(/[^0-9]/g, "");
+        if (!senderNum.includes(OWNER_NUMBER)) {
+            return await reply("❌ This command is only for the Owner!");
+        }
 
         const config = await getSettings();
 
@@ -65,9 +72,11 @@ cmd({
 });
 
 // 2. Interactive Update Handler
-cmd({ on: "body" }, async (conn, mek, m, { from, body, isOwner, reply, quoted }) => {
+cmd({ on: "body" }, async (conn, mek, m, { from, body, sender, reply, quoted }) => {
     try {
-        if (!isOwner || !quoted || !quoted.text || !quoted.text.includes("〔 *SETTINGS* 〕")) return;
+        let senderNum = sender.replace(/[^0-9]/g, "");
+        if (!senderNum.includes(OWNER_NUMBER)) return;
+        if (!quoted || !quoted.text || !quoted.text.includes("〔 *SETTINGS* 〕")) return;
 
         let args = body.trim().toLowerCase().split(" ");
         if (args.length !== 2) return;
