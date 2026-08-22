@@ -1,6 +1,6 @@
 /**
  * SACHIYA-MD - A WhatsApp Bot
- * Autostatus & Like Plugin - Styled like Antidelete/Autoread
+ * Autostatus & Like Plugin - Fixed Handler
  */
 
 const { cmd } = require('../command');
@@ -53,7 +53,6 @@ cmd({
 },
 async (sachiya, mek, m, { from, q, reply, isOwner }) => {
     try {
-        // ඔයා ඉල්ලපු විදිහට owner ට හෝ bot ගෙන් යන මැසේජ් එකකට පමණක් ක්‍රියාත්මක වීම
         if (!isOwner && !mek.key.fromMe) {
             await sachiya.sendMessage(from, { react: { text: '❌', key: mek.key } }).catch(() => {});
             return reply('*❌ This command is only available for the owner!*');
@@ -84,7 +83,6 @@ async (sachiya, mek, m, { from, q, reply, isOwner }) => {
             return reply(`✨ Autostatus System successfully Disabled 🔴!`);
 
         } else if (action === '') {
-            // .autostatus විතරක් ගැහුවම මෙනු එක පෙන්වීම
             const currentStatus = configData.enabled ? '🟢 Enabled' : '🔴 Disabled';
             
             const menuText = `──────〔 ✨ SACHIYA-MD AUTOSTATUS ✨ 〕──────\n` +
@@ -107,7 +105,7 @@ async (sachiya, mek, m, { from, q, reply, isOwner }) => {
         }
 
     } catch (error) {
-        console.error('Error in autostatus command:', error);
+        console.log('Error in autostatus command:', error);
         await sachiya.sendMessage(from, { react: { text: '🔥', key: mek.key } }).catch(() => {});
         return reply('*❌ Error processing command!*');
     }
@@ -119,39 +117,42 @@ async function isAutostatusEnabled() {
         const configData = await initConfig();
         return configData.enabled;
     } catch (error) {
-        console.error('Error checking autostatus status:', error);
+        console.log('Error checking autostatus status:', error);
         return false;
     }
 }
 
-// Background Handler for Status Viewing & Green Heart Liking
-cmd({ on: "status" }, async (sachiya, mek, m) => {
+// Background Handler for Status Viewing & Green Heart Liking (Fixed for all bases)
+cmd({ on: "messages.upsert" }, async (sachiya, mek, m) => {
     try {
         const enabled = await isAutostatusEnabled();
         if (!enabled) return;
 
-        let participant = mek.key.participant || mek.participant || m.key.remoteJid;
+        // මැසේජ් එක ස්ටේටස් එකක් ද (status@broadcast) කියලා පරීක්ෂා කිරීම
+        if (mek.key && mek.key.remoteJid === 'status@broadcast') {
+            let participant = mek.key.participant || mek.participant;
+            if (!participant && m && m.participant) participant = m.participant;
 
-        // 1. Status එක View කිරීම (Seen දැමීම)
-        await sachiya.readMessages([mek.key]);
+            // 1. Status එක View කිරීම (Seen දැමීම)
+            await sachiya.readMessages([mek.key]);
 
-        // 2. අර ඔයා පෙන්නපු Green Heart (Like) බටන් එක ක්ලික් වීම
-        await sachiya.sendMessage(
-            'status@broadcast',
-            {
-                react: {
-                    text: '💚',
-                    key: mek.key
-                }
-            },
-            { statusJidList: [participant] }
-        );
-
-        return true;
+            // 2. Green Heart (Like) එක යැවීම
+            if (participant) {
+                await sachiya.sendMessage(
+                    'status@broadcast',
+                    {
+                        react: {
+                            text: '💚',
+                            key: mek.key
+                        }
+                    },
+                    { statusJidList: [participant] }
+                );
+            }
+        }
     } catch (error) {
-        console.error('Autostatus Execution Error:', error);
+        console.log('Autostatus Handler Error:', error);
     }
-    return false;
 });
 
 module.exports = {
