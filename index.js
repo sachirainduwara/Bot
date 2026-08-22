@@ -343,13 +343,14 @@ async function connectToWA() {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
       if (!mek || !mek.message) return;
       
-      // --- Handle Status Broadcasts Properly for AutoStatus Plugin ---
+            // --- Handle Status Broadcasts Separately ---
       if (mek.key && mek.key.remoteJid === 'status@broadcast') {
         if (typeof handleAutoStatus === 'function') {
           await handleAutoStatus(sachiya, mek);
         }
         return;
       }
+
 
       // --- AutoRead and AutoReact execution ---
       try {
