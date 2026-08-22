@@ -141,11 +141,7 @@ async function saveAutoStatusSettings(status) {
 setTimeout(() => { loadAutoStatusSettings(); }, 3000);
 
 
-// Global Set to keep track of active settings menu message IDs
-global.settingsMessageIds = global.settingsMessageIds || new Set();
-
-
-// --- MASTER SETTINGS COMMAND & REPLY HANDLER (.settings) ---
+// --- MASTER SETTINGS COMMAND (.settings) ---
 cmd(
   {
     pattern: "settings",
@@ -155,155 +151,152 @@ cmd(
     react: "⚙️",
     filename: __filename,
   },
-  async (sachiya, mek, m, { from, q, reply, senderNumber, sender, quoted }) => {
-    // Owner Verification
-    const ownerConfig = String(config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
-    const cleanSender = String(senderNumber || sender || '').replace(/[^0-9]/g, '');
-    const botNumber = String(sachiya.user?.id || '').split('@')[0].replace(/[^0-9]/g, '');
-    const isTrueOwner = mek.key.fromMe || cleanSender.includes(ownerConfig) || ownerConfig.includes(cleanSender) || cleanSender === botNumber;
-
-    if (!isTrueOwner) {
-      await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } }).catch(() => {});
-      return reply("❌ *This command is only for the Owner!*");
-    }
-
-    // Load latest statuses
-    const antidelCfg = await loadAntideleteConfig();
-    const autoreadCfg = await loadAutoReadConfig();
-
-    const anticallTxt = anticallStatus ? "🟢 Enabled" : "🔴 Disabled";
-    const antidelTxt = antidelCfg.enabled ? "🟢 Enabled" : "🔴 Disabled";
-    const ireactTxt = iReactStatus ? "🟢 Enabled" : "🔴 Disabled";
-    const greactTxt = gReactStatus ? "🟢 Enabled" : "🔴 Disabled";
-    const autoreadTxt = autoreadCfg.enabled ? "🟢 Enabled" : "🔴 Disabled";
-    const autostatusTxt = autoStatusStatus ? "🟢 Enabled" : "🔴 Disabled";
-
-    let featureNum = "";
-    let action = "";
-
-    // Comprehensive check for quoted message / reply detection
-    const quotedId = quoted ? (quoted.id || quoted.key?.id) : null;
-    const quotedText = quoted ? (quoted.text || quoted.caption || JSON.stringify(quoted)) : "";
-
-    const isSettingsReply = (quotedId && global.settingsMessageIds.has(quotedId)) || 
-                            (quotedText.includes("SACHIYA-MD MASTER SETTINGS") || quotedText.includes("Anti-Call"));
-
-    if (isSettingsReply) {
-      // Extract the text typed in the reply (e.g. "5 on" or "1 off")
-      let inputTxt = q || m.body || (mek.message?.conversation || mek.message?.extendedTextMessage?.text) || "";
-      const parts = inputTxt.trim().split(/ +/);
-      featureNum = parts[0];
-      action = parts[1] ? parts[1].toLowerCase() : "";
-    } else if (q && !quoted) {
-      // Direct command usage (e.g. .settings 1 on)
-      const parts = q.trim().split(/ +/);
-      featureNum = parts[0];
-      action = parts[1] ? parts[1].toLowerCase() : "";
-    }
-
-    // If feature number and action are successfully found
-    if (featureNum && action) {
-      if (action !== 'on' && action !== 'off') {
-        return reply("⚠️ *Please use format like `1 on` or `5 off`!*");
-      }
-      const stateBool = (action === 'on');
-
-      await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } }).catch(() => {});
-
-      let featureName = "";
-      switch (featureNum) {
-        case '1':
-          anticallStatus = stateBool;
-          await saveAntiCallStatus(stateBool);
-          featureName = "📞 Anti-Call";
-          break;
-        case '2':
-          await saveAntideleteConfig(stateBool);
-          featureName = "🛡️ Anti-Delete";
-          break;
-        case '3':
-          iReactStatus = stateBool;
-          await saveAutoReactSettings('ireact', stateBool);
-          featureName = "💬 Inbox Auto-React";
-          break;
-        case '4':
-          gReactStatus = stateBool;
-          await saveAutoReactSettings('greact', stateBool);
-          featureName = "👥 Group Auto-React";
-          break;
-        case '5':
-          await saveAutoReadConfig(stateBool);
-          featureName = "👁️‍🗨️ Auto-Read";
-          break;
-        case '6':
-          autoStatusStatus = stateBool;
-          await saveAutoStatusSettings(stateBool);
-          featureName = "💚 Auto-Status";
-          break;
-        default:
-          return reply("❌ *Invalid Feature Number! Please select a number between 1 and 6.*");
-      }
-
-      // 🌟 Gorgeous Success Message with Image and Emojis
-      const successImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
-      const statusEmoji = stateBool ? "🟢 ENABLED" : "🔴 DISABLED";
-      
-      const successText = `╭━━━〔 *✨ SETTINGS UPDATED ✨* 〕━━━\n` +
-                          `┃\n` +
-                          `┃ 📌 *Feature:* ${featureName}\n` +
-                          `┃ ⚡ *New Status:* ${statusEmoji}\n` +
-                          `┃ 💾 *Database:* Saved to MongoDB Atlas ✅\n` +
-                          `┃\n` +
-                          `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                          `> *⚡ Powered by SACHIYA-MD 💫*`;
-
-      try {
-        await sachiya.sendMessage(from, { react: { text: stateBool ? "✅" : "❌", key: mek.key } }).catch(() => {});
-        await sachiya.sendMessage(from, {
-          image: { url: successImg },
-          caption: successText
-        }, { quoted: mek });
-      } catch (err) {
-        await reply(successText);
-      }
-      return;
-    }
-
-    // Default UI Panel Display (When typing .settings)
-    const settingsImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
-
-    const uiText = `╭━━━〔 *⚙️ SACHIYA-MD MASTER SETTINGS* 〕━━━\n` +
-                   `┃\n` +
-                   `┃ *1.* 📞 *Anti-Call:* ${anticallTxt}\n` +
-                   `┃ *2.* 🛡️ *Anti-Delete:* ${antidelTxt}\n` +
-                   `┃ *3.* 💬 *Inbox Auto-React:* ${ireactTxt}\n` +
-                   `┃ *4.* 👥 *Group Auto-React:* ${greactTxt}\n` +
-                   `┃ *5.* 👁️‍🗨️ *Auto-Read:* ${autoreadTxt}\n` +
-                   `┃ *6.* 💚 *Auto-Status:* ${autostatusTxt}\n` +
-                   `┃\n` +
-                   `┣━━━〔 *HOW TO CHANGE* 〕━━━\n` +
-                   `┃ • *Reply to this message with:* \`[Number] [on/off]\`\n` +
-                   `┃ • *Example:* \`1 on\` or \`5 off\`\n` +
-                   `┃\n` +
-                   `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                   `> *⚡ Powered by SACHIYA-MD 💫*`;
-
+  async (sachiya, mek, m, { from, q, reply, senderNumber, sender }) => {
     try {
-      await sachiya.sendMessage(from, { react: { text: "🎨", key: mek.key } }).catch(() => {});
-      const sentMsg = await sachiya.sendMessage(from, {
-        image: { url: settingsImg },
-        caption: uiText
-      }, { quoted: mek });
+      // Owner Verification
+      const ownerConfig = String(config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
+      const cleanSender = String(senderNumber || sender || '').replace(/[^0-9]/g, '');
+      const botNumber = String(sachiya.user?.id || '').split('@')[0].replace(/[^0-9]/g, '');
+      const isTrueOwner = mek.key.fromMe || cleanSender.includes(ownerConfig) || ownerConfig.includes(cleanSender) || cleanSender === botNumber;
 
-      // Save message ID to global list
-      if (sentMsg && sentMsg.key && sentMsg.key.id) {
-        global.settingsMessageIds.add(sentMsg.key.id);
-        setTimeout(() => {
-          global.settingsMessageIds.delete(sentMsg.key.id);
-        }, 15 * 60 * 1000);
+      if (!isTrueOwner) {
+        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } }).catch(() => {});
+        return reply("❌ *This command is only for the Owner!*");
       }
-    } catch (err) {
-      await reply(uiText);
+
+      // Load latest statuses
+      const antidelCfg = await loadAntideleteConfig();
+      const autoreadCfg = await loadAutoReadConfig();
+
+      const anticallTxt = anticallStatus ? "🟢 Enabled" : "🔴 Disabled";
+      const antidelTxt = antidelCfg.enabled ? "🟢 Enabled" : "🔴 Disabled";
+      const ireactTxt = iReactStatus ? "🟢 Enabled" : "🔴 Disabled";
+      const greactTxt = gReactStatus ? "🟢 Enabled" : "🔴 Disabled";
+      const autoreadTxt = autoreadCfg.enabled ? "🟢 Enabled" : "🔴 Disabled";
+      const autostatusTxt = autoStatusStatus ? "🟢 Enabled" : "🔴 Disabled";
+
+      // Default UI Panel Display Text
+      const settingsImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
+
+      const uiText = `╭━━━〔 *⚙️ SACHIYA-MD MASTER SETTINGS* 〕━━━\n` +
+                     `┃\n` +
+                     `┃ *1.* 📞 *Anti-Call:* ${anticallTxt}\n` +
+                     `┃ *2.* 🛡️ *Anti-Delete:* ${antidelTxt}\n` +
+                     `┃ *3.* 💬 *Inbox Auto-React:* ${ireactTxt}\n` +
+                     `┃ *4.* 👥 *Group Auto-React:* ${greactTxt}\n` +
+                     `┃ *5.* 👁️‍🗨️ *Auto-Read:* ${autoreadTxt}\n` +
+                     `┃ *6.* 💚 *Auto-Status:* ${autostatusTxt}\n` +
+                     `┃\n` +
+                     `┣━━━〔 *HOW TO CHANGE* 〕━━━\n` +
+                     `┃ • *Reply to this message with:* \`[Number] [on/off]\`\n` +
+                     `┃ • *Example:* \`1 on\` or \`5 off\`\n` +
+                     `┃\n` +
+                     `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                     `> *⚡ Powered by SACHIYA-MD 💫*`;
+
+      // 1. Send Preview Card with Menu
+      await sachiya.sendMessage(from, { react: { text: "🎨", key: mek.key } }).catch(() => {});
+      const sentMsg = await sachiya.sendMessage(
+        from,
+        {
+          image: { url: settingsImg },
+          caption: uiText,
+        },
+        { quoted: mek }
+      );
+
+      // 2. Listen for User Reply (using exact messageID listener like your example)
+      const messageID = sentMsg.key.id;
+
+      const settingsListener = async (chatUpdate) => {
+        try {
+          const mekResponse = chatUpdate.messages[0];
+          if (!mekResponse.message) return;
+
+          const responseMessage = mekResponse.message.conversation || mekResponse.message.extendedTextMessage?.text || "";
+          const senderID = mekResponse.key.remoteJid;
+          const isReplyToSent = mekResponse.message.extendedTextMessage?.contextInfo?.stanzaId === messageID;
+
+          if (isReplyToSent && senderID === from) {
+            // Remove listener so it doesn't trigger multiple times
+            sachiya.ev.off("messages.upsert", settingsListener);
+
+            await sachiya.sendMessage(from, { react: { text: "⏳", key: mekResponse.key } }).catch(() => {});
+
+            // Parse response e.g., "1 on" or "5 off"
+            const parts = responseMessage.trim().split(/ +/);
+            const featureNum = parts[0];
+            const action = parts[1] ? parts[1].toLowerCase() : "";
+
+            if (action !== 'on' && action !== 'off') {
+              return sachiya.sendMessage(from, { text: "⚠️ *Please use correct format like `1 on` or `5 off`!*" }, { quoted: mekResponse });
+            }
+
+            const stateBool = (action === 'on');
+            let featureName = "";
+
+            switch (featureNum) {
+              case '1':
+                anticallStatus = stateBool;
+                await saveAntiCallStatus(stateBool);
+                featureName = "📞 Anti-Call";
+                break;
+              case '2':
+                await saveAntideleteConfig(stateBool);
+                featureName = "🛡️ Anti-Delete";
+                break;
+              case '3':
+                iReactStatus = stateBool;
+                await saveAutoReactSettings('ireact', stateBool);
+                featureName = "💬 Inbox Auto-React";
+                break;
+              case '4':
+                gReactStatus = stateBool;
+                await saveAutoReactSettings('greact', stateBool);
+                featureName = "👥 Group Auto-React";
+                break;
+              case '5':
+                await saveAutoReadConfig(stateBool);
+                featureName = "👁️‍🗨️ Auto-Read";
+                break;
+              case '6':
+                autoStatusStatus = stateBool;
+                await saveAutoStatusSettings(stateBool);
+                featureName = "💚 Auto-Status";
+                break;
+              default:
+                return sachiya.sendMessage(from, { text: "❌ *Invalid Feature Number! Please select a number between 1 and 6.*" }, { quoted: mekResponse });
+            }
+
+            // 🌟 Success Message with Image and Emojis
+            const successImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
+            const statusEmoji = stateBool ? "🟢 ENABLED" : "🔴 DISABLED";
+
+            await sachiya.sendMessage(from, {
+              image: { url: successImg },
+              caption: `╭━━━〔 *✨ SETTINGS UPDATED ✨* 〕━━━\n` +
+                       `┃\n` +
+                       `┃ 📌 *Feature:* ${featureName}\n` +
+                       `┃ ⚡ *New Status:* ${statusEmoji}\n` +
+                       `┃ 💾 *Database:* Saved to MongoDB Atlas ✅\n` +
+                       `┃\n` +
+                       `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                       `> *⚡ Powered by SACHIYA-MD 💫*`,
+            }, { quoted: mekResponse });
+
+            await sachiya.sendMessage(from, { react: { text: stateBool ? "✅" : "❌", key: mekResponse.key } }).catch(() => {});
+          }
+        } catch (err) {
+          console.error("Settings Reply Error:", err);
+        }
+      };
+
+      sachiya.ev.on("messages.upsert", settingsListener);
+
+    } catch (e) {
+      console.error("Settings Error:", e);
+      await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } }).catch(() => {});
+      reply(`❌ *Error:* ${e.message || "An unexpected error occurred!"}`);
     }
   }
 );
