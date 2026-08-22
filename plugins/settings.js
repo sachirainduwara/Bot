@@ -174,26 +174,34 @@ cmd(
     const autoreadTxt = autoreadCfg.enabled ? "🟢 Enabled" : "🔴 Disabled";
     const autostatusTxt = autoStatusStatus ? "🟢 Enabled" : "🔴 Disabled";
 
-    // Check if user is replying to the settings message or using direct arguments (e.g. .settings 1 on)
+    // Detect if user is replying to a message or running command with arguments
     let featureNum = "";
     let action = "";
 
-    if (quoted && quoted.body && (quoted.body.includes("SACHIYA-MD MASTER SETTINGS") || quoted.body.includes("⚙️"))) {
-      // User replied to the settings message! (e.g., text is "1 on" or "2 off")
-      const parts = q ? q.trim().split(/ +/) : (m.body ? m.body.trim().split(/ +/) : []);
-      featureNum = parts[0];
-      action = parts[1] ? parts[1].toLowerCase() : '';
-    } else if (q) {
-      // Direct command usage (e.g., .settings 1 on)
-      const parts = q.trim().split(/ +/);
-      featureNum = parts[0];
-      action = parts[1] ? parts[1].toLowerCase() : '';
+    // Check if quoted message exists and belongs to bot settings
+    if (quoted) {
+      let quotedText = quoted.text || quoted.caption || (quoted.message && (quoted.message.conversation || quoted.message.extendedTextMessage?.text || quoted.message.imageMessage?.caption)) || "";
+      
+      if (quotedText.includes("SACHIYA-MD MASTER SETTINGS") || quotedText.includes("⚙️") || quotedText.includes("Anti-Call")) {
+        // User replied to the settings menu! Get text from q or m.body
+        const textToParse = q || m.body || "";
+        const parts = textToParse.trim().split(/ +/);
+        featureNum = parts[0];
+        action = parts[1] ? parts[1].toLowerCase() : "";
+      }
     }
 
-    // If valid feature number and action are provided
+    // If not a reply, check direct command (e.g. .settings 1 on)
+    if (!featureNum && q) {
+      const parts = q.trim().split(/ +/);
+      featureNum = parts[0];
+      action = parts[1] ? parts[1].toLowerCase() : "";
+    }
+
+    // If valid feature number and action are present
     if (featureNum && action) {
       if (action !== 'on' && action !== 'off') {
-        return reply("⚠️ *Please use format like `1 on` or `2 off` when replying!*");
+        return reply("⚠️ *Please use format like `1 on` or `2 off`!*");
       }
       const stateBool = (action === 'on');
 
@@ -233,7 +241,7 @@ cmd(
           return reply("❌ *Invalid Feature Number! Please select a number between 1 and 6.*");
       }
 
-      // 🌟 Super Clean & Beautiful Change Success Message (with Image & Emojis)
+      // 🌟 Success Message with Image and Emojis
       const successImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
       const statusEmoji = stateBool ? "🟢 ENABLED" : "🔴 DISABLED";
       
@@ -259,7 +267,7 @@ cmd(
     }
 
     // Default UI Panel Display (When typing .settings)
-    const settingsImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
+    const settingsImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw5=true";
 
     const uiText = `╭━━━〔 *⚙️ SACHIYA-MD MASTER SETTINGS* 〕━━━\n` +
                    `┃\n` +
