@@ -43,7 +43,7 @@ setTimeout(() => {
   loadAutoStatusSettings();
 }, 3000);
 
-// Background Handler for Instant Status Seen & Like (All users, no waiting)
+// Background Handler for 100% Automatic Status Seen & Like for ALL Users
 async function handleAutoStatus(sachiya, mek) {
   try {
     if (!autoStatusStatus) return;
@@ -52,8 +52,8 @@ async function handleAutoStatus(sachiya, mek) {
     if (mek.key && mek.key.remoteJid === 'status@broadcast') {
       const participant = mek.key.participant || mek.participant;
 
-      // Instant execution without waiting for user interaction
-      setImmediate(async () => {
+      // Forcefully read and react without needing manual trigger
+      setTimeout(async () => {
         try {
           await sachiya.readMessages([mek.key]);
           if (participant) {
@@ -64,8 +64,18 @@ async function handleAutoStatus(sachiya, mek) {
               }
             }, { statusJidList: [participant] });
           }
-        } catch (e) {}
-      });
+        } catch (err) {
+          // Fallback direct react if statusJidList fails
+          try {
+            await sachiya.sendMessage(mek.key.remoteJid, {
+              react: {
+                text: '💚',
+                key: mek.key
+              }
+            });
+          } catch (e) {}
+        }
+      }, 500);
     }
   } catch (e) {
     // Silent catch
@@ -98,7 +108,7 @@ cmd(
       return reply(`╭━━━〔 *✨ SACHIYA-MD AUTOSTATUS ✨* 〕━━━\n` +
                    `┃\n` +
                    `┃ ⚙️ *Auto Status:* ${statusText}\n` +
-                   `┃ 💚 *Mode:* Instant Auto View & Like (All Users)\n` +
+                   `┃ 💚 *Mode:* Universal Auto View & Like (All Users)\n` +
                    `┃\n` +
                    `┃ *Commands:* \n` +
                    `┃ • \`.autostatus on\` - Enable 🟢\n` +
