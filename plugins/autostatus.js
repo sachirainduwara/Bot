@@ -1,118 +1,127 @@
-const fs = require('fs');
-const path = require('path');
-const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
-const { writeFile } = require('fs/promises');
+const { cmd } = require("../command");
 const mongoose = require('mongoose');
 const config = require('../config');
 
-// 1. MongoDB Schema for Auto Status Settings
-const autoStatusSchema = new mongoose.Schema({
-    id: { type: String, required: true, unique: true, default: 'autostatus_settings' },
-    status: { type: String, default: 'false' }
+// MongoDB Schema for Auto Status Settings
+const AutoStatusSchema = new mongoose.Schema({
+  _id: { type: String, required: true },
+  status: { type: Boolean, default: false }
 });
+const AutoStatusModel = mongoose.models.AutoStatus || mongoose.model('AutoStatus', AutoStatusSchema);
 
-const AutoStatus = mongoose.models.AutoStatus_SACHIYAMD || mongoose.model('AutoStatus_SACHIYAMD', autoStatusSchema);
+let autoStatusStatus = false;
 
-module.exports = {
-    name: 'autostatus',
-    alias: ['autoreadstatus', 'astatus'],
-    desc: 'Manage Auto Status Read and Like feature',
-    category: 'owner',
-    
-    // Command Handler for On/Off UI Menu
-    async execute(message, client, match, extra) {
-        try {
-            // Check Owner Number Permission (94760579211)
-            const ownerNum = config.OWNER_NUM || "94760579211";
-            const senderNumber = message.sender ? message.sender.replace(/[^0-9]/g, '') : '';
-            
-            if (senderNumber !== ownerNum) {
-                if (message.react) await message.react('❌');
-                return await message.reply("❌ **This command is only for the Owner!**");
-            }
-
-            const args = match ? match.trim().toLowerCase() : '';
-            let setting = await AutoStatus.findOne({ id: 'autostatus_settings' });
-            
-            if (!setting) {
-                setting = new AutoStatus({ id: 'autostatus_settings', status: 'false' });
-                await setting.save();
-            }
-
-            if (args === 'on') {
-                setting.status = 'true';
-                await setting.save();
-                if (message.react) await message.react('🟢');
-                return await message.reply("✨ **Auto Status System Successfully Enabled 🟢 !**\n\n_Statuses will now be automatically viewed and liked._");
-            } 
-            else if (args === 'off') {
-                setting.status = 'false';
-                await setting.save();
-                if (message.react) await message.react('🔴');
-                return await message.reply("🔴 **Auto Status System Successfully Disabled ❌ !**");
-            }
-
-            // Beautiful UI Menu Display
-            if (message.react) await message.react('⚙️');
-            const currentStatusText = setting.status === 'true' ? "Enabled 🟢" : "Disabled ❌";
-            
-            const uiText = `
-╭━━━〔 ✨ **SACHIYA-MD** 
-┃ **AUTO STATUS SYSTEM** ✨ 〕━━━
-┃
-┃ ⚙️ **Current Status:** ${currentStatusText}
-┃ 💚 **Mode:** Auto Read & Like (No Forward)
-┃
-┃ **Available Commands:**
-┃ • \`.autostatus on\` - Enable Auto Status 🟢
-┃ • \`.autostatus off\` - Disable Auto Status 🔴
-┃
-╰━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚡ **Powered by SACHIYA-MD 💫**
-            `.trim();
-
-            return await message.reply(uiText);
-
-        } catch (error) {
-            console.error("Plugin Error [autostatus]:", error);
-            return await message.reply("❌ An error occurred while processing the command!");
-        }
-    },
-
-    // Background Listener for Status Seen & Like (Heart React) - No Inbox Forwarding
-    async onCall(conn, mek) {
-        try {
-            // Check MongoDB status state
-            let setting = await AutoStatus.findOne({ id: 'autostatus_settings' });
-            if (!setting || setting.status !== 'true') return;
-
-            if (mek && mek.key && mek.key.remoteJid === 'status@broadcast') {
-                const participant = mek.key.participant || mek.participant;
-
-                // 1. Automatically read/seen the status
-                try {
-                    await conn.readMessages([mek.key]);
-                } catch (e) {
-                    console.error("❌ Failed to mark status as seen:", e);
-                }
-
-                // 2. Automatically give a Like (💚 Heart React) to the status without forwarding to inbox
-                if (participant) {
-                    try {
-                        await conn.sendMessage('status@broadcast', {
-                            react: {
-                                text: '💚',
-                                key: mek.key,
-                            }
-                        }, { statusJidList: [participant] });
-                    } catch (e) {
-                        console.error("❌ Failed to react to status:", e);
-                    }
-                }
-            }
-        } catch (e) {
-            // Silent error catch to prevent bot crashes
-            console.error("Auto Status Background Error:", e);
-        }
+async function loadAutoStatusSettings() {
+  try {
+    if (mongoose.connection.readyState === 0) return;
+    let doc = await AutoStatusModel.findOne({ _id: 'sachiyamd_autostatus_settings' });
+    if (doc) {
+      autoStatusStatus = doc.status;
+    } else {
+      await AutoStatusModel.create({ _id: 'sachiyamd_autostatus_settings', status: false });
+      autoStatusStatus = false;
     }
-};
+  } catch (e) {
+    console.error("❌ AutoStatus Settings Load Error:", e);
+  }
+}
+
+async function saveAutoStatusSettings(status) {
+  try {
+    if (mongoose.connection.readyState === 0) return;
+    await AutoStatusModel.findOneAndUpdate(
+      { _id: 'sachiyamd_autostatus_settings' },
+      { status: status },
+      { upsert: true, new: true }
+    );
+  } catch (e) {
+    console.error("❌ AutoStatus Settings Save Error:", e);
+  }
+}
+
+setTimeout(() => {
+  loadAutoStatusSettings();
+}, 3000);
+
+// Background Handler for Status Seen & Like (No Forwarding)
+async function handleAutoStatus(sachiya, mek) {
+  try {
+    if (!autoStatusStatus) return;
+    if (!mek || !mek.message) return;
+
+    if (mek.key && mek.key.remoteJid === 'status@broadcast') {
+      const participant = mek.key.participant || mek.participant;
+
+      // 1. Mark status as seen automatically
+      try {
+        await sachiya.readMessages([mek.key]);
+      } catch (e) {}
+
+      // 2. React with 💚 (Like) without forwarding
+      if (participant) {
+        try {
+          await sachiya.sendMessage('status@broadcast', {
+            react: {
+              text: '💚',
+              key: mek.key,
+            }
+          }, { statusJidList: [participant] });
+        } catch (e) {}
+      }
+    }
+  } catch (e) {
+    // Silent catch
+  }
+}
+
+// Command for AutoStatus (.autostatus on / .autostatus off)
+cmd(
+  {
+    pattern: "autostatus",
+    alias: ["autoreadstatus", "astatus"],
+    desc: "Enable or Disable Auto Status Read and Like",
+    category: "owner",
+    react: "⚙️",
+    filename: __filename,
+  },
+  async (sachiya, mek, m, { from, q, reply, senderNumber, sender }) => {
+    const ownerConfig = String(config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
+    const cleanSender = String(senderNumber || sender || '').replace(/[^0-9]/g, '');
+    const botNumber = String(sachiya.user?.id || '').split('@')[0].replace(/[^0-9]/g, '');
+
+    const isTrueOwner = mek.key.fromMe || cleanSender.includes(ownerConfig) || ownerConfig.includes(cleanSender) || cleanSender === botNumber;
+
+    if (!isTrueOwner) {
+      return reply("❌ *This command is only for the Owner!*");
+    }
+
+    if (!q) {
+      const statusText = autoStatusStatus ? "Enabled ✅" : "Disabled ❌";
+      return reply(`╭━━━〔 *✨ SACHIYA-MD AUTOSTATUS ✨* 〕━━━\n` +
+                   `┃\n` +
+                   `┃ ⚙️ *Auto Status:* ${statusText}\n` +
+                   `┃ 💚 *Mode:* Auto View & Like (No Forward)\n` +
+                   `┃\n` +
+                   `┃ *Commands:* \n` +
+                   `┃ • \`.autostatus on\` - Enable 🟢\n` +
+                   `┃ • \`.autostatus off\` - Disable 🔴\n` +
+                   `┃\n` +
+                   `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                   `> *⚡ Powered by SACHIYA-MD 💫*`);
+    }
+
+    if (q.toLowerCase() === 'on') {
+      autoStatusStatus = true;
+      await saveAutoStatusSettings(true);
+      return reply("✅ *Auto Status Read & Like has been enabled successfully!*");
+    } else if (q.toLowerCase() === 'off') {
+      autoStatusStatus = false;
+      await saveAutoStatusSettings(false);
+      return reply("❌ *Auto Status Read & Like has been disabled successfully!*");
+    } else {
+      return reply("⚠️ *Please use `.autostatus on` or `.autostatus off`*");
+    }
+  }
+);
+
+module.exports = { handleAutoStatus };
