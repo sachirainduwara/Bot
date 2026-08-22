@@ -141,6 +141,10 @@ async function saveAutoStatusSettings(status) {
 setTimeout(() => { loadAutoStatusSettings(); }, 3000);
 
 
+// Store active settings menu message IDs globally to track replies accurately
+global.settingsMessageIds = global.settingsMessageIds || new Set();
+
+
 // --- MASTER SETTINGS COMMAND & REPLY HANDLER (.settings) ---
 cmd(
   {
@@ -174,34 +178,29 @@ cmd(
     const autoreadTxt = autoreadCfg.enabled ? "🟢 Enabled" : "🔴 Disabled";
     const autostatusTxt = autoStatusStatus ? "🟢 Enabled" : "🔴 Disabled";
 
-    // Detect if user is replying to a message or running command with arguments
     let featureNum = "";
     let action = "";
 
-    // Check if quoted message exists and belongs to bot settings
-    if (quoted) {
-      let quotedText = quoted.text || quoted.caption || (quoted.message && (quoted.message.conversation || quoted.message.extendedTextMessage?.text || quoted.message.imageMessage?.caption)) || "";
-      
-      if (quotedText.includes("SACHIYA-MD MASTER SETTINGS") || quotedText.includes("⚙️") || quotedText.includes("Anti-Call")) {
-        // User replied to the settings menu! Get text from q or m.body
-        const textToParse = q || m.body || "";
-        const parts = textToParse.trim().split(/ +/);
-        featureNum = parts[0];
-        action = parts[1] ? parts[1].toLowerCase() : "";
-      }
-    }
-
-    // If not a reply, check direct command (e.g. .settings 1 on)
-    if (!featureNum && q) {
+    // Check if the user is replying to a settings menu message
+    const quotedId = quoted ? (quoted.id || quoted.key?.id) : null;
+    
+    if (quotedId && global.settingsMessageIds.has(quotedId)) {
+      // User replied to the settings panel! Read the text from q or m.body
+      const inputTxt = q || m.body || "";
+      const parts = inputTxt.trim().split(/ +/);
+      featureNum = parts[0];
+      action = parts[1] ? parts[1].toLowerCase() : "";
+    } else if (q && !quoted) {
+      // Direct command usage (e.g., .settings 1 on)
       const parts = q.trim().split(/ +/);
       featureNum = parts[0];
       action = parts[1] ? parts[1].toLowerCase() : "";
     }
 
-    // If valid feature number and action are present
+    // If feature number and action are provided
     if (featureNum && action) {
       if (action !== 'on' && action !== 'off') {
-        return reply("⚠️ *Please use format like `1 on` or `2 off`!*");
+        return reply("⚠️ *Please use format like `1 on` or `5 off`!*");
       }
       const stateBool = (action === 'on');
 
@@ -241,7 +240,7 @@ cmd(
           return reply("❌ *Invalid Feature Number! Please select a number between 1 and 6.*");
       }
 
-      // 🌟 Success Message with Image and Emojis
+      // 🌟 Beautiful Success Message with Image and Emojis
       const successImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
       const statusEmoji = stateBool ? "🟢 ENABLED" : "🔴 DISABLED";
       
@@ -267,7 +266,7 @@ cmd(
     }
 
     // Default UI Panel Display (When typing .settings)
-    const settingsImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw5=true";
+    const settingsImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
 
     const uiText = `╭━━━〔 *⚙️ SACHIYA-MD MASTER SETTINGS* 〕━━━\n` +
                    `┃\n` +
@@ -280,17 +279,26 @@ cmd(
                    `┃\n` +
                    `┣━━━〔 *HOW TO CHANGE* 〕━━━\n` +
                    `┃ • *Reply to this message with:* \`[Number] [on/off]\`\n` +
-                   `┃ • *Example:* \`1 on\` or \`2 off\`\n` +
+                   `┃ • *Example:* \`1 on\` or \`5 off\`\n` +
                    `┃\n` +
                    `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                    `> *⚡ Powered by SACHIYA-MD 💫*`;
 
     try {
       await sachiya.sendMessage(from, { react: { text: "🎨", key: mek.key } }).catch(() => {});
-      await sachiya.sendMessage(from, {
+      const sentMsg = await sachiya.sendMessage(from, {
         image: { url: settingsImg },
         caption: uiText
       }, { quoted: mek });
+
+      // Save the sent message ID so replies to it can be tracked successfully
+      if (sentMsg && sentMsg.key && sentMsg.key.id) {
+        global.settingsMessageIds.add(sentMsg.key.id);
+        // Keep memory clean by removing old IDs after 15 minutes
+        setTimeout(() => {
+          global.settingsMessageIds.delete(sentMsg.key.id);
+        }, 15 * 60 * 1000);
+      }
     } catch (err) {
       await reply(uiText);
     }
