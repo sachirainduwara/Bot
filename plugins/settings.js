@@ -1,5 +1,5 @@
 const { cmd } = require('../command');
-const config = require('../config'); // config file එකෙන් data ගන්න
+const config = require('../config');
 const mongoose = require('mongoose');
 
 // MongoDB Schema for Settings
@@ -31,13 +31,14 @@ cmd({
     category: "owner",
     react: "⚙️",
     filename: __filename
-}, async (conn, mek, m, { from, sender, reply }) => {
+}, async (conn, mek, m, { from, sender, isOwner, reply }) => {
     try {
-        // Config එකේ තියෙන OWNER_NUM එකයි sender ගේ නම්බර් එකයි සසඳා බැලීම
-        let senderNum = sender.replace(/[^0-9]/g, "");
-        let ownerNum = config.OWNER_NUM.replace(/[^0-9]/g, "");
+        // Owner Verification (Handles both isOwner flag and config match & Self-chat)
+        let senderNum = sender ? sender.replace(/[^0-9]/g, "") : "";
+        let ownerNum = config.OWNER_NUM ? config.OWNER_NUM.replace(/[^0-9]/g, "") : "";
+        let isTrueOwner = isOwner || (senderNum === ownerNum) || (from.includes(ownerNum));
 
-        if (senderNum !== ownerNum) {
+        if (!isTrueOwner) {
             return await reply("❌ This command is only for the Owner!");
         }
 
@@ -72,12 +73,13 @@ cmd({
 });
 
 // 2. Interactive Update Handler
-cmd({ on: "body" }, async (conn, mek, m, { from, body, sender, reply, quoted }) => {
+cmd({ on: "body" }, async (conn, mek, m, { from, body, sender, isOwner, reply, quoted }) => {
     try {
-        let senderNum = sender.replace(/[^0-9]/g, "");
-        let ownerNum = config.OWNER_NUM.replace(/[^0-9]/g, "");
+        let senderNum = sender ? sender.replace(/[^0-9]/g, "") : "";
+        let ownerNum = config.OWNER_NUM ? config.OWNER_NUM.replace(/[^0-9]/g, "") : "";
+        let isTrueOwner = isOwner || (senderNum === ownerNum) || (from.includes(ownerNum));
 
-        if (senderNum !== ownerNum) return;
+        if (!isTrueOwner) return;
         if (!quoted || !quoted.text || !quoted.text.includes("〔 *SETTINGS* 〕")) return;
 
         let args = body.trim().toLowerCase().split(" ");
