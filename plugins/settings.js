@@ -31,16 +31,20 @@ cmd({
     category: "owner",
     react: "⚙️",
     filename: __filename
-}, async (conn, mek, m, { from, sender, isOwner, reply }) => {
+}, async (conn, mek, m, { from, sender, reply }) => {
     try {
-        // Base එකෙන් එන isOwner හෝ Config එකේ අංකය හරියටම චෙක් කිරීම
-        const ownerNum = config.OWNER_NUM ? config.OWNER_NUM.replace(/[^0-9]/g, "") : "";
+        // Config එකේ අංකය සහ එන sender / from අංක පිරිසිදු කර සංසන්දනය කිරීම
+        const ownerNum = config.OWNER_NUM ? config.OWNER_NUM.replace(/[^0-9]/g, "") : "94760579211";
+        
+        // මූලාශ්‍ර JID එක සහ Bot connection එක පරීක්ෂා කිරීම
         let senderNum = sender ? sender.replace(/[^0-9]/g, "") : "";
         let chatNum = from ? from.replace(/[^0-9]/g, "") : "";
+        let botNumber = conn.user ? conn.user.id.replace(/[^0-9]/g, "") : "";
 
-        let checkOwner = isOwner || senderNum.includes(ownerNum) || chatNum.includes(ownerNum);
-        
-        if (!checkOwner) {
+        // Self-chat හෝ Owner ගේ අංකය දැයි තහවුරු කිරීම
+        let isMyNumber = senderNum.includes(ownerNum) || chatNum.includes(ownerNum) || chatNum.includes(botNumber);
+
+        if (!isMyNumber) {
             return await reply("❌ This command is only for the Owner!");
         }
 
@@ -75,14 +79,15 @@ cmd({
 });
 
 // 2. Interactive Update Handler
-cmd({ on: "body" }, async (conn, mek, m, { from, body, sender, isOwner, reply, quoted }) => {
+cmd({ on: "body" }, async (conn, mek, m, { from, body, sender, reply, quoted }) => {
     try {
-        const ownerNum = config.OWNER_NUM ? config.OWNER_NUM.replace(/[^0-9]/g, "") : "";
+        const ownerNum = config.OWNER_NUM ? config.OWNER_NUM.replace(/[^0-9]/g, "") : "94760579211";
         let senderNum = sender ? sender.replace(/[^0-9]/g, "") : "";
         let chatNum = from ? from.replace(/[^0-9]/g, "") : "";
+        let botNumber = conn.user ? conn.user.id.replace(/[^0-9]/g, "") : "";
 
-        let checkOwner = isOwner || senderNum.includes(ownerNum) || chatNum.includes(ownerNum);
-        if (!checkOwner) return;
+        let isMyNumber = senderNum.includes(ownerNum) || chatNum.includes(ownerNum) || chatNum.includes(botNumber);
+        if (!isMyNumber) return;
 
         if (!quoted || !quoted.text || !quoted.text.includes("〔 *SETTINGS* 〕")) return;
 
