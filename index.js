@@ -23,7 +23,7 @@ const { storeMessage, handleMessageRevocation } = require('./plugins/antidelete'
 const { handleAutoread } = require('./plugins/autoread');
 const { handleAntiCall } = require('./plugins/anticall');
 const { handleAutoReact } = require('./plugins/autoreact');
-const { handleAutoStatus } = require('./plugins/autostatus'); // Added AutoStatus Import
+const { handleAutoStatus } = require('./plugins/autostatus');
 
 const app = express();
 const port = process.env.PORT || 8000;
@@ -124,7 +124,7 @@ async function loadBlockedListIntoCache() {
   }
 }
 
-// 🛡️ Ultimate Stream & Console Interceptor (Added syncing spam keywords)
+// 🛡️ Ultimate Stream & Console Interceptor
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
 
@@ -226,6 +226,7 @@ async function connectToWA() {
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const logger = P({ level: 'silent' });
 
+  // 🛠️ FIXED SOCKET OPTIONS TO PREVENT SYNC / PAUSE FREEZE ISSUES
   const sachiya = makeWASocket({
     logger,
     printQRInTerminal: false,
@@ -235,8 +236,8 @@ async function connectToWA() {
       keys: makeCacheableSignalKeyStore(state.keys, logger),
     },
     syncFullHistory: false,
-    fireInitQueries: false, // Optimized to prevent history sync lag/spam
-    markOnlineOnConnect: true,
+    fireInitQueries: true, 
+    markOnlineOnConnect: false, // Prevents session hanging/pause state on restart
     generateHighQualityLinkPreview: false,
     getMessage: async () => { return undefined; }
   });
@@ -343,14 +344,13 @@ async function connectToWA() {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
       if (!mek || !mek.message) return;
       
-            // --- Handle Status Broadcasts Separately ---
+      // --- Handle Status Broadcasts Separately ---
       if (mek.key && mek.key.remoteJid === 'status@broadcast') {
         if (typeof handleAutoStatus === 'function') {
           await handleAutoStatus(sachiya, mek);
         }
         return;
       }
-
 
       // --- AutoRead and AutoReact execution ---
       try {
