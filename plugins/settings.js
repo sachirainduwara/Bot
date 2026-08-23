@@ -8,10 +8,6 @@ const AutoReactModel = mongoose.models.AutoReact || mongoose.model('AutoReact', 
 const AutoReadModel = mongoose.models.AutoRead || mongoose.model('AutoRead', new mongoose.Schema({ _id: { type: String, required: true, default: 'autoread_config' }, enabled: { type: Boolean, default: false } }));
 const AutoStatusModel = mongoose.models.AutoStatus || mongoose.model('AutoStatus', new mongoose.Schema({ _id: { type: String, required: true }, status: { type: Boolean, default: false } }));
 
-// Global Session Map to track active settings menu per chat JID
-const activeSettingsSessions = new Map();
-
-// 1. Settings Menu Command (.settings)
 cmd({
     pattern: "settings",
     desc: "Manage bot settings interactively",
@@ -29,34 +25,22 @@ cmd({
         let readDoc = await AutoReadModel.findOne({ _id: 'autoread_config' }) || await AutoReadModel.create({ _id: 'autoread_config', enabled: false });
         let statusDoc = await AutoStatusModel.findOne({ _id: 'sachiyamd_autostatus_settings' }) || await AutoStatusModel.create({ _id: 'sachiyamd_autostatus_settings', status: false });
 
-        let settingsState = {
-            "1": { name: "Anti-Call", status: callDoc.status, model: AntiCallModel, idQuery: { _id: 'sachiyamd_anticall_status' }, field: 'status' },
-            "2": { name: "Anti-Delete", status: deleteDoc.enabled, model: AntideleteModel, idQuery: { _id: 'sachiyamd_antidelete_status' }, field: 'enabled' },
-            "3": { name: "Inbox Auto-React", status: reactDoc.ireact, model: AutoReactModel, idQuery: { _id: 'sachiyamd_autoreact_settings' }, field: 'ireact' },
-            "4": { name: "Group Auto-React", status: reactDoc.greact, model: AutoReactModel, idQuery: { _id: 'sachiyamd_autoreact_settings' }, field: 'greact' },
-            "5": { name: "Auto-Read", status: readDoc.enabled, model: AutoReadModel, idQuery: { _id: 'autoread_config' }, field: 'enabled' },
-            "6": { name: "Auto-Status", status: statusDoc.status, model: AutoStatusModel, idQuery: { _id: 'sachiyamd_autostatus_settings' }, field: 'status' }
-        };
-
         // UI Box Layout
-        let menuText = `╭━━━〔 ⚙️ SACHIYA-MD MASTER SETTINGS 〕━━━\n`;
-        menuText += `┃\n`;
-
-        for (let num in settingsState) {
-            let item = settingsState[num];
-            let emojiIcon = item.status ? "🟢" : "🔴";
-            let stateText = item.status ? "Enabled" : "Disabled";
-            let iconSymbol = num === '1' ? '📞' : num === '2' ? '🛡️' : num === '3' ? '💬' : num === '4' ? '👥' : num === '5' ? '👁️' : '💚';
-            menuText += `┃ ${num}. ${iconSymbol} *${item.name}:* ${emojiIcon} ${stateText}\n`;
-        }
-
-        menuText += `┃\n`;
-        menuText += `┣━━━〔 HOW TO CHANGE 〕━━━\n`;
-        menuText += `┃ • Reply to this message\n`;
-        menuText += `┃ with: [Number] [on/off]\n`;
-        menuText += `┃ • Example: 1 off or 6 on\n`;
-        menuText += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-        menuText += `> ⚡ Powered by SACHIYA-MD 💫`;
+        let menuText = `╭━━━〔 ⚙️ SACHIYA-MD MASTER SETTINGS 〕━━━\n` +
+                       `┃\n` +
+                       `┃ 1. 📞 *Anti-Call:* ${callDoc.status ? "🟢 Enabled" : "🔴 Disabled"}\n` +
+                       `┃ 2. 🛡️ *Anti-Delete:* ${deleteDoc.enabled ? "🟢 Enabled" : "🔴 Disabled"}\n` +
+                       `┃ 3. 💬 *Inbox Auto-React:* ${reactDoc.ireact ? "🟢 Enabled" : "🔴 Disabled"}\n` +
+                       `┃ 4. 👥 *Group Auto-React:* ${reactDoc.greact ? "🟢 Enabled" : "🔴 Disabled"}\n` +
+                       `┃ 5. 👁️ *Auto-Read:* ${readDoc.enabled ? "🟢 Enabled" : "🔴 Disabled"}\n` +
+                       `┃ 6. 💚 *Auto-Status:* ${statusDoc.status ? "🟢 Enabled" : "🔴 Disabled"}\n` +
+                       `┃\n` +
+                       `┣━━━〔 HOW TO CHANGE 〕━━━\n` +
+                       `┃ • Reply to this message\n` +
+                       `┃ with: [Number] [on/off]\n` +
+                       `┃ • Example: 1 off or 6 on\n` +
+                       `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                       `> ⚡ Powered by SACHIYA-MD 💫`;
 
         let aliveImage = 'https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true';
 
@@ -65,77 +49,64 @@ cmd({
             caption: menuText
         }, { quoted: mek });
 
-        // Save session state to chat JID tracker with message ID
-        activeSettingsSessions.set(from, {
-            msgId: sentMsg.key.id,
-            settingsState
-        });
+        // Get the sent message ID for reply tracking
+        const messageID = sentMsg.key.id;
 
-        // Expire session after 30 minutes
-        setTimeout(() => {
-            if (activeSettingsSessions.get(from)?.msgId === sentMsg.key.id) {
-                activeSettingsSessions.delete(from);
+        // Event listener using your exact preferred format
+        conn.ev.on("messages.upsert", async (chatUpdate) => {
+            const mekResponse = chatUpdate.messages[0];
+            if (!mekResponse.message) return;
+
+            const responseMessage = mekResponse.message.conversation || mekResponse.message.extendedTextMessage?.text;
+            const senderID = mekResponse.key.remoteJid;
+            const isReplyToSent = mekResponse.message.extendedTextMessage?.contextInfo?.stanzaId === messageID;
+
+            if (isReplyToSent && senderID === from && responseMessage) {
+                await conn.sendMessage(from, { react: { text: "📥", key: mekResponse.key } });
+
+                let args = responseMessage.trim().toLowerCase().split(/\s+/);
+                let targetNum = args[0];
+                let action = args[1];
+
+                const modelsMap = {
+                    "1": { name: "Anti-Call", field: 'status', model: AntiCallModel, idQuery: { _id: 'sachiyamd_anticall_status' } },
+                    "2": { name: "Anti-Delete", field: 'enabled', model: AntideleteModel, idQuery: { _id: 'sachiyamd_antidelete_status' } },
+                    "3": { name: "Inbox Auto-React", field: 'ireact', model: AutoReactModel, idQuery: { _id: 'sachiyamd_autoreact_settings' } },
+                    "4": { name: "Group Auto-React", field: 'greact', model: AutoReactModel, idQuery: { _id: 'sachiyamd_autoreact_settings' } },
+                    "5": { name: "Auto-Read", field: 'enabled', model: AutoReadModel, idQuery: { _id: 'autoread_config' } },
+                    "6": { name: "Auto-Status", field: 'status', model: AutoStatusModel, idQuery: { _id: 'sachiyamd_autostatus_settings' } }
+                };
+
+                if (!modelsMap[targetNum]) {
+                    await conn.sendMessage(from, { text: "*❌ Invalid number! Reply with a number from 1 to 6 (Example: `6 off`).*" }, { quoted: mekResponse });
+                    return;
+                }
+
+                if (action !== "on" && action !== "off") {
+                    await conn.sendMessage(from, { text: "*❌ Invalid action! Type 'on' or 'off' after the number (Example: `6 off`).*" }, { quoted: mekResponse });
+                    return;
+                }
+
+                let newState = action === "on";
+                let targetItem = modelsMap[targetNum];
+
+                let updateData = {};
+                updateData[targetItem.field] = newState;
+
+                await targetItem.model.findOneAndUpdate(
+                    targetItem.idQuery,
+                    { $set: updateData },
+                    { upsert: true, new: true }
+                );
+
+                let successText = `${targetItem.name} ${action} success ✅`;
+                await conn.sendMessage(from, { text: successText }, { quoted: mekResponse });
+                await conn.sendMessage(from, { react: { text: "✅", key: mekResponse.key } });
             }
-        }, 30 * 60 * 1000);
+        });
 
     } catch (e) {
         console.log("Settings Menu Error: ", e);
         return await reply(`*❌ Error:* ${e.message}`);
-    }
-});
-
-// 2. Command listener for catching replies safely using standard framework design
-cmd({
-    on: "text"
-}, async (conn, mek, m, { from, body, reply, quoted }) => {
-    try {
-        let session = activeSettingsSessions.get(from);
-        if (!session) return;
-
-        // Check if user is replying to the active settings message
-        let isQuotedSettings = quoted && (quoted.id === session.msgId || quoted.fromMe);
-        if (!isQuotedSettings) return;
-
-        let args = body.trim().toLowerCase().split(/\s+/);
-        let targetNum = args[0];
-        let action = args[1];
-
-        if (!session.settingsState[targetNum]) {
-            return await reply("*❌ Invalid number! Please reply with a valid number from 1 to 6.*");
-        }
-
-        if (action !== "on" && action !== "off") {
-            return await reply("*❌ Invalid action! Please type 'on' or 'off' after the number (Example: `1 off` or `6 on`).*");
-        }
-
-        let newState = action === "on";
-        let targetItem = session.settingsState[targetNum];
-
-        // Update MongoDB Database directly
-        let updateData = {};
-        updateData[targetItem.field] = newState;
-
-        await targetItem.model.findOneAndUpdate(
-            targetItem.idQuery,
-            { $set: updateData },
-            { upsert: true, new: true }
-        );
-
-        // Update local session status
-        targetItem.status = newState;
-
-        let successText = `╭━━━〔 ✨ SETTINGS UPDATED 〕━━━\n` +
-                          `┃\n` +
-                          `┃ 📌 *Feature:* ${targetItem.name}\n` +
-                          `┃ ⚡ *New Status:* ${newState ? '🟢 ENABLED' : '🔴 DISABLED'}\n` +
-                          `┃ 💾 *Database:* Saved to MongoDB Atlas ✅\n` +
-                          `┃\n` +
-                          `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                          `> ⚡ Powered by SACHIYA-MD 💫`;
-
-        return await reply(successText);
-
-    } catch (e) {
-        console.log("Settings Response Error: ", e);
     }
 });
