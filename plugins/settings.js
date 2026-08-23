@@ -139,17 +139,18 @@ setTimeout(() => { loadAutoStatusSettings(); }, 3000);
 
 global.activeSettingsMenus = global.activeSettingsMenus || new Map();
 
-// Helper to check if the sender is strictly the Owner or Bot itself
-function isOwner(sachiya, sender, senderNumber, mek) {
-  const configOwner = String(config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
-  const cleanSender = String(senderNumber || sender || '').replace(/[^0-9]/g, '');
-  const botNumber = String(sachiya.user?.id || '').split('@')[0].replace(/[^0-9]/g, '');
+// Helper to check if it's the Owner's Self Chat (Private chat with self / bot number)
+function isSelfChat(sachiya, from, mek) {
+  const botNumber = String(sachiya.user?.id || '').split('@')[0];
+  const cleanFrom = String(from || '').replace(/[^0-9]/g, '');
+  const cleanBotNum = String(botNumber).replace(/[^0-9]/g, '');
   
-  return mek.key.fromMe || cleanSender.includes(configOwner) || configOwner.includes(cleanSender) || cleanSender === botNumber;
+  // Checks if the chat is a private chat (not a group) and sent by me / to my own chat
+  return mek.key.fromMe || cleanFrom === cleanBotNum || from.endsWith('@s.whatsapp.net') && cleanFrom === cleanBotNum;
 }
 
 
-// --- COMMAND: .settings ---
+// --- COMMAND: .settings (Only works in Self Chat) ---
 cmd(
   {
     pattern: "settings",
@@ -159,10 +160,11 @@ cmd(
     react: "⚙️",
     filename: __filename,
   },
-  async (sachiya, mek, m, { from, reply, senderNumber, sender }) => {
+  async (sachiya, mek, m, { from, reply }) => {
     try {
-      if (!isOwner(sachiya, sender, senderNumber, mek)) {
-        return reply("❌ *This command is only for the Owner!*");
+      // 🔒 Restrict settings command strictly to Self Chat / Saved Messages chat
+      if (!isSelfChat(sachiya, from, mek)) {
+        return reply("❌ *Settings command can only be used in your Self Chat (Saved Messages) with the bot!*");
       }
 
       await loadAntiCallStatus();
@@ -220,13 +222,13 @@ cmd(
 );
 
 
-// --- EVENT LISTENER FOR REPLIES (ULTRA-STRICT OWNER REPLY SECURITY) ---
+// --- EVENT LISTENER FOR REPLIES (ONLY IN SELF CHAT) ---
 cmd(
   {
     on: "text",
     filename: __filename
   },
-  async (sachiya, mek, m, { from, body, sender, senderNumber }) => {
+  async (sachiya, mek, m, { from, body }) => {
     try {
       const quoted = m.quoted;
       if (!quoted) return;
@@ -234,10 +236,8 @@ cmd(
       const stanzaId = quoted.id;
       if (!stanzaId || !global.activeSettingsMenus || !global.activeSettingsMenus.has(stanzaId)) return;
 
-      // 🛡️ ULTRA-STRICT CHECK: If anyone other than the Owner replies to the menu, ignore completely!
-      if (!isOwner(sachiya, sender, senderNumber, mek)) {
-        return; 
-      }
+      // Ensure replies only process if it's in the self chat
+      if (!isSelfChat(sachiya, from, mek)) return;
 
       const parts = body.trim().split(/ +/);
       const featureNum = parts[0];
