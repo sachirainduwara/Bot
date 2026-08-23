@@ -344,15 +344,22 @@ async function connectToWA() {
     await saveSessionToMongo();
   });
 
-  // --- AntiCall Live DB Check & Instant Block Event ---
+  // --- AntiCall Live DB Check & Instant Block Event (Fixed for Groups) ---
   sachiya.ev.on('call', async (chats) => {
     try {
       const callDoc = await AntiCallModel.findOne({ _id: 'sachiyamd_anticall_status' });
       if (callDoc && callDoc.status === true) {
         for (const call of chats) {
           if (call.status === 'offer') {
-            await sachiya.rejectCall(call.id, call.from);
-            await sachiya.sendMessage(call.from, { text: "⚠️ *Calls are not allowed! Please do not call me, drop a text instead.* 🚫" });
+            const callerJid = call.from;
+            
+            // 🛑 ගෘප් වලින් හෝ ගෘප් කෝල් හරහා එන දේවල් සම්පූර්ණයෙන්ම මගහරියි (Inbox calls වලට පමණක් ක්‍රියාත්මක වේ)
+            if (!callerJid || callerJid.endsWith('@g.us') || callerJid.includes('-') || call.isGroup === true || (call.chatId && call.chatId.endsWith('@g.us'))) {
+              continue;
+            }
+
+            await sachiya.rejectCall(call.id, callerJid);
+            await sachiya.sendMessage(callerJid, { text: "⚠️ *Calls are not allowed! Please do not call me, drop a text instead.* 🚫" });
           }
         }
       }
