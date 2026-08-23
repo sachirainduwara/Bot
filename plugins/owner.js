@@ -33,7 +33,7 @@ cmd({
             }
         }, { quoted: mek });
 
-        await conn.sendMessage(from, { react: { text: "✅", key: mek.key } });
+        await conn.sendMessage(from, { react: { text: "👑", key: mek.key } });
 
     } catch (e) {
         console.log("Owner Command Error: ", e);
