@@ -4,7 +4,7 @@ const axios = require('axios');
 cmd({
     pattern: "tiktok",
     alias: ["tt", "tik"],
-    desc: "Download TikTok videos with video and audio in high quality.",
+    desc: "Download TikTok videos with high quality and audio.",
     category: "download",
     filename: __filename
 },
@@ -22,58 +22,88 @@ async (conn, mek, m, { from, q, reply, prefix, command }) => {
             }, { quoted: mek });
         }
 
-        // Validate if it's a valid TikTok link
-        if (!q.includes("tiktok.com") && !q.includes("vt.tiktok.com") && !q.includes("vm.tiktok.com")) {
+        if (!q.includes("tiktok.com")) {
             return reply("❌ *Invalid TikTok URL! Please send a correct TikTok video link.* 🔗");
         }
 
-        // Send processing reaction & message
+        // Send processing reaction
         await conn.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
-        // Fetching data from reliable free API endpoint
-        let response = await axios.get(`https://apis.davidcyriltech.my.id/tiktok?url=${encodeURIComponent(q)}`);
-        let res = response.data;
+        let videoUrl = "";
+        let audioUrl = "";
+        let title = "TikTok Video";
+        let author = "Unknown";
+        let success = false;
 
-        if (!res || !res.success || !res.result) {
-            // Fallback API if primary fails
-            let altRes = await axios.get(`https://deliriussapi-oficial.vercel.app/download/tiktok?url=${encodeURIComponent(q)}`);
-            if (!altRes.data || (!altRes.data.data && !altRes.data.url)) {
-                await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
-                return reply("❌ *Failed to fetch video details. Please try again later or check the link.* ⚠️");
+        // Try API 1 (Cloudflare Worker API)
+        try {
+            let res1 = await axios.get(`https://tdownv4.sl-bjs.workers.dev/?down=${encodeURIComponent(q)}`, { timeout: 10000 });
+            if (res1.data && (res1.data.url || res1.data.video || res1.data.nowm)) {
+                videoUrl = res1.data.url || res1.data.video || res1.data.nowm;
+                audioUrl = res1.data.audio || res1.data.music;
+                title = res1.data.title || title;
+                author = res1.data.author || author;
+                success = true;
             }
-            res = {
-                result: {
-                    title: altRes.data.data?.title || altRes.data.title || "TikTok Video",
-                    author: { nickname: altRes.data.data?.author?.nickname || "User" },
-                    video: { no_watermark: altRes.data.data?.play || altRes.data.url },
-                    music: { play: altRes.data.data?.music || altRes.data.audio }
-                }
-            };
+        } catch (err) {
+            console.log("API 1 failed, trying fallback...");
         }
 
-        const data = res.result;
-        const videoUrl = data.video?.no_watermark || data.video;
-        const audioUrl = data.music?.play || data.audio;
-        const title = data.title || "TikTok Video";
-        const author = data.author?.nickname || "Unknown";
+        // Try API 2 (Backup API) if API 1 fails
+        if (!success) {
+            try {
+                let res2 = await axios.get(`https://deliriussapi-oficial.vercel.app/download/tiktok?url=${encodeURIComponent(q)}`, { timeout: 10000 });
+                if (res2.data && res2.data.data) {
+                    videoUrl = res2.data.data.play || res2.data.data.url;
+                    audioUrl = res2.data.data.music;
+                    title = res2.data.data.title || title;
+                    author = res2.data.data.author?.nickname || author;
+                    success = true;
+                }
+            } catch (err) {
+                console.log("API 2 failed, trying final backup...");
+            }
+        }
 
-        // Beautiful UI Caption with Emojis
+        // Try API 3 (Final Backup API)
+        if (!success) {
+            try {
+                let res3 = await axios.get(`https://apis.davidcyriltech.my.id/tiktok?url=${encodeURIComponent(q)}`, { timeout: 10000 });
+                if (res3.data && res3.data.success && res3.data.result) {
+                    videoUrl = res3.data.result.video?.no_watermark || res3.data.result.video;
+                    audioUrl = res3.data.result.music?.play;
+                    title = res3.data.result.title || title;
+                    author = res3.data.result.author?.nickname || author;
+                    success = true;
+                }
+            } catch (err) {
+                console.log("All APIs failed.");
+            }
+        }
+
+        // If all APIs fail
+        if (!success || !videoUrl) {
+            await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
+            return reply("❌ *Failed to download the video. The link might be private, deleted, or APIs are temporarily down. Try again later!* ⚠️");
+        }
+
+        // UI Caption with Emojis
         let cap = `╭━━━〔 *🎬 TIKTOK DOWNLOADER 🎵* 〕━━━\n` +
                   `┃\n` +
-                  `┃ 📌 *Title:* ${title.length > 80 ? title.substring(0, 77) + '...' : title}\n` +
+                  `┃ 📌 *Title:* ${title.length > 70 ? title.substring(0, 67) + '...' : title}\n` +
                   `┃ 👤 *Creator:* ${author}\n` +
                   `┃ 📥 *Status:* Successfully Downloaded! ✅\n` +
                   `┃\n` +
                   `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                   `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-        // 1. Send Video without Watermark
+        // Send Video HD without Watermark
         await conn.sendMessage(from, {
             video: { url: videoUrl },
             caption: cap
         }, { quoted: mek });
 
-        // 2. Send Original Audio (Sound) automatically if available
+        // Send Audio if available
         if (audioUrl) {
             await conn.sendMessage(from, {
                 audio: { url: audioUrl },
@@ -86,8 +116,8 @@ async (conn, mek, m, { from, q, reply, prefix, command }) => {
         await conn.sendMessage(from, { react: { text: "✅", key: mek.key } });
 
     } catch (e) {
-        console.error("TikTok Download Error:", e);
+        console.error("TikTok Plugin Critical Error:", e);
         await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply(`❌ *An error occurred while downloading the video:* ${e.message || e}`);
+        return reply(`❌ *An unexpected error occurred:* ${e.message || e}`);
     }
 });
