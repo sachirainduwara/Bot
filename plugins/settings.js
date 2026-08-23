@@ -1,7 +1,7 @@
 const { cmd } = require('../command');
 const mongoose = require('mongoose');
 
-// Mongoose Models matching your plugin schemas
+// Mongoose Models matching your plugin schemas precisely
 const AntiCallModel = mongoose.models.AntiCall || mongoose.model('AntiCall', new mongoose.Schema({ _id: { type: String, required: true }, status: { type: Boolean, default: false } }));
 const AntideleteModel = mongoose.models.Antidelete || mongoose.model('Antidelete', new mongoose.Schema({ _id: { type: String, required: true, default: 'sachiyamd_antidelete_status' }, enabled: { type: Boolean, default: false } }));
 const AutoReactModel = mongoose.models.AutoReact || mongoose.model('AutoReact', new mongoose.Schema({ _id: { type: String, required: true }, ireact: { type: Boolean, default: true }, greact: { type: Boolean, default: true } }));
@@ -27,7 +27,7 @@ cmd({
 
         // Fetch latest data directly from MongoDB models
         let callDoc = await AntiCallModel.findOne({ _id: 'sachiyamd_anticall_status' });
-        let deleteDoc = await AntideleteModel.findOne({ _id: '_id: 'sachiyamd_antidelete_status' }) || await AntideleteModel.findOne({ _id: 'sachiyamd_antidelete_status' });
+        let deleteDoc = await AntideleteModel.findOne({ _id: 'sachiyamd_antidelete_status' });
         let reactDoc = await AutoReactModel.findOne({ _id: 'sachiyamd_autoreact_settings' });
         let readDoc = await AutoReadModel.findOne({ _id: 'autoread_config' });
         let statusDoc = await AutoStatusModel.findOne({ _id: 'sachiyamd_autostatus_settings' });
@@ -35,8 +35,8 @@ cmd({
         let anticall = callDoc ? callDoc.status : false;
         let antidelete = deleteDoc ? deleteDoc.enabled : false;
         let ireact = reactDoc ? reactDoc.ireact : true;
-        let autostatus = statusDoc ? statusDoc.status : false;
         let autoread = readDoc ? readDoc.enabled : false;
+        let autostatus = statusDoc ? statusDoc.status : false;
 
         let settingsState = {
             1: { name: "Anti-Call", key: "anticall", status: anticall, model: AntiCallModel, idQuery: { _id: 'sachiyamd_anticall_status' }, field: 'status' },
@@ -46,17 +46,15 @@ cmd({
             5: { name: "Auto-Status", key: "autostatus", status: autostatus, model: AutoStatusModel, idQuery: { _id: 'sachiyamd_autostatus_settings' }, field: 'status' }
         };
 
-        // Constructing the UI Box Layout as requested from your screenshot
+        // Constructing the UI Box Layout
         let menuText = `╭━━━〔 ⚙️ SACHIYA-MD MASTER SETTINGS 〕━━━\n`;
         menuText += `┃\n`;
 
         for (let num in settingsState) {
             let item = settingsState[num];
             let emojiIcon = item.status ? "🟢" : "🔴";
-            let stateText = item.status ? "Enabled" : "Disabled";
-            
             let iconSymbol = num === '1' ? '📞' : num === '2' ? '🛡️' : num === '3' ? '💬' : num === '4' ? '👁️' : '💚';
-            menuText += `┃ ${num}. ${iconSymbol} *${item.name}:* ${emojiIcon} ${stateText}\n`;
+            menuText += `┃ ${num}. ${iconSymbol} *${item.name}:* ${emojiIcon} ${item.status ? "Enabled" : "Disabled"}\n`;
         }
 
         menuText += `┃\n`;
@@ -116,7 +114,6 @@ cmd({
         let newState = action === "on";
         let targetItem = session.settingsState[targetNum];
 
-        // Update database directly based on model definition
         let updateQuery = {};
         updateQuery[targetItem.field] = newState;
 
@@ -126,7 +123,6 @@ cmd({
             { upsert: true, new: true }
         );
 
-        // Success UI Response matching your exact design style
         let successText = `╭━━━〔 ✨ SETTINGS UPDATED 〕━━━\n` +
                           `┃\n` +
                           `┃ 📌 *Feature:* ${targetItem.name}\n` +
