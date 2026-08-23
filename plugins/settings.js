@@ -2,150 +2,84 @@ const { cmd } = require("../command");
 const mongoose = require('mongoose');
 const config = require('../config');
 
-// --- 1. AntiCall Schema & Functions ---
-const AntiCallSchema = new mongoose.Schema({
+// --- UNIFIED DATABASE SCHEMA FOR ALL SETTINGS ---
+const BotSettingsSchema = new mongoose.Schema({
   _id: { type: String, required: true },
-  status: { type: Boolean, default: false }
-});
-const AntiCallModel = mongoose.models.AntiCall || mongoose.model('AntiCall', AntiCallSchema);
-let anticallStatus = false;
-
-async function loadAntiCallStatus() {
-  try {
-    if (mongoose.connection.readyState === 0) return;
-    let doc = await AntiCallModel.findOne({ _id: 'sachiyamd_anticall_status' });
-    if (doc) anticallStatus = doc.status;
-    else {
-      await AntiCallModel.create({ _id: 'sachiyamd_anticall_status', status: false });
-      anticallStatus = false;
-    }
-  } catch (e) {}
-}
-async function saveAntiCallStatus(status) {
-  try {
-    if (mongoose.connection.readyState === 0) return;
-    await AntiCallModel.findOneAndUpdate({ _id: 'sachiyamd_anticall_status' }, { status: status }, { upsert: true, new: true });
-    anticallStatus = status;
-  } catch (e) {}
-}
-setTimeout(() => { loadAntiCallStatus(); }, 3000);
-
-
-// --- 2. Antidelete Schema & Functions ---
-const AntideleteSchema = new mongoose.Schema({
-  _id: { type: String, required: true, default: 'sachiyamd_antidelete_status' },
-  enabled: { type: Boolean, default: false }
-});
-const AntideleteModel = mongoose.models.Antidelete || mongoose.model('Antidelete', AntideleteSchema);
-
-async function loadAntideleteConfig() {
-    try {
-        let doc = await AntideleteModel.findOne({ _id: 'sachiyamd_antidelete_status' });
-        if (!doc) doc = await AntideleteModel.create({ _id: 'sachiyamd_antidelete_status', enabled: false });
-        return { enabled: doc.enabled };
-    } catch (e) { return { enabled: false }; }
-}
-async function saveAntideleteConfig(isEnabled) {
-    try {
-        await AntideleteModel.findOneAndUpdate({ _id: 'sachiyamd_antidelete_status' }, { enabled: isEnabled }, { upsert: true, new: true });
-    } catch (e) {}
-}
-
-
-// --- 3. AutoReact Schema & Functions ---
-const AutoReactSchema = new mongoose.Schema({
-  _id: { type: String, required: true },
+  anticall: { type: Boolean, default: false },
+  antidelete: { type: Boolean, default: false },
   ireact: { type: Boolean, default: true },
-  greact: { type: Boolean, default: true }
+  greact: { type: Boolean, default: true },
+  autoread: { type: Boolean, default: false },
+  autostatus: { type: Boolean, default: false }
 });
-const AutoReactModel = mongoose.models.AutoReact || mongoose.model('AutoReact', AutoReactSchema);
-let iReactStatus = true;
-let gReactStatus = true;
 
-async function loadAutoReactSettings() {
+const BotSettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', BotSettingsSchema);
+
+// Cache object to hold current status in memory for fast access
+let settingsCache = {
+  anticall: false,
+  antidelete: false,
+  ireact: true,
+  greact: true,
+  autoread: false,
+  autostatus: false
+};
+
+// Load settings from MongoDB on startup
+async function loadAllSettings() {
   try {
     if (mongoose.connection.readyState === 0) return;
-    let doc = await AutoReactModel.findOne({ _id: 'sachiyamd_autoreact_settings' });
+    let doc = await BotSettingsModel.findOne({ _id: 'sachiyamd_master_settings' });
     if (doc) {
-      iReactStatus = doc.ireact;
-      gReactStatus = doc.greact;
+      settingsCache.anticall = doc.anticall ?? false;
+      settingsCache.antidelete = doc.antidelete ?? false;
+      settingsCache.ireact = doc.ireact ?? true;
+      settingsCache.greact = doc.greact ?? true;
+      settingsCache.autoread = doc.autoread ?? false;
+      settingsCache.autostatus = doc.autostatus ?? false;
     } else {
-      await AutoReactModel.create({ _id: 'sachiyamd_autoreact_settings', ireact: true, greact: true });
-      iReactStatus = true;
-      gReactStatus = true;
+      await BotSettingsModel.create({
+        _id: 'sachiyamd_master_settings',
+        anticall: false,
+        antidelete: false,
+        ireact: true,
+        greact: true,
+        autoread: false,
+        autostatus: false
+      });
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error("Error loading settings:", e);
+  }
 }
-async function saveAutoReactSettings(type, status) {
+
+// Save specific setting update to MongoDB
+async function updateSettingInDb(field, value) {
   try {
+    settingsCache[field] = value;
     if (mongoose.connection.readyState === 0) return;
-    let updateObj = type === 'ireact' ? { ireact: status } : { greact: status };
-    await AutoReactModel.findOneAndUpdate({ _id: 'sachiyamd_autoreact_settings' }, updateObj, { upsert: true, new: true });
-    if (type === 'ireact') iReactStatus = status;
-    if (type === 'greact') gReactStatus = status;
-  } catch (e) {}
-}
-setTimeout(() => { loadAutoReactSettings(); }, 3000);
-
-
-// --- 4. AutoRead Schema & Functions ---
-const AutoReadSchema = new mongoose.Schema({
-    _id: { type: String, required: true, default: 'autoread_config' },
-    enabled: { type: Boolean, default: false }
-});
-const AutoReadModel = mongoose.models.AutoRead || mongoose.model('AutoRead', AutoReadSchema);
-
-async function loadAutoReadConfig() {
-    try {
-        let doc = await AutoReadModel.findOne({ _id: 'autoread_config' });
-        if (!doc) doc = await AutoReadModel.create({ _id: 'autoread_config', enabled: false });
-        return { enabled: doc.enabled };
-    } catch (e) { return { enabled: false }; }
-}
-async function saveAutoReadConfig(isEnabled) {
-    try {
-        await AutoReadModel.findOneAndUpdate({ _id: 'autoread_config' }, { enabled: isEnabled }, { upsert: true, new: true });
-    } catch (e) {}
+    await BotSettingsModel.findOneAndUpdate(
+      { _id: 'sachiyamd_master_settings' },
+      { [field]: value },
+      { upsert: true, new: true }
+    );
+  } catch (e) {
+    console.error("Error saving setting:", e);
+  }
 }
 
-
-// --- 5. AutoStatus Schema & Functions ---
-const AutoStatusSchema = new mongoose.Schema({
-  _id: { type: String, required: true },
-  status: { type: Boolean, default: false }
-});
-const AutoStatusModel = mongoose.models.AutoStatus || mongoose.model('AutoStatus', AutoStatusSchema);
-let autoStatusStatus = false;
-
-async function loadAutoStatusSettings() {
-  try {
-    if (mongoose.connection.readyState === 0) return;
-    let doc = await AutoStatusModel.findOne({ _id: 'sachiyamd_autostatus_settings' });
-    if (doc) autoStatusStatus = doc.status;
-    else {
-      await AutoStatusModel.create({ _id: 'sachiyamd_autostatus_settings', status: false });
-      autoStatusStatus = false;
-    }
-  } catch (e) {}
-}
-async function saveAutoStatusSettings(status) {
-  try {
-    if (mongoose.connection.readyState === 0) return;
-    await AutoStatusModel.findOneAndUpdate({ _id: 'sachiyamd_autostatus_settings' }, { status: status }, { upsert: true, new: true });
-    autoStatusStatus = status;
-  } catch (e) {}
-}
-setTimeout(() => { loadAutoStatusSettings(); }, 3000);
+// Initial load after 3 seconds
+setTimeout(() => { loadAllSettings(); }, 3000);
 
 global.activeSettingsMenus = global.activeSettingsMenus || new Map();
 
-// Helper to check if the sender is strictly the Owner or Bot itself
-function isOwner(sachiya, sender, senderNumber, mek) {
-  const configOwner = String(config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
-  const cleanSender = String(senderNumber || sender || '').replace(/[^0-9]/g, '');
-  const botNumber = String(sachiya.user?.id || '').split('@')[0].replace(/[^0-9]/g, '');
+// Helper to check if it's the Owner's Self Chat
+function isSelfChat(sachiya, from, mek) {
+  const botNumber = String(sachiya.user?.id || '').split('@')[0];
+  const cleanFrom = String(from || '').replace(/[^0-9]/g, '');
+  const cleanBotNum = String(botNumber).replace(/[^0-9]/g, '');
   
-  return mek.key.fromMe || cleanSender.includes(configOwner) || configOwner.includes(cleanSender) || cleanSender === botNumber;
+  return mek.key.fromMe || cleanFrom === cleanBotNum || (from.endsWith('@s.whatsapp.net') && cleanFrom === cleanBotNum);
 }
 
 
@@ -159,24 +93,21 @@ cmd(
     react: "⚙️",
     filename: __filename,
   },
-  async (sachiya, mek, m, { from, reply, senderNumber, sender }) => {
+  async (sachiya, mek, m, { from, reply }) => {
     try {
-      if (!isOwner(sachiya, sender, senderNumber, mek)) {
-        return reply("❌ *This command is only for the Owner!*");
+      if (!isSelfChat(sachiya, from, mek)) {
+        return reply("❌ *Settings command can only be used in your Self Chat (Saved Messages) with the bot!*");
       }
 
-      await loadAntiCallStatus();
-      await loadAutoReactSettings();
-      const antidelCfg = await loadAntideleteConfig();
-      const autoreadCfg = await loadAutoReadConfig();
-      await loadAutoStatusSettings();
+      // Ensure latest data is loaded
+      await loadAllSettings();
 
-      const anticallTxt = anticallStatus ? "🟢 Enabled" : "🔴 Disabled";
-      const antidelTxt = antidelCfg.enabled ? "🟢 Enabled" : "🔴 Disabled";
-      const ireactTxt = iReactStatus ? "🟢 Enabled" : "🔴 Disabled";
-      const greactTxt = gReactStatus ? "🟢 Enabled" : "🔴 Disabled";
-      const autoreadTxt = autoreadCfg.enabled ? "🟢 Enabled" : "🔴 Disabled";
-      const autostatusTxt = autoStatusStatus ? "🟢 Enabled" : "🔴 Disabled";
+      const anticallTxt = settingsCache.anticall ? "🟢 Enabled" : "🔴 Disabled";
+      const antidelTxt = settingsCache.antidelete ? "🟢 Enabled" : "🔴 Disabled";
+      const ireactTxt = settingsCache.ireact ? "🟢 Enabled" : "🔴 Disabled";
+      const greactTxt = settingsCache.greact ? "🟢 Enabled" : "🔴 Disabled";
+      const autoreadTxt = settingsCache.autoread ? "🟢 Enabled" : "🔴 Disabled";
+      const autostatusTxt = settingsCache.autostatus ? "🟢 Enabled" : "🔴 Disabled";
 
       const settingsImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
 
@@ -220,13 +151,13 @@ cmd(
 );
 
 
-// --- EVENT LISTENER FOR REPLIES (ULTRA-STRICT OWNER REPLY SECURITY) ---
+// --- EVENT LISTENER FOR REPLIES ---
 cmd(
   {
     on: "text",
     filename: __filename
   },
-  async (sachiya, mek, m, { from, body, sender, senderNumber }) => {
+  async (sachiya, mek, m, { from, body }) => {
     try {
       const quoted = m.quoted;
       if (!quoted) return;
@@ -234,10 +165,7 @@ cmd(
       const stanzaId = quoted.id;
       if (!stanzaId || !global.activeSettingsMenus || !global.activeSettingsMenus.has(stanzaId)) return;
 
-      // 🛡️ ULTRA-STRICT CHECK: If anyone other than the Owner replies to the menu, ignore completely!
-      if (!isOwner(sachiya, sender, senderNumber, mek)) {
-        return; 
-      }
+      if (!isSelfChat(sachiya, from, mek)) return;
 
       const parts = body.trim().split(/ +/);
       const featureNum = parts[0];
@@ -246,35 +174,37 @@ cmd(
       if (action === 'on' || action === 'off') {
         const stateBool = (action === 'on');
         let featureName = "";
+        let dbField = "";
 
         switch (featureNum) {
           case '1':
-            await saveAntiCallStatus(stateBool);
+            dbField = "anticall";
             featureName = "📞 Anti-Call";
             break;
           case '2':
-            await saveAntideleteConfig(stateBool);
+            dbField = "antidelete";
             featureName = "🛡️ Anti-Delete";
             break;
           case '3':
-            await saveAutoReactSettings('ireact', stateBool);
+            dbField = "ireact";
             featureName = "💬 Inbox Auto-React";
             break;
           case '4':
-            await saveAutoReactSettings('greact', stateBool);
+            dbField = "greact";
             featureName = "👥 Group Auto-React";
             break;
           case '5':
-            await saveAutoReadConfig(stateBool);
+            dbField = "autoread";
             featureName = "👁️‍🗨️ Auto-Read";
             break;
           case '6':
-            await saveAutoStatusSettings(stateBool);
+            dbField = "autostatus";
             featureName = "💚 Auto-Status";
             break;
         }
 
-        if (featureName) {
+        if (dbField && featureName) {
+          await updateSettingInDb(dbField, stateBool);
           const statusEmoji = stateBool ? "🟢 ENABLED" : "🔴 DISABLED";
           
           await sachiya.sendMessage(from, {
@@ -291,6 +221,8 @@ cmd(
           await sachiya.sendMessage(from, { react: { text: stateBool ? "✅" : "❌", key: mek.key } }).catch(() => {});
         }
       }
-    } catch (err) {}
+    } catch (err) {
+      console.error("Reply handler error:", err);
+    }
   }
 );
