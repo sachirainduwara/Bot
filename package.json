@@ -41,6 +41,7 @@
     "figlet": "^1.11.4",
     "puppeteer": "^25.8.0",
     "google-tts-api": "^2.0.2",
+    "wa-sticker-formatter": "^4.4.4",
     "ruhend-scraper": "^10.0.3"
   }
 }
