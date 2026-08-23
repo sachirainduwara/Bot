@@ -352,7 +352,7 @@ async function connectToWA() {
         for (const call of chats) {
           if (call.status === 'offer') {
             await sachiya.rejectCall(call.id, call.from);
-            await sachiya.sendMessage(call.from, { text: "*❌ Calls are blocked by Anti-Call feature!*" });
+            await sachiya.sendMessage(call.from, { text: "⚠️ *Calls are not allowed! Please do not call me, drop a text instead.* 🚫" });
           }
         }
       }
