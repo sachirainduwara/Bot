@@ -139,11 +139,13 @@ setTimeout(() => { loadAutoStatusSettings(); }, 3000);
 
 global.activeSettingsMenus = global.activeSettingsMenus || new Map();
 
-// Helper to get exact owner numbers
-function getOwnerNumbers(sachiya) {
+// Helper to check if the sender is strictly the Owner or Bot itself
+function isOwner(sachiya, sender, senderNumber, mek) {
   const configOwner = String(config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
+  const cleanSender = String(senderNumber || sender || '').replace(/[^0-9]/g, '');
   const botNumber = String(sachiya.user?.id || '').split('@')[0].replace(/[^0-9]/g, '');
-  return [configOwner, botNumber].filter(Boolean);
+  
+  return mek.key.fromMe || cleanSender.includes(configOwner) || configOwner.includes(cleanSender) || cleanSender === botNumber;
 }
 
 
@@ -159,11 +161,7 @@ cmd(
   },
   async (sachiya, mek, m, { from, reply, senderNumber, sender }) => {
     try {
-      const cleanSender = String(senderNumber || sender || '').replace(/[^0-9]/g, '');
-      const owners = getOwnerNumbers(sachiya);
-      const isTrueOwner = mek.key.fromMe || owners.some(o => cleanSender.includes(o) || o.includes(cleanSender));
-
-      if (!isTrueOwner) {
+      if (!isOwner(sachiya, sender, senderNumber, mek)) {
         return reply("❌ *This command is only for the Owner!*");
       }
 
@@ -207,10 +205,8 @@ cmd(
         { quoted: mek }
       );
 
-      // Store message ID along with the true owner's expected sender identifier
       const messageID = sentMsg.key.id;
-      const ownerSenderId = cleanSender || (mek.key.participant || mek.key.remoteJid);
-      global.activeSettingsMenus.set(messageID, { from, ownerSenderId });
+      global.activeSettingsMenus.set(messageID, { from });
 
       setTimeout(() => {
         global.activeSettingsMenus.delete(messageID);
@@ -224,7 +220,7 @@ cmd(
 );
 
 
-// --- EVENT LISTENER FOR REPLIES (STRICT OWNER CHECK) ---
+// --- EVENT LISTENER FOR REPLIES (ULTRA-STRICT OWNER REPLY SECURITY) ---
 cmd(
   {
     on: "text",
@@ -238,14 +234,9 @@ cmd(
       const stanzaId = quoted.id;
       if (!stanzaId || !global.activeSettingsMenus || !global.activeSettingsMenus.has(stanzaId)) return;
 
-      const menuData = global.activeSettingsMenus.get(stanzaId);
-      const cleanSender = String(senderNumber || sender || '').replace(/[^0-9]/g, '');
-      const owners = getOwnerNumbers(sachiya);
-      
-      // 🛡️ STRICT CHECK: Ensure the person replying is strictly an owner / bot itself
-      const isOwnerSender = mek.key.fromMe || owners.some(o => cleanSender.includes(o) || o.includes(cleanSender));
-      if (!isOwnerSender) {
-        return; // Silently ignore if anyone else replies
+      // 🛡️ ULTRA-STRICT CHECK: If anyone other than the Owner replies to the menu, ignore completely!
+      if (!isOwner(sachiya, sender, senderNumber, mek)) {
+        return; 
       }
 
       const parts = body.trim().split(/ +/);
