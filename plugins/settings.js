@@ -51,8 +51,7 @@ cmd({
                        `┃ 5. 👁️ *Auto-Read:* ${global.SACHIYA_SETTINGS.autoread ? "🟢 Enabled" : "🔴 Disabled"}\n` +
                        `┃ 6. 💚 *Auto-Status:* ${global.SACHIYA_SETTINGS.autostatus ? "🟢 Enabled" : "🔴 Disabled"}\n` +
                        `┃\n` +
-                       `┣━━━〔 CHANGE 〕━━━\n` +
-                       `┃ • > Reply [Number] [on/off]\n` +
+                       `> Reply [Number] [on/off]\n` +
                        `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                        `  *Powered by SACHIYA-MD 💫*`;
 
