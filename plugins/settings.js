@@ -52,6 +52,7 @@ cmd({
                        `┃ 6. 💚 *Status:* ${global.SACHIYA_SETTINGS.autostatus ? "🟢 Enabled" : "🔴 Disabled"}\n` +
                        `┃\n` +
                        `┃ *Reply [Number] [on/off]*\n` +
+                       `┃ *(Valid for 30 Minutes)*\n` +
                        `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                        ` > *Powered by SACHIYA-MD 💫*`;
 
@@ -80,49 +81,65 @@ cmd({
                     let targetNum = args[0];
                     let action = args[1];
 
-                    const modelsMap = {
-                        "1": { name: "Anti-Call", field: 'status', model: AntiCallModel, query: { _id: 'sachiyamd_anticall_status' }, key: 'anticall' },
-                        "2": { name: "Anti-Delete", field: 'enabled', model: AntideleteModel, query: { _id: 'sachiyamd_antidelete_status' }, key: 'antidelete' },
-                        "3": { name: "Inbox Auto-React", field: 'ireact', model: AutoReactModel, query: { _id: 'sachiyamd_autoreact_settings' }, key: 'inboxReact' },
-                        "4": { name: "Group Auto-React", field: 'greact', model: AutoReactModel, query: { _id: 'sachiyamd_autoreact_settings' }, key: 'groupReact' },
-                        "5": { name: "Auto-Read", field: 'enabled', model: AutoReadModel, query: { _id: 'autoread_config' }, key: 'autoread' },
-                        "6": { name: "Auto-Status", field: 'status', model: AutoStatusModel, query: { _id: 'sachiyamd_autostatus_settings' }, key: 'autostatus' }
-                    };
-
-                    if (!modelsMap[targetNum]) {
-                        await conn.sendMessage(from, { text: "*❌ Invalid number! Reply with 1 to 6 (Example: `6 off`).*" }, { quoted: mekResponse });
+                    if (!["1", "2", "3", "4", "5", "6"].includes(targetNum)) {
+                        await conn.sendMessage(from, { text: "*❌ Invalid number! Reply with 1 to 6 (Example: `3 off`).*" }, { quoted: mekResponse });
                         return;
                     }
 
                     if (action !== "on" && action !== "off") {
-                        await conn.sendMessage(from, { text: "*❌ Invalid action! Type 'on' or 'off' (Example: `6 off`).*" }, { quoted: mekResponse });
+                        await conn.sendMessage(from, { text: "*❌ Invalid action! Type 'on' or 'off' (Example: `3 off`).*" }, { quoted: mekResponse });
                         return;
                     }
 
                     let newState = action === "on";
-                    let targetItem = modelsMap[targetNum];
+                    let updatedDoc = null;
+                    let featureName = "";
 
-                    let updateObject = {};
-                    updateObject[targetItem.field] = newState;
-
-                    let updatedDoc = await targetItem.model.findOneAndUpdate(
-                        targetItem.query,
-                        { $set: updateObject },
-                        { upsert: true, new: true }
-                    );
+                    if (targetNum === "1") {
+                        updatedDoc = await AntiCallModel.findOneAndUpdate({ _id: 'sachiyamd_anticall_status' }, { status: newState }, { upsert: true, new: true });
+                        global.SACHIYA_SETTINGS.anticall = newState;
+                        featureName = "Anti-Call";
+                    } else if (targetNum === "2") {
+                        updatedDoc = await AntideleteModel.findOneAndUpdate({ _id: 'sachiyamd_antidelete_status' }, { enabled: newState }, { upsert: true, new: true });
+                        global.SACHIYA_SETTINGS.antidelete = newState;
+                        featureName = "Anti-Delete";
+                    } else if (targetNum === "3") {
+                        // Fetch current or default to ensure we don't wipe groupReact
+                        let currentReact = await AutoReactModel.findOne({ _id: 'sachiyamd_autoreact_settings' }) || { ireact: true, greact: true };
+                        updatedDoc = await AutoReactModel.findOneAndUpdate(
+                            { _id: 'sachiyamd_autoreact_settings' }, 
+                            { ireact: newState, greact: currentReact.greact }, 
+                            { upsert: true, new: true }
+                        );
+                        global.SACHIYA_SETTINGS.inboxReact = newState;
+                        featureName = "Inbox Auto-React";
+                    } else if (targetNum === "4") {
+                        // Fetch current or default to ensure we don't wipe inboxReact
+                        let currentReact = await AutoReactModel.findOne({ _id: 'sachiyamd_autoreact_settings' }) || { ireact: true, greact: true };
+                        updatedDoc = await AutoReactModel.findOneAndUpdate(
+                            { _id: 'sachiyamd_autoreact_settings' }, 
+                            { ireact: currentReact.ireact, greact: newState }, 
+                            { upsert: true, new: true }
+                        );
+                        global.SACHIYA_SETTINGS.groupReact = newState;
+                        featureName = "Group Auto-React";
+                    } else if (targetNum === "5") {
+                        updatedDoc = await AutoReadModel.findOneAndUpdate({ _id: 'autoread_config' }, { enabled: newState, updatedAt: new Date() }, { upsert: true, new: true });
+                        global.SACHIYA_SETTINGS.autoread = newState;
+                        featureName = "Auto-Read";
+                    } else if (targetNum === "6") {
+                        updatedDoc = await AutoStatusModel.findOneAndUpdate({ _id: 'sachiyamd_autostatus_settings' }, { status: newState }, { upsert: true, new: true });
+                        global.SACHIYA_SETTINGS.autostatus = newState;
+                        featureName = "Auto-Status";
+                    }
 
                     if (updatedDoc) {
-                        // UPDATE GLOBAL RUNTIME CACHE INSTANTLY SO OTHER PLUGINS SEE IT LIVE
-                        global.SACHIYA_SETTINGS[targetItem.key] = newState;
-
-                        let successText = `${targetItem.name} ${action} success ✅`;
+                        let successText = `${featureName} ${action} success ✅`;
                         await conn.sendMessage(from, { text: successText }, { quoted: mekResponse });
                         await conn.sendMessage(from, { react: { text: "✅", key: mekResponse.key } });
                     } else {
-                        await conn.sendMessage(from, { text: `*❌ Database sync failed for ${targetItem.name}!*` }, { quoted: mekResponse });
+                        await conn.sendMessage(from, { text: `*❌ Database sync failed for ${featureName}!*` }, { quoted: mekResponse });
                     }
-
-                    // NOTE: Removed `conn.ev.off` here so it won't expire immediately on 1st reply!
                 }
             } catch (err) {
                 console.log("Settings Upsert Error: ", err);
@@ -138,6 +155,6 @@ cmd({
 
     } catch (e) {
         console.log("Settings Menu Error: ", e);
-        return await reply(`*❌ Error:* ${e.message}`);
+        return reply(`*❌ Error:* ${e.message}`);
     }
 });
