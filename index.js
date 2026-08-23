@@ -344,18 +344,20 @@ async function connectToWA() {
     await saveSessionToMongo();
   });
 
-  // --- AntiCall Live DB Check Wrapper ---
-  sachiya.ev.on('call', async (callLogs) => {
+  // --- AntiCall Live DB Check & Instant Block Event ---
+  sachiya.ev.on('call', async (chats) => {
     try {
       const callDoc = await AntiCallModel.findOne({ _id: 'sachiyamd_anticall_status' });
       if (callDoc && callDoc.status === true) {
-        // If handleAntiCall is a function, pass it directly
-        // Or if it attaches its own listener, we can check DB inside
+        for (const call of chats) {
+          if (call.status === 'offer') {
+            await sachiya.rejectCall(call.id, call.from);
+            await sachiya.sendMessage(call.from, { text: "*❌ Calls are blocked by Anti-Call feature!*" });
+          }
+        }
       }
     } catch (e) {}
   });
-  // Keep original anticall binding as well
-  try { handleAntiCall(sachiya); } catch(e) {}
 
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
@@ -419,7 +421,7 @@ async function connectToWA() {
                     `┃\n` +
                     `┃ 📌 *Feature:* ${featureName}\n` +
                     `┃ ⚡ *New Status:* ${statusEmoji}\n` +
-                    `┃ 💾 *Database:* Saved instantly (Live ✅)\n` +
+                    `┃ 💾 *Database:* Saved Instantly (Live ✅)\n` +
                     `┃\n` +
                     `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                     `> *⚡ Powered by SACHIYA-MD 💫*`
