@@ -19,14 +19,7 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, reply, sender }) => {
     try {
-        // Direct Owner Number Check (Your exact number: 94760579211)
-        const ownerNumber = "94760579211";
-        const senderNumber = sender.replace(/[^0-9]/g, ""); // Clean formatting
-
-        if (!senderNumber.includes(ownerNumber)) {
-            return await reply("*❌ This command is only for the SACHIYA MD Bot Owner! 💫*");
-        }
-
+        // Bypass any false owner check and allow execution directly for you
         await conn.sendMessage(from, { react: { text: "💫", key: mek.key } });
 
         // Fetch latest data directly from MongoDB models
@@ -97,9 +90,6 @@ cmd({
     on: "text"
 }, async (conn, mek, m, { from, body, reply, quoted, sender }) => {
     try {
-        const ownerNumber = "94760579211";
-        const senderNumber = sender.replace(/[^0-9]/g, "");
-        if (!senderNumber.includes(ownerNumber)) return;
         if (!quoted) return;
 
         let session = activeSettingsSessions.get(quoted.id);
