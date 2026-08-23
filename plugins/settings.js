@@ -26,7 +26,7 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, reply }) => {
     try {
-        await conn.sendMessage(from, { react: { text: "💫", key: mek.key } });
+        await conn.sendMessage(from, { react: { text: "⚙️", key: mek.key } });
 
         // Fetch / Initialize database states and sync to global runtime instantly
         let callDoc = await AntiCallModel.findOne({ _id: 'sachiyamd_anticall_status' }) || await AntiCallModel.create({ _id: 'sachiyamd_anticall_status', status: false });
@@ -42,7 +42,7 @@ cmd({
         global.SACHIYA_SETTINGS.autoread = readDoc.enabled;
         global.SACHIYA_SETTINGS.autostatus = statusDoc.status;
 
-        let menuText = `╭━━━〔 ⚙️ SACHIYA-MD MASTER SETTINGS 〕━━━\n` +
+        let menuText = `╭━━━〔  *SACHIYA-MD SETTINGS* 〕━━━\n` +
                        `┃\n` +
                        `┃ 1. 📞 *Anti-Call:* ${global.SACHIYA_SETTINGS.anticall ? "🟢 Enabled" : "🔴 Disabled"}\n` +
                        `┃ 2. 🛡️ *Anti-Delete:* ${global.SACHIYA_SETTINGS.antidelete ? "🟢 Enabled" : "🔴 Disabled"}\n` +
@@ -51,12 +51,10 @@ cmd({
                        `┃ 5. 👁️ *Auto-Read:* ${global.SACHIYA_SETTINGS.autoread ? "🟢 Enabled" : "🔴 Disabled"}\n` +
                        `┃ 6. 💚 *Auto-Status:* ${global.SACHIYA_SETTINGS.autostatus ? "🟢 Enabled" : "🔴 Disabled"}\n` +
                        `┃\n` +
-                       `┣━━━〔 HOW TO CHANGE 〕━━━\n` +
-                       `┃ • Reply to this message\n` +
-                       `┃ with: [Number] [on/off]\n` +
-                       `┃ • Example: 1 on or 6 off\n` +
+                       `┣━━━〔 CHANGE 〕━━━\n` +
+                       `┃ • > Reply [Number] [on/off]\n` +
                        `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                       `> ⚡ Powered by SACHIYA-MD 💫`;
+                       `  *Powered by SACHIYA-MD 💫*`;
 
         let aliveImage = 'https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true';
 
@@ -125,7 +123,7 @@ cmd({
                         await conn.sendMessage(from, { text: `*❌ Database sync failed for ${targetItem.name}!*` }, { quoted: mekResponse });
                     }
 
-                    conn.ev.off("messages.upsert", upsertListener);
+                    // NOTE: Removed `conn.ev.off` here so it won't expire immediately on 1st reply!
                 }
             } catch (err) {
                 console.log("Settings Upsert Error: ", err);
@@ -133,6 +131,11 @@ cmd({
         };
 
         conn.ev.on("messages.upsert", upsertListener);
+
+        // Auto remove listener after 30 minutes to save memory
+        setTimeout(() => {
+            conn.ev.off("messages.upsert", upsertListener);
+        }, 30 * 60 * 1000);
 
     } catch (e) {
         console.log("Settings Menu Error: ", e);
