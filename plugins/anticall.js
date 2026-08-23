@@ -39,8 +39,9 @@ function handleAntiCall(sachiya) {
       for (const call of callEvents) {
         if (call.status === 'offer') {
           const callerJid = call.from;
-          const isGroup = callerJid.endsWith('@g.us') || (call.isGroup === true) || (call.chatId && call.chatId.endsWith('@g.us'));
           
+          // 🛑 Group check: ගෘප් එකකින් එන call එකක් නම් සම්පූර්ණයෙන්ම මගහරියි (Ignore)
+          const isGroup = callerJid.endsWith('@g.us') || (call.isGroup === true) || (call.chatId && call.chatId.endsWith('@g.us'));
           if (isGroup) continue;
 
           await sachiya.rejectCall(call.id, callerJid);
