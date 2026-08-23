@@ -18,7 +18,7 @@ async function loadAntiCallStatus() {
     if (doc) {
       anticallStatus = doc.status;
     } else {
-      await AntiCode = await AntiCallModel.create({ _id: 'sachiyamd_anticall_status', status: false });
+      await AntiCallModel.create({ _id: 'sachiyamd_anticall_status', status: false });
       anticallStatus = false;
     }
   } catch (e) {
@@ -40,7 +40,7 @@ function handleAntiCall(sachiya) {
         if (call.status === 'offer') {
           const callerJid = call.from;
           
-          // 🛑 දැඩි ලෙස ගෘප් කෝල් සහ ගෘප් හරහා එන දේවල් ඉ외ත් කිරීම
+          // 🛑 ගෘප් කෝල් සහ ගෘප් හරහා එන දේවල් ඉවත් කිරීම
           if (!callerJid || callerJid.endsWith('@g.us') || callerJid.includes('-') || call.isGroup === true || (call.chatId && call.chatId.endsWith('@g.us'))) {
             continue;
           }
