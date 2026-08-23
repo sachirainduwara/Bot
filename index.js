@@ -52,6 +52,13 @@ const BlockSchema = new mongoose.Schema({
 });
 const BlockModel = mongoose.models.BlockList || mongoose.model('BlockList', BlockSchema);
 
+// Mongoose Models for Live Settings Check
+const AntiCallModel = mongoose.models.AntiCall || mongoose.model('AntiCall', new mongoose.Schema({ _id: { type: String, required: true }, status: { type: Boolean, default: false } }));
+const AntideleteModel = mongoose.models.Antidelete || mongoose.model('Antidelete', new mongoose.Schema({ _id: { type: String, required: true }, enabled: { type: Boolean, default: false } }));
+const AutoReactModel = mongoose.models.AutoReact || mongoose.model('AutoReact', new mongoose.Schema({ _id: { type: String, required: true }, ireact: { type: Boolean, default: true }, greact: { type: Boolean, default: true } }));
+const AutoReadModel = mongoose.models.AutoRead || mongoose.model('AutoRead', new mongoose.Schema({ _id: { type: String, required: true }, enabled: { type: Boolean, default: false } }));
+const AutoStatusModel = mongoose.models.AutoStatus || mongoose.model('AutoStatus', new mongoose.Schema({ _id: { type: String, required: true }, status: { type: Boolean, default: false } }));
+
 async function loadSessionFromMongo() {
   if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
   try {
@@ -365,33 +372,28 @@ async function connectToWA() {
           try {
             switch (featureNum) {
               case '1': {
-                const AntiCallModel = mongoose.models.AntiCall || mongoose.model('AntiCall', new mongoose.Schema({ _id: { type: String, required: true }, status: { type: Boolean, default: false } }));
                 await AntiCallModel.findOneAndUpdate({ _id: 'sachiyamd_anticall_status' }, { status: stateBool }, { upsert: true, new: true });
                 featureName = "📞 Anti-Call";
                 break;
               }
               case '2': {
-                const AntideleteModel = mongoose.models.Antidelete || mongoose.model('Antidelete', new mongoose.Schema({ _id: { type: String, required: true }, enabled: { type: Boolean, default: false } }));
                 await AntideleteModel.findOneAndUpdate({ _id: 'sachiyamd_antidelete_status' }, { enabled: stateBool }, { upsert: true, new: true });
                 featureName = "🛡️ Anti-Delete";
                 break;
               }
               case '3':
               case '4': {
-                const AutoReactModel = mongoose.models.AutoReact || mongoose.model('AutoReact', new mongoose.Schema({ _id: { type: String, required: true }, ireact: { type: Boolean, default: true }, greact: { type: Boolean, default: true } }));
                 let updateObj = featureNum === '3' ? { ireact: stateBool } : { greact: stateBool };
                 await AutoReactModel.findOneAndUpdate({ _id: 'sachiyamd_autoreact_settings' }, updateObj, { upsert: true, new: true });
                 featureName = featureNum === '3' ? "💬 Inbox Auto-React" : "👥 Group Auto-React";
                 break;
               }
               case '5': {
-                const AutoReadModel = mongoose.models.AutoRead || mongoose.model('AutoRead', new mongoose.Schema({ _id: { type: String, required: true }, enabled: { type: Boolean, default: false } }));
                 await AutoReadModel.findOneAndUpdate({ _id: 'autoread_config' }, { enabled: stateBool, updatedAt: new Date() }, { upsert: true, new: true });
                 featureName = "👁️‍🗨️ Auto-Read";
                 break;
               }
               case '6': {
-                const AutoStatusModel = mongoose.models.AutoStatus || mongoose.model('AutoStatus', new mongoose.Schema({ _id: { type: String, required: true }, status: { type: Boolean, default: false } }));
                 await AutoStatusModel.findOneAndUpdate({ _id: 'sachiyamd_autostatus_settings' }, { status: stateBool }, { upsert: true, new: true });
                 featureName = "💚 Auto-Status";
                 break;
@@ -420,21 +422,37 @@ async function connectToWA() {
         }
       }
 
-      // --- Handle Status Broadcasts Separately ---
+      // --- Handle Status Broadcasts Separately (Live DB Check) ---
       if (mek.key && mek.key.remoteJid === 'status@broadcast') {
-        if (typeof handleAutoStatus === 'function') {
-          await handleAutoStatus(sachiya, mek);
-        }
+        try {
+          const statusDoc = await AutoStatusModel.findOne({ _id: 'sachiyamd_autostatus_settings' });
+          if (statusDoc && statusDoc.status === true) {
+            if (typeof handleAutoStatus === 'function') {
+              await handleAutoStatus(sachiya, mek);
+            }
+          }
+        } catch (e) {}
         return;
       }
 
-      // --- AutoRead and AutoReact execution ---
+      // --- AutoRead and AutoReact execution (Live DB Check) ---
       try {
         if (!mek.key.fromMe) {
-          Promise.all([
-            handleAutoread(sachiya, mek),
-            handleAutoReact(sachiya, mek)
-          ]).catch(() => {});
+          const reactDoc = await AutoReactModel.findOne({ _id: 'sachiyamd_autoreact_settings' });
+          const readDoc = await AutoReadModel.findOne({ _id: 'autoread_config' });
+
+          const isGroup = mek.key.remoteJid && mek.key.remoteJid.endsWith('@g.us');
+          const canInboxReact = reactDoc ? reactDoc.ireact : true;
+          const canGroupReact = reactDoc ? reactDoc.greact : true;
+          const canReact = isGroup ? canGroupReact : canInboxReact;
+
+          if (canReact && typeof handleAutoReact === 'function') {
+            await handleAutoReact(sachiya, mek).catch(() => {});
+          }
+
+          if (readDoc && readDoc.enabled === true && typeof handleAutoread === 'function') {
+            await handleAutoread(sachiya, mek).catch(() => {});
+          }
         }
       } catch (e) {}
 
@@ -470,7 +488,12 @@ async function connectToWA() {
 
       const isRevoke = mek.message?.protocolMessage && mek.message.protocolMessage.type === 0;
       if (isRevoke) {
-        await handleMessageRevocation(sachiya, mek);
+        try {
+          const deleteDoc = await AntideleteModel.findOne({ _id: 'sachiyamd_antidelete_status' });
+          if (deleteDoc && deleteDoc.enabled === true) {
+            await handleMessageRevocation(sachiya, mek);
+          }
+        } catch (e) {}
         return;
       } else {
         await storeMessage(sachiya, mek);
