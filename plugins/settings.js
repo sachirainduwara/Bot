@@ -2,61 +2,42 @@ const { cmd } = require("../command");
 const mongoose = require('mongoose');
 const config = require('../config');
 
-// --- ROBUST DATABASE SCHEMA ---
+// --- ROBUST SCHEMA WITH STRICT TIMESTAMPS ---
 const BotSettingsSchema = new mongoose.Schema({
-  id: { type: String, required: true, unique: true, default: 'sachiyamd_master_config_v1' },
+  id: { type: String, required: true, unique: true, default: 'sachiya_md_global_settings' },
   anticall: { type: Boolean, default: false },
   antidelete: { type: Boolean, default: false },
   ireact: { type: Boolean, default: false },
   greact: { type: Boolean, default: false },
   autoread: { type: Boolean, default: false },
   autostatus: { type: Boolean, default: false }
-});
+}, { timestamps: true });
 
 const BotSettings = mongoose.models.BotSettings || mongoose.model('BotSettings', BotSettingsSchema);
 
-// --- BULLETPROOF SETTINGS FETCH FUNCTION ---
+// --- BULLETPROOF SETTINGS FETCH & CACHE ---
 async function getBotSettings() {
   try {
-    let settings = await BotSettings.findOne({ id: 'sachiyamd_master_config_v1' });
+    let settings = await BotSettings.findOne({ id: 'sachiya_md_global_settings' }).lean().exec();
     if (!settings) {
-      settings = await BotSettings.create({ 
-        id: 'sachiyamd_master_config_v1',
-        anticall: false,
-        antidelete: false,
-        ireact: false,
-        greact: false,
-        autoread: false,
-        autostatus: false
-      });
+      const created = await BotSettings.create({ id: 'sachiya_md_global_settings' });
+      return created.toObject();
     }
-    return settings.toObject ? settings.toObject() : settings;
+    return settings;
   } catch (err) {
-    console.error("Database Fetch Error:", err);
-    return { 
-      anticall: false, 
-      antidelete: false, 
-      ireact: false, 
-      greact: false, 
-      autoread: false, 
-      autostatus: false 
-    };
+    console.error("DB Fetch Error:", err);
+    return { anticall: false, antidelete: false, ireact: false, greact: false, autoread: false, autostatus: false };
   }
 }
 
-// --- OWNER VALIDATION HELPER ---
+// Owner Check
 function isSelfChat(sachiya, from, mek) {
-  try {
-    const botNumber = String(sachiya.user?.id || '').split('@')[0];
-    const cleanFrom = String(from || '').replace(/[^0-9]/g, '');
-    const cleanBotNum = String(botNumber).replace(/[^0-9]/g, '');
-    return mek.key.fromMe || cleanFrom === cleanBotNum || (from.endsWith('@s.whatsapp.net') && cleanFrom === cleanBotNum);
-  } catch (e) {
-    return mek.key.fromMe || false;
-  }
+  const botNumber = String(sachiya.user?.id || '').split('@')[0];
+  const cleanFrom = String(from || '').replace(/[^0-9]/g, '');
+  const cleanBotNum = String(botNumber).replace(/[^0-9]/g, '');
+  return mek.key.fromMe || cleanFrom === cleanBotNum || (from.endsWith('@s.whatsapp.net') && cleanFrom === cleanBotNum);
 }
 
-// Export global function for other plugins
 global.getBotConfig = getBotSettings;
 
 // --- COMMAND: .settings ---
@@ -75,7 +56,7 @@ cmd(
         return reply("❌ *Settings command can only be used in your Self Chat with the bot!*");
       }
 
-      // Fetch absolute latest configuration from database
+      // Fetch absolute fresh settings from DB
       const settings = await getBotSettings();
 
       const anticallTxt = settings.anticall === true ? "🟢 Enabled" : "🔴 Disabled";
@@ -108,19 +89,18 @@ cmd(
       global.activeSettingsMenus = global.activeSettingsMenus || new Map();
       global.activeSettingsMenus.set(sentMsg.key.id, { from });
 
-      // Clean up memory map after 30 minutes
       setTimeout(() => {
         global.activeSettingsMenus.delete(sentMsg.key.id);
       }, 30 * 60 * 1000);
 
     } catch (e) {
-      console.error("Settings Command Error:", e);
+      console.error("Settings Error:", e);
       reply(`❌ *Error:* ${e.message}`);
     }
   }
 );
 
-// --- INTERACTIVE REPLY LISTENER FOR CONFIGURATION ---
+// --- INTERACTIVE REPLY HANDLER ---
 cmd(
   {
     on: "text",
@@ -147,40 +127,19 @@ cmd(
         let dbField = "";
 
         switch (featureNum) {
-          case '1': 
-            dbField = "anticall"; 
-            featureName = "📞 Anti-Call"; 
-            break;
-          case '2': 
-            dbField = "antidelete"; 
-            featureName = "🛡️ Anti-Delete"; 
-            break;
-          case '3': 
-            dbField = "ireact"; 
-            featureName = "💬 Inbox Auto-React"; 
-            break;
-          case '4': 
-            dbField = "greact"; 
-            featureName = "👥 Group Auto-React"; 
-            break;
-          case '5': 
-            dbField = "autoread"; 
-            featureName = "👁️‍🗨️ Auto-Read"; 
-            break;
-          case '6': 
-            dbField = "autostatus"; 
-            featureName = "💚 Auto-Status"; 
-            break;
+          case '1': dbField = "anticall"; featureName = "📞 Anti-Call"; break;
+          case '2': dbField = "antidelete"; featureName = "🛡️ Anti-Delete"; break;
+          case '3': dbField = "ireact"; featureName = "💬 Inbox Auto-React"; break;
+          case '4': dbField = "greact"; featureName = "👥 Group Auto-React"; break;
+          case '5': dbField = "autoread"; featureName = "👁️‍🗨️ Auto-Read"; break;
+          case '6': dbField = "autostatus"; featureName = "💚 Auto-Status"; break;
         }
 
         if (dbField && featureName) {
-          // Force atomic update to Mongo DB document directly
-          const updateObj = {};
-          updateObj[dbField] = stateBool;
-
+          // Direct atomic update
           await BotSettings.findOneAndUpdate(
-            { id: 'sachiyamd_master_config_v1' },
-            { $set: updateObj },
+            { id: 'sachiya_md_global_settings' },
+            { $set: { [dbField]: stateBool } },
             { upsert: true, new: true, runValidators: true }
           );
 
@@ -201,7 +160,7 @@ cmd(
         }
       }
     } catch (err) {
-      console.error("Settings Reply Handler Error:", err);
+      console.error("Reply Error:", err);
     }
   }
 );
