@@ -44,16 +44,16 @@ cmd({
 
         let menuText = `╭━━━〔  *SACHIYA-MD SETTINGS* 〕━━━\n` +
                        `┃\n` +
-                       `┃ 1. 📞 *Anti-Call:* ${global.SACHIYA_SETTINGS.anticall ? "🟢 Enabled" : "🔴 Disabled"}\n` +
-                       `┃ 2. 🛡️ *Anti-Delete:* ${global.SACHIYA_SETTINGS.antidelete ? "🟢 Enabled" : "🔴 Disabled"}\n` +
-                       `┃ 3. 💬 *Inbox Auto-React:* ${global.SACHIYA_SETTINGS.inboxReact ? "🟢 Enabled" : "🔴 Disabled"}\n` +
-                       `┃ 4. 👥 *Group Auto-React:* ${global.SACHIYA_SETTINGS.groupReact ? "🟢 Enabled" : "🔴 Disabled"}\n` +
-                       `┃ 5. 👁️ *Auto-Read:* ${global.SACHIYA_SETTINGS.autoread ? "🟢 Enabled" : "🔴 Disabled"}\n` +
-                       `┃ 6. 💚 *Auto-Status:* ${global.SACHIYA_SETTINGS.autostatus ? "🟢 Enabled" : "🔴 Disabled"}\n` +
+                       `┃ 1. 📞 *Call:* ${global.SACHIYA_SETTINGS.anticall ? "🟢 Enabled" : "🔴 Disabled"}\n` +
+                       `┃ 2. 🛡️ *Delete:* ${global.SACHIYA_SETTINGS.antidelete ? "🟢 Enabled" : "🔴 Disabled"}\n` +
+                       `┃ 3. 💬 *Inbox React:* ${global.SACHIYA_SETTINGS.inboxReact ? "🟢 Enabled" : "🔴 Disabled"}\n` +
+                       `┃ 4. 👥 *Group React:* ${global.SACHIYA_SETTINGS.groupReact ? "🟢 Enabled" : "🔴 Disabled"}\n` +
+                       `┃ 5. 👁️ *Read:* ${global.SACHIYA_SETTINGS.autoread ? "🟢 Enabled" : "🔴 Disabled"}\n` +
+                       `┃ 6. 💚 *Status:* ${global.SACHIYA_SETTINGS.autostatus ? "🟢 Enabled" : "🔴 Disabled"}\n` +
                        `┃\n` +
-                       ` > *Reply [Number] [on/off]*\n` +
+                       `┃ *Reply [Number] [on/off]*\n` +
                        `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                       `  *Powered by SACHIYA-MD 💫*`;
+                       ` > *Powered by SACHIYA-MD 💫*`;
 
         let aliveImage = 'https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true';
 
