@@ -84,56 +84,58 @@ cmd({
     }
 });
 
-// 2. Direct Event Listener for Catching Replies inside the plugin
-if (conn && conn.ev) {
-    conn.ev.on('messages.upsert', async (chatUpdate) => {
-        try {
-            const mek = chatUpdate.messages[0];
-            if (!mek || !mek.message) return;
+// 2. Command listener for catching replies safely using standard framework design
+cmd({
+    on: "text"
+}, async (conn, mek, m, { from, body, reply, quoted }) => {
+    try {
+        let session = activeSettingsSessions.get(from);
+        if (!session) return;
 
-            const from = mek.key.remoteJid;
-            let session = activeSettingsSessions.get(from);
-            if (!session) return;
+        // Check if user is replying to the active settings message
+        let isQuotedSettings = quoted && (quoted.id === session.msgId || quoted.fromMe);
+        if (!isQuotedSettings) return;
 
-            // Check quoted stanza ID
-            const contextInfo = mek.message.extendedTextMessage && mek.message.extendedTextMessage.contextInfo;
-            if (!contextInfo || contextInfo.stanzaId !== session.msgId) return;
+        let args = body.trim().toLowerCase().split(/\s+/);
+        let targetNum = args[0];
+        let action = args[1];
 
-            const body = mek.message.conversation || mek.message.extendedTextMessage.text || "";
-            let args = body.trim().toLowerCase().split(/\s+/);
-            let targetNum = args[0];
-            let action = args[1];
-
-            if (!session.settingsState[targetNum]) return;
-            if (action !== "on" && action !== "off") return;
-
-            let newState = action === "on";
-            let targetItem = session.settingsState[targetNum];
-
-            let updateData = {};
-            updateData[targetItem.field] = newState;
-
-            await targetItem.model.findOneAndUpdate(
-                targetItem.idQuery,
-                { $set: updateData },
-                { upsert: true, new: true }
-            );
-
-            targetItem.status = newState;
-
-            let successText = `╭━━━〔 ✨ SETTINGS UPDATED 〕━━━\n` +
-                              `┃\n` +
-                              `┃ 📌 *Feature:* ${targetItem.name}\n` +
-                              `┃ ⚡ *New Status:* ${newState ? '🟢 ENABLED' : '🔴 DISABLED'}\n` +
-                              `┃ 💾 *Database:* Saved to MongoDB Atlas ✅\n` +
-                              `┃\n` +
-                              `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                              `> ⚡ Powered by SACHIYA-MD 💫`;
-
-            await conn.sendMessage(from, { text: successText }, { quoted: mek });
-
-        } catch (err) {
-            console.log("Settings Upsert Error: ", err);
+        if (!session.settingsState[targetNum]) {
+            return await reply("*❌ Invalid number! Please reply with a valid number from 1 to 6.*");
         }
-    });
-}
+
+        if (action !== "on" && action !== "off") {
+            return await reply("*❌ Invalid action! Please type 'on' or 'off' after the number (Example: `1 off` or `6 on`).*");
+        }
+
+        let newState = action === "on";
+        let targetItem = session.settingsState[targetNum];
+
+        // Update MongoDB Database directly
+        let updateData = {};
+        updateData[targetItem.field] = newState;
+
+        await targetItem.model.findOneAndUpdate(
+            targetItem.idQuery,
+            { $set: updateData },
+            { upsert: true, new: true }
+        );
+
+        // Update local session status
+        targetItem.status = newState;
+
+        let successText = `╭━━━〔 ✨ SETTINGS UPDATED 〕━━━\n` +
+                          `┃\n` +
+                          `┃ 📌 *Feature:* ${targetItem.name}\n` +
+                          `┃ ⚡ *New Status:* ${newState ? '🟢 ENABLED' : '🔴 DISABLED'}\n` +
+                          `┃ 💾 *Database:* Saved to MongoDB Atlas ✅\n` +
+                          `┃\n` +
+                          `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                          `> ⚡ Powered by SACHIYA-MD 💫`;
+
+        return await reply(successText);
+
+    } catch (e) {
+        console.log("Settings Response Error: ", e);
+    }
+});
