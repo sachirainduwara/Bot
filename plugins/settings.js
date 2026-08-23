@@ -17,10 +17,14 @@ cmd({
     category: "owner",
     react: "⚙️",
     filename: __filename
-}, async (conn, mek, m, { from, isOwner, reply, sender }) => {
+}, async (conn, mek, m, { from, reply, sender }) => {
     try {
-        if (!isOwner) {
-            return await reply("*❌ This command is only for the Bot Owner! 💫*");
+        // Direct Owner Number Check (Your exact number: 94760579211)
+        const ownerNumber = "94760579211";
+        const senderNumber = sender.replace(/[^0-9]/g, ""); // Clean formatting
+
+        if (!senderNumber.includes(ownerNumber)) {
+            return await reply("*❌ This command is only for the SACHIYA MD Bot Owner! 💫*");
         }
 
         await conn.sendMessage(from, { react: { text: "💫", key: mek.key } });
@@ -91,9 +95,11 @@ cmd({
 // Listener for Reply Handling & MongoDB Update
 cmd({
     on: "text"
-}, async (conn, mek, m, { from, body, isOwner, reply, quoted }) => {
+}, async (conn, mek, m, { from, body, reply, quoted, sender }) => {
     try {
-        if (!isOwner) return;
+        const ownerNumber = "94760579211";
+        const senderNumber = sender.replace(/[^0-9]/g, "");
+        if (!senderNumber.includes(ownerNumber)) return;
         if (!quoted) return;
 
         let session = activeSettingsSessions.get(quoted.id);
