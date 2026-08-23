@@ -25,8 +25,6 @@ const { handleAntiCall } = require('./plugins/anticall');
 const { handleAutoReact } = require('./plugins/autoreact');
 const { handleAutoStatus } = require('./plugins/autostatus');
 
-// Import save/load functions for settings if needed, or they handle inside plugin. 
-// We include global map for settings replies:
 global.activeSettingsMenus = global.activeSettingsMenus || new Map();
 
 const app = express();
@@ -241,7 +239,7 @@ async function connectToWA() {
     },
     syncFullHistory: false,
     fireInitQueries: true, 
-    markOnlineOnConnect: false, // Prevents session hanging/pause state on restart
+    markOnlineOnConnect: false,
     generateHighQualityLinkPreview: false,
     getMessage: async () => { return undefined; }
   });
@@ -364,42 +362,43 @@ async function connectToWA() {
           const stateBool = (action === 'on');
           let featureName = "";
 
-          // Require mongoose models or functions to update database directly here
-          const mongoose = require('mongoose');
-
-          switch (featureNum) {
-            case '1': {
-              const AntiCallModel = mongoose.models.AntiCall || mongoose.model('AntiCall', new mongoose.Schema({ _id: { type: String, required: true }, status: { type: Boolean, default: false } }));
-              await AntiCallModel.findOneAndUpdate({ _id: 'sachiyamd_anticall_status' }, { status: stateBool }, { upsert: true, new: true });
-              featureName = "📞 Anti-Call";
-              break;
+          try {
+            switch (featureNum) {
+              case '1': {
+                const AntiCallModel = mongoose.models.AntiCall || mongoose.model('AntiCall', new mongoose.Schema({ _id: { type: String, required: true }, status: { type: Boolean, default: false } }));
+                await AntiCallModel.findOneAndUpdate({ _id: 'sachiyamd_anticall_status' }, { status: stateBool }, { upsert: true, new: true });
+                featureName = "📞 Anti-Call";
+                break;
+              }
+              case '2': {
+                const AntideleteModel = mongoose.models.Antidelete || mongoose.model('Antidelete', new mongoose.Schema({ _id: { type: String, required: true }, enabled: { type: Boolean, default: false } }));
+                await AntideleteModel.findOneAndUpdate({ _id: 'sachiyamd_antidelete_status' }, { enabled: stateBool }, { upsert: true, new: true });
+                featureName = "🛡️ Anti-Delete";
+                break;
+              }
+              case '3':
+              case '4': {
+                const AutoReactModel = mongoose.models.AutoReact || mongoose.model('AutoReact', new mongoose.Schema({ _id: { type: String, required: true }, ireact: { type: Boolean, default: true }, greact: { type: Boolean, default: true } }));
+                let updateObj = featureNum === '3' ? { ireact: stateBool } : { greact: stateBool };
+                await AutoReactModel.findOneAndUpdate({ _id: 'sachiyamd_autoreact_settings' }, updateObj, { upsert: true, new: true });
+                featureName = featureNum === '3' ? "💬 Inbox Auto-React" : "👥 Group Auto-React";
+                break;
+              }
+              case '5': {
+                const AutoReadModel = mongoose.models.AutoRead || mongoose.model('AutoRead', new mongoose.Schema({ _id: { type: String, required: true }, enabled: { type: Boolean, default: false } }));
+                await AutoReadModel.findOneAndUpdate({ _id: 'autoread_config' }, { enabled: stateBool, updatedAt: new Date() }, { upsert: true, new: true });
+                featureName = "👁️‍🗨️ Auto-Read";
+                break;
+              }
+              case '6': {
+                const AutoStatusModel = mongoose.models.AutoStatus || mongoose.model('AutoStatus', new mongoose.Schema({ _id: { type: String, required: true }, status: { type: Boolean, default: false } }));
+                await AutoStatusModel.findOneAndUpdate({ _id: 'sachiyamd_autostatus_settings' }, { status: stateBool }, { upsert: true, new: true });
+                featureName = "💚 Auto-Status";
+                break;
+              }
             }
-            case '2': {
-              const AntideleteModel = mongoose.models.Antidelete || mongoose.model('Antidelete', new mongoose.Schema({ _id: { type: String, required: true }, enabled: { type: Boolean, default: false } }));
-              await AntideleteModel.findOneAndUpdate({ _id: 'sachiyamd_antidelete_status' }, { enabled: stateBool }, { upsert: true, new: true });
-              featureName = "🛡️ Anti-Delete";
-              break;
-            }
-            case '3':
-            case '4': {
-              const AutoReactModel = mongoose.models.AutoReact || mongoose.model('AutoReact', new mongoose.Schema({ _id: { type: String, required: true }, ireact: { type: Boolean, default: true }, greact: { type: Boolean, default: true } }));
-              let updateObj = featureNum === '3' ? { ireact: stateBool } : { greact: stateBool };
-              await AutoReactModel.findOneAndUpdate({ _id: 'sachiyamd_autoreact_settings' }, updateObj, { upsert: true, new: true });
-              featureName = featureNum === '3' ? "💬 Inbox Auto-React" : "👥 Group Auto-React";
-              break;
-            }
-            case '5': {
-              const AutoReadModel = mongoose.models.AutoRead || mongoose.model('AutoRead', new mongoose.Schema({ _id: { type: String, required: true }, enabled: { type: Boolean, default: false } }));
-              await AutoReadModel.findOneAndUpdate({ _id: 'autoread_config' }, { enabled: stateBool, updatedAt: new Date() }, { upsert: true, new: true });
-              featureName = "👁️‍🗨️ Auto-Read";
-              break;
-            }
-            case '6': {
-              const AutoStatusModel = mongoose.models.AutoStatus || mongoose.model('AutoStatus', new mongoose.Schema({ _id: { type: String, required: true }, status: { type: Boolean, default: false } }));
-              await AutoStatusModel.findOneAndUpdate({ _id: 'sachiyamd_autostatus_settings' }, { status: stateBool }, { upsert: true, new: true });
-              featureName = "💚 Auto-Status";
-              break;
-            }
+          } catch (dbErr) {
+            console.error("Settings DB Update Error:", dbErr.message);
           }
 
           if (featureName) {
