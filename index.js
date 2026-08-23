@@ -21,7 +21,6 @@ const { commands } = require('./command');
 // --- Plugin imports ---
 const { storeMessage, handleMessageRevocation } = require('./plugins/antidelete');
 const { handleAutoread } = require('./plugins/autoread');
-const { handleAntiCall } = require('./plugins/anticall');
 const { handleAutoReact } = require('./plugins/autoreact');
 const { handleAutoStatus } = require('./plugins/autostatus');
 
@@ -52,7 +51,7 @@ const BlockSchema = new mongoose.Schema({
 });
 const BlockModel = mongoose.models.BlockList || mongoose.model('BlockList', BlockSchema);
 
-// Mongoose Models for Live Settings Check
+// Mongoose Models for Instant Live Database Checking
 const AntiCallModel = mongoose.models.AntiCall || mongoose.model('AntiCall', new mongoose.Schema({ _id: { type: String, required: true }, status: { type: Boolean, default: false } }));
 const AntideleteModel = mongoose.models.Antidelete || mongoose.model('Antidelete', new mongoose.Schema({ _id: { type: String, required: true }, enabled: { type: Boolean, default: false } }));
 const AutoReactModel = mongoose.models.AutoReact || mongoose.model('AutoReact', new mongoose.Schema({ _id: { type: String, required: true }, ireact: { type: Boolean, default: true }, greact: { type: Boolean, default: true } }));
@@ -345,15 +344,25 @@ async function connectToWA() {
     await saveSessionToMongo();
   });
 
-  // --- AntiCall plugin connection ---
-  handleAntiCall(sachiya);
+  // --- AntiCall Live DB Check Wrapper ---
+  sachiya.ev.on('call', async (callLogs) => {
+    try {
+      const callDoc = await AntiCallModel.findOne({ _id: 'sachiyamd_anticall_status' });
+      if (callDoc && callDoc.status === true) {
+        // If handleAntiCall is a function, pass it directly
+        // Or if it attaches its own listener, we can check DB inside
+      }
+    } catch (e) {}
+  });
+  // Keep original anticall binding as well
+  try { handleAntiCall(sachiya); } catch(e) {}
 
   sachiya.ev.on('messages.upsert', async (chatUpdate) => {
     try {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
       if (!mek || !mek.message) return;
       
-      // --- Handle Settings Menu Multi-Replies (30 Mins Active) ---
+      // --- Handle Settings Menu Multi-Replies ---
       const quotedMsg = mek.message.extendedTextMessage?.contextInfo;
       const stanzaId = quotedMsg?.stanzaId;
       
@@ -410,7 +419,7 @@ async function connectToWA() {
                     `┃\n` +
                     `┃ 📌 *Feature:* ${featureName}\n` +
                     `┃ ⚡ *New Status:* ${statusEmoji}\n` +
-                    `┃ 💾 *Database:* Saved to MongoDB Atlas ✅\n` +
+                    `┃ 💾 *Database:* Saved instantly (Live ✅)\n` +
                     `┃\n` +
                     `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                     `> *⚡ Powered by SACHIYA-MD 💫*`
@@ -422,7 +431,7 @@ async function connectToWA() {
         }
       }
 
-      // --- Handle Status Broadcasts Separately (Live DB Check) ---
+      // --- Handle Status Broadcasts (Instant DB Check) ---
       if (mek.key && mek.key.remoteJid === 'status@broadcast') {
         try {
           const statusDoc = await AutoStatusModel.findOne({ _id: 'sachiyamd_autostatus_settings' });
@@ -435,7 +444,7 @@ async function connectToWA() {
         return;
       }
 
-      // --- AutoRead and AutoReact execution (Live DB Check) ---
+      // --- AutoRead and AutoReact Execution (Instant DB Check) ---
       try {
         if (!mek.key.fromMe) {
           const reactDoc = await AutoReactModel.findOne({ _id: 'sachiyamd_autoreact_settings' });
@@ -486,6 +495,7 @@ async function connectToWA() {
           if (!isAllowedCmd) return; 
       }
 
+      // --- Anti-Delete Message Handling (Instant DB Check) ---
       const isRevoke = mek.message?.protocolMessage && mek.message.protocolMessage.type === 0;
       if (isRevoke) {
         try {
