@@ -4,7 +4,7 @@ const config = require('../config');
 
 // --- DATABASE SCHEMA ---
 const BotSettingsSchema = new mongoose.Schema({
-  id: { type: String, required: true, unique: true, default: 'sachiyamd_settings' },
+  id: { type: String, required: true, unique: true, default: 'sachiyamd_main_settings' },
   anticall: { type: Boolean, default: false },
   antidelete: { type: Boolean, default: false },
   ireact: { type: Boolean, default: false },
@@ -15,12 +15,13 @@ const BotSettingsSchema = new mongoose.Schema({
 
 const BotSettings = mongoose.models.BotSettings || mongoose.model('BotSettings', BotSettingsSchema);
 
-// Helper function to get or create settings
-async function fetchSettings() {
+// Helper function to get settings safely with plain object conversion
+async function getBotSettings() {
   try {
-    let settings = await BotSettings.findOne({ id: 'sachiyamd_settings' });
+    let settings = await BotSettings.findOne({ id: 'sachiyamd_main_settings' }).lean();
     if (!settings) {
-      settings = await BotSettings.create({ id: 'sachiyamd_settings' });
+      const newSettings = await BotSettings.create({ id: 'sachiyamd_main_settings' });
+      return newSettings.toObject();
     }
     return settings;
   } catch (err) {
@@ -29,21 +30,23 @@ async function fetchSettings() {
   }
 }
 
-// Helper to check if it's the Owner's Self Chat
+// Helper to check owner self chat
 function isSelfChat(sachiya, from, mek) {
   const botNumber = String(sachiya.user?.id || '').split('@')[0];
   const cleanFrom = String(from || '').replace(/[^0-9]/g, '');
   const cleanBotNum = String(botNumber).replace(/[^0-9]/g, '');
-  
   return mek.key.fromMe || cleanFrom === cleanBotNum || (from.endsWith('@s.whatsapp.net') && cleanFrom === cleanBotNum);
 }
+
+// --- GLOBAL EXPORT FOR OTHER PLUGINS TO USE ---
+global.getBotConfig = getBotSettings;
 
 // --- COMMAND: .settings ---
 cmd(
   {
     pattern: "settings",
     alias: ["setting", "botsettings"],
-    desc: "Manage all bot features and settings using UI panel and replies",
+    desc: "Manage all bot features and settings",
     category: "owner",
     react: "⚙️",
     filename: __filename,
@@ -51,10 +54,10 @@ cmd(
   async (sachiya, mek, m, { from, reply }) => {
     try {
       if (!isSelfChat(sachiya, from, mek)) {
-        return reply("❌ *Settings command can only be used in your Self Chat (Saved Messages) with the bot!*");
+        return reply("❌ *Settings command can only be used in your Self Chat with the bot!*");
       }
 
-      const settings = await fetchSettings();
+      const settings = await getBotSettings();
 
       const anticallTxt = settings.anticall ? "🟢 Enabled" : "🔴 Disabled";
       const antidelTxt = settings.antidelete ? "🟢 Enabled" : "🔴 Disabled";
@@ -81,21 +84,13 @@ cmd(
                      `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                      `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-      const sentMsg = await sachiya.sendMessage(
-        from,
-        {
-          image: { url: settingsImg },
-          caption: uiText,
-        },
-        { quoted: mek }
-      );
+      const sentMsg = await sachiya.sendMessage(from, { image: { url: settingsImg }, caption: uiText }, { quoted: mek });
 
       global.activeSettingsMenus = global.activeSettingsMenus || new Map();
-      const messageID = sentMsg.key.id;
-      global.activeSettingsMenus.set(messageID, { from });
+      global.activeSettingsMenus.set(sentMsg.key.id, { from });
 
       setTimeout(() => {
-        global.activeSettingsMenus.delete(messageID);
+        global.activeSettingsMenus.delete(sentMsg.key.id);
       }, 30 * 60 * 1000);
 
     } catch (e) {
@@ -131,36 +126,20 @@ cmd(
         let dbField = "";
 
         switch (featureNum) {
-          case '1':
-            dbField = "anticall";
-            featureName = "📞 Anti-Call";
-            break;
-          case '2':
-            dbField = "antidelete";
-            featureName = "🛡️ Anti-Delete";
-            break;
-          case '3':
-            dbField = "ireact";
-            featureName = "💬 Inbox Auto-React";
-            break;
-          case '4':
-            dbField = "greact";
-            featureName = "👥 Group Auto-React";
-            break;
-          case '5':
-            dbField = "autoread";
-            featureName = "👁️‍🗨️ Auto-Read";
-            break;
-          case '6':
-            dbField = "autostatus";
-            featureName = "💚 Auto-Status";
-            break;
+          case '1': dbField = "anticall"; featureName = "📞 Anti-Call"; break;
+          case '2': dbField = "antidelete"; featureName = "🛡️ Anti-Delete"; break;
+          case '3': dbField = "ireact"; featureName = "💬 Inbox Auto-React"; break;
+          case '4': dbField = "greact"; featureName = "👥 Group Auto-React"; break;
+          case '5': dbField = "autoread"; featureName = "👁️‍🗨️ Auto-Read"; break;
+          case '6': dbField = "autostatus"; featureName = "💚 Auto-Status"; break;
         }
 
         if (dbField && featureName) {
-          let settings = await fetchSettings();
-          settings[dbField] = stateBool;
-          await settings.save();
+          await BotSettings.findOneAndUpdate(
+            { id: 'sachiyamd_main_settings' },
+            { [dbField]: stateBool },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+          );
 
           const statusEmoji = stateBool ? "🟢 ENABLED" : "🔴 DISABLED";
           
@@ -169,7 +148,7 @@ cmd(
                   `┃\n` +
                   `┃ 📌 *Feature:* ${featureName}\n` +
                   `┃ ⚡ *New Status:* ${statusEmoji}\n` +
-                  `┃ 💾 *Database:* Saved to MongoDB Atlas ✅\n` +
+                  `┃ 💾 *Database:* Saved Successfully ✅\n` +
                   `┃\n` +
                   `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                   `> *⚡ Powered by SACHIYA-MD 💫*`
@@ -183,3 +162,20 @@ cmd(
     }
   }
 );
+
+// --- ANTI-CALL EVENT LISTENER (කෝල් එකක් ආවොත් කට් කරන්න) ---
+sachiya.ev.on("call", async (json) => {
+  try {
+    const settings = await getBotSettings();
+    if (!settings.anticall) return;
+
+    for (const call of json) {
+      if (call.status === "offer") {
+        await sachiya.rejectCall(call.id, call.from);
+        console.log(`📞 Anti-Call rejected incoming call from ${call.from}`);
+      }
+    }
+  } catch (e) {
+    console.error("Anti-Call error:", e);
+  }
+});
