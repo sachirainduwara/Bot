@@ -14,13 +14,16 @@ cmd({
 
         const ownerNumber = config.OWNER_NUM || '94760579211';
         const ownerName = config.OWNER_NAME || 'Sachiya Induwara';
+        const botName = config.BOT_NAME || 'SACHIYA-MD';
 
-        // Clean modern vCard format compatible with Baileys / WhatsApp
+        // Perfect WhatsApp Business vCard Format
         const vcard = 'BEGIN:VCARD\n' +
                       'VERSION:3.0\n' +
                       `FN:${ownerName}\n` +
+                      `ORG:Developer / Owner of ${botName};\n` +
                       `TEL;type=CELL;type=VOICE;waid=${ownerNumber}:+${ownerNumber}\n` +
-                      `NOTE:Owner & Developer of SACHIYA-MD\n` +
+                      `X-WA-BIZ-NAME:${ownerName}\n` +
+                      `X-WA-BIZ-DESCRIPTION:Developer / Owner of ${botName}\n` +
                       'END:VCARD';
 
         await conn.sendMessage(from, {
