@@ -15,10 +15,10 @@ const BotSettingsSchema = new mongoose.Schema({
 
 const BotSettings = mongoose.models.BotSettings || mongoose.model('BotSettings', BotSettingsSchema);
 
-// Helper function to get settings safely
+// Helper function to get fresh settings (Avoiding Cache Issues)
 async function getBotSettings() {
   try {
-    let settings = await BotSettings.findOne({ id: 'sachiyamd_main_settings' }).lean();
+    let settings = await BotSettings.findOne({ id: 'sachiyamd_main_settings' }).lean().exec();
     if (!settings) {
       const newSettings = await BotSettings.create({ id: 'sachiyamd_main_settings' });
       return newSettings.toObject();
@@ -57,6 +57,7 @@ cmd(
         return reply("❌ *Settings command can only be used in your Self Chat with the bot!*");
       }
 
+      // Fetch fresh settings directly from DB every time command runs
       const settings = await getBotSettings();
 
       const anticallTxt = settings.anticall ? "🟢 Enabled" : "🔴 Disabled";
@@ -153,10 +154,11 @@ cmd(
         }
 
         if (dbField && featureName) {
+          // Force update and bypass cache
           await BotSettings.findOneAndUpdate(
             { id: 'sachiyamd_main_settings' },
-            { [dbField]: stateBool },
-            { upsert: true, new: true, setDefaultsOnInsert: true }
+            { $set: { [dbField]: stateBool } },
+            { upsert: true, new: true, runValidators: true }
           );
 
           const statusEmoji = stateBool ? "🟢 ENABLED" : "🔴 DISABLED";
