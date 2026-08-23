@@ -30,12 +30,12 @@ cmd({
         let statusDoc = await AutoStatusModel.findOne({ _id: 'sachiyamd_autostatus_settings' }) || await AutoStatusModel.create({ _id: 'sachiyamd_autostatus_settings', status: false });
 
         let settingsState = {
-            1: { name: "Anti-Call", status: callDoc.status, model: AntiCallModel, idQuery: { _id: 'sachiyamd_anticall_status' }, field: 'status' },
-            2: { name: "Anti-Delete", status: deleteDoc.enabled, model: AntideleteModel, idQuery: { _id: 'sachiyamd_antidelete_status' }, field: 'enabled' },
-            3: { name: "Inbox Auto-React", status: reactDoc.ireact, model: AutoReactModel, idQuery: { _id: 'sachiyamd_autoreact_settings' }, field: 'ireact' },
-            4: { name: "Group Auto-React", status: reactDoc.greact, model: AutoReactModel, idQuery: { _id: 'sachiyamd_autoreact_settings' }, field: 'greact' },
-            5: { name: "Auto-Read", status: readDoc.enabled, model: AutoReadModel, idQuery: { _id: 'autoread_config' }, field: 'enabled' },
-            6: { name: "Auto-Status", status: statusDoc.status, model: AutoStatusModel, idQuery: { _id: 'sachiyamd_autostatus_settings' }, field: 'status' }
+            "1": { name: "Anti-Call", status: callDoc.status, model: AntiCallModel, idQuery: { _id: 'sachiyamd_anticall_status' }, field: 'status' },
+            "2": { name: "Anti-Delete", status: deleteDoc.enabled, model: AntideleteModel, idQuery: { _id: 'sachiyamd_antidelete_status' }, field: 'enabled' },
+            "3": { name: "Inbox Auto-React", status: reactDoc.ireact, model: AutoReactModel, idQuery: { _id: 'sachiyamd_autoreact_settings' }, field: 'ireact' },
+            "4": { name: "Group Auto-React", status: reactDoc.greact, model: AutoReactModel, idQuery: { _id: 'sachiyamd_autoreact_settings' }, field: 'greact' },
+            "5": { name: "Auto-Read", status: readDoc.enabled, model: AutoReadModel, idQuery: { _id: 'autoread_config' }, field: 'enabled' },
+            "6": { name: "Auto-Status", status: statusDoc.status, model: AutoStatusModel, idQuery: { _id: 'sachiyamd_autostatus_settings' }, field: 'status' }
         };
 
         // UI Box Layout
@@ -54,7 +54,7 @@ cmd({
         menuText += `┣━━━〔 HOW TO CHANGE 〕━━━\n`;
         menuText += `┃ • Reply to this message\n`;
         menuText += `┃ with: [Number] [on/off]\n`;
-        menuText += `┃ • Example: 1 off or 3 on\n`;
+        menuText += `┃ • Example: 1 off or 6 on\n`;
         menuText += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
         menuText += `> ⚡ Powered by SACHIYA-MD 💫`;
 
@@ -84,7 +84,7 @@ cmd({
     }
 });
 
-// 2. Text Listener to catch replies like "1 off" or "3 on"
+// 2. Text Listener to catch replies like "1 off" or "6 on" precisely matching keys
 cmd({
     on: "text"
 }, async (conn, mek, m, { from, body, reply, quoted }) => {
@@ -105,13 +105,13 @@ cmd({
         }
 
         if (action !== "on" && action !== "off") {
-            return await reply("*❌ Invalid action! Please type 'on' or 'off' after the number (Example: `1 off` or `3 on`).*");
+            return await reply("*❌ Invalid action! Please type 'on' or 'off' after the number (Example: `1 off` or `6 on`).*");
         }
 
         let newState = action === "on";
         let targetItem = session.settingsState[targetNum];
 
-        // Update MongoDB Database (Supports partial subdocument updates safely)
+        // Update MongoDB Database directly
         let updateData = {};
         updateData[targetItem.field] = newState;
 
