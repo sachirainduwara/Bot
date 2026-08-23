@@ -1,25 +1,16 @@
 const { cmd } = require('../command');
 const mongoose = require('mongoose');
 
-// Mongoose Schemas & Models (Standardized with default values for real backend integration)
-const AntiCallSchema = new mongoose.Schema({ _id: { type: String, required: true, default: 'anticall_config' }, status: { type: Boolean, default: false } });
-const AntiCallModel = mongoose.models.AntiCall || mongoose.model('AntiCall', AntiCallSchema);
-
-const AntideleteSchema = new mongoose.Schema({ _id: { type: String, required: true, default: 'antidelete_config' }, enabled: { type: Boolean, default: false } });
-const AntideleteModel = mongoose.models.Antidelete || mongoose.model('Antidelete', AntideleteSchema);
-
-const AutoReactSchema = new mongoose.Schema({ _id: { type: String, required: true, default: 'autoreact_config' }, ireact: { type: Boolean, default: false }, greact: { type: Boolean, default: false } });
-const AutoReactModel = mongoose.models.AutoReact || mongoose.model('AutoReact', AutoReactSchema);
-
-const AutoReadSchema = new mongoose.Schema({ _id: { type: String, required: true, default: 'autoread_config' }, enabled: { type: Boolean, default: false } });
-const AutoReadModel = mongoose.models.AutoRead || mongoose.model('AutoRead', AutoReadSchema);
-
-const AutoStatusSchema = new mongoose.Schema({ _id: { type: String, required: true, default: 'autostatus_config' }, status: { type: Boolean, default: false } });
-const AutoStatusModel = mongoose.models.AutoStatus || mongoose.model('AutoStatus', AutoStatusSchema);
+// Mongoose Models
+const AntiCallModel = mongoose.models.AntiCall || mongoose.model('AntiCall', new mongoose.Schema({ _id: { type: String, required: true }, status: { type: Boolean, default: false } }));
+const AntideleteModel = mongoose.models.Antidelete || mongoose.model('Antidelete', new mongoose.Schema({ _id: { type: String, required: true }, enabled: { type: Boolean, default: false } }));
+const AutoReactModel = mongoose.models.AutoReact || mongoose.model('AutoReact', new mongoose.Schema({ _id: { type: String, required: true }, ireact: { type: Boolean, default: true }, greact: { type: Boolean, default: true } }));
+const AutoReadModel = mongoose.models.AutoRead || mongoose.model('AutoRead', new mongoose.Schema({ _id: { type: String, required: true }, enabled: { type: Boolean, default: false } }));
+const AutoStatusModel = mongoose.models.AutoStatus || mongoose.model('AutoStatus', new mongoose.Schema({ _id: { type: String, required: true }, status: { type: Boolean, default: false } }));
 
 cmd({
     pattern: "settings",
-    desc: "Manage and toggle bot master settings interactively",
+    desc: "Manage bot settings interactively",
     category: "owner",
     react: "⚙️",
     filename: __filename
@@ -27,14 +18,13 @@ cmd({
     try {
         await conn.sendMessage(from, { react: { text: "💫", key: mek.key } });
 
-        // Fetch real status from MongoDB database (using standard IDs)
-        let callDoc = await AntiCallModel.findOne({ _id: 'anticall_config' }) || await AntiCallModel.create({ _id: 'anticall_config', status: false });
-        let deleteDoc = await AntideleteModel.findOne({ _id: 'antidelete_config' }) || await AntideleteModel.create({ _id: 'antidelete_config', enabled: false });
-        let reactDoc = await AutoReactModel.findOne({ _id: 'autoreact_config' }) || await AutoReactModel.create({ _id: 'autoreact_config', ireact: false, greact: false });
+        // Fetch Data from DB
+        let callDoc = await AntiCallModel.findOne({ _id: 'sachiyamd_anticall_status' }) || await AntiCallModel.create({ _id: 'sachiyamd_anticall_status', status: false });
+        let deleteDoc = await AntideleteModel.findOne({ _id: 'sachiyamd_antidelete_status' }) || await AntideleteModel.create({ _id: 'sachiyamd_antidelete_status', enabled: false });
+        let reactDoc = await AutoReactModel.findOne({ _id: 'sachiyamd_autoreact_settings' }) || await AutoReactModel.create({ _id: 'sachiyamd_autoreact_settings', ireact: true, greact: true });
         let readDoc = await AutoReadModel.findOne({ _id: 'autoread_config' }) || await AutoReadModel.create({ _id: 'autoread_config', enabled: false });
-        let statusDoc = await AutoStatusModel.findOne({ _id: 'autostatus_config' }) || await AutoStatusModel.create({ _id: 'autostatus_config', status: false });
+        let statusDoc = await AutoStatusModel.findOne({ _id: 'sachiyamd_autostatus_settings' }) || await AutoStatusModel.create({ _id: 'sachiyamd_autostatus_settings', status: false });
 
-        // Build interactive UI text box
         let menuText = `╭━━━〔 ⚙️ SACHIYA-MD MASTER SETTINGS 〕━━━\n` +
                        `┃\n` +
                        `┃ 1. 📞 *Anti-Call:* ${callDoc.status ? "🟢 Enabled" : "🔴 Disabled"}\n` +
@@ -47,7 +37,7 @@ cmd({
                        `┣━━━〔 HOW TO CHANGE 〕━━━\n` +
                        `┃ • Reply to this message\n` +
                        `┃ with: [Number] [on/off]\n` +
-                       `┃ • Example: 1 on or 6 off\n` +
+                       `┃ • Example: 1 off or 6 on\n` +
                        `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                        `> ⚡ Powered by SACHIYA-MD 💫`;
 
@@ -60,71 +50,66 @@ cmd({
 
         const messageID = sentMsg.key.id;
 
-        // Real event listener to capture direct replies cleanly and execute database writes
-        const upsertListener = async (chatUpdate) => {
-            try {
-                const mekResponse = chatUpdate.messages[0];
-                if (!mekResponse || !mekResponse.message) return;
+        // Ensure we don't attach multiple listeners (Fixes the crash / "Waiting for this message" issue)
+        if (conn.settingsListener) {
+            conn.ev.off("messages.upsert", conn.settingsListener);
+        }
 
-                const responseMessage = mekResponse.message.conversation || mekResponse.message.extendedTextMessage?.text;
-                const senderID = mekResponse.key.remoteJid;
-                const isReplyToSent = mekResponse.message.extendedTextMessage?.contextInfo?.stanzaId === messageID;
+        conn.settingsListener = async (chatUpdate) => {
+            const mekResponse = chatUpdate.messages[0];
+            if (!mekResponse.message) return;
 
-                if (isReplyToSent && senderID === from && responseMessage) {
-                    await conn.sendMessage(from, { react: { text: "⏳", key: mekResponse.key } });
+            const responseMessage = mekResponse.message.conversation || mekResponse.message.extendedTextMessage?.text;
+            const senderID = mekResponse.key.remoteJid;
+            const isReplyToSent = mekResponse.message.extendedTextMessage?.contextInfo?.stanzaId === messageID;
 
-                    let args = responseMessage.trim().toLowerCase().split(/\s+/);
-                    let targetNum = args[0];
-                    let action = args[1];
+            if (isReplyToSent && senderID === from && responseMessage) {
+                let args = responseMessage.trim().toLowerCase().split(/\s+/);
+                let targetNum = args[0];
+                let action = args[1];
 
-                    // Database Map configuration mapping to real models and properties
-                    const modelsMap = {
-                        "1": { name: "Anti-Call", field: 'status', model: AntiCallModel, query: { _id: 'anticall_config' } },
-                        "2": { name: "Anti-Delete", field: 'enabled', model: AntideleteModel, query: { _id: 'antidelete_config' } },
-                        "3": { name: "Inbox Auto-React", field: 'ireact', model: AutoReactModel, query: { _id: 'autoreact_config' } },
-                        "4": { name: "Group Auto-React", field: 'greact', model: AutoReactModel, query: { _id: 'autoreact_config' } },
-                        "5": { name: "Auto-Read", field: 'enabled', model: AutoReadModel, query: { _id: 'autoread_config' } },
-                        "6": { name: "Auto-Status", field: 'status', model: AutoStatusModel, query: { _id: 'autostatus_config' } }
-                    };
+                const modelsMap = {
+                    "1": { name: "Anti-Call", field: 'status', model: AntiCallModel, idQuery: { _id: 'sachiyamd_anticall_status' }, env: 'ANTI_CALL' },
+                    "2": { name: "Anti-Delete", field: 'enabled', model: AntideleteModel, idQuery: { _id: 'sachiyamd_antidelete_status' }, env: 'ANTI_DELETE' },
+                    "3": { name: "Inbox Auto-React", field: 'ireact', model: AutoReactModel, idQuery: { _id: 'sachiyamd_autoreact_settings' }, env: 'AUTO_REACT' },
+                    "4": { name: "Group Auto-React", field: 'greact', model: AutoReactModel, idQuery: { _id: 'sachiyamd_autoreact_settings' }, env: 'AUTO_REACT_GROUP' },
+                    "5": { name: "Auto-Read", field: 'enabled', model: AutoReadModel, idQuery: { _id: 'autoread_config' }, env: 'AUTO_READ' },
+                    "6": { name: "Auto-Status", field: 'status', model: AutoStatusModel, idQuery: { _id: 'sachiyamd_autostatus_settings' }, env: 'AUTO_STATUS_VIEW' }
+                };
 
-                    if (!modelsMap[targetNum]) {
-                        await conn.sendMessage(from, { text: "*❌ Invalid number! Reply with 1 to 6 (Example: `6 off`).*" }, { quoted: mekResponse });
-                        return;
-                    }
+                if (!modelsMap[targetNum]) return;
+                if (action !== "on" && action !== "off") return;
 
-                    if (action !== "on" && action !== "off") {
-                        await conn.sendMessage(from, { text: "*❌ Invalid action! Type 'on' or 'off' after number (Example: `6 off`).*" }, { quoted: mekResponse });
-                        return;
-                    }
+                let newState = action === "on";
+                let targetItem = modelsMap[targetNum];
 
-                    let newState = action === "on";
-                    let targetItem = modelsMap[targetNum];
+                // 1. Update Real Database
+                let updateData = {};
+                updateData[targetItem.field] = newState;
+                await targetItem.model.findOneAndUpdate(
+                    targetItem.idQuery,
+                    { $set: updateData },
+                    { upsert: true, new: true }
+                );
 
-                    // Execute strict MongoDB atomic update with upsert true
-                    let updateObject = {};
-                    updateObject[targetItem.field] = newState;
+                // 2. UPDATE LIVE BOT CONFIG (This stops/starts the feature instantly without restarting)
+                process.env[targetItem.env] = newState ? 'true' : 'false';
+                
+                // (Optional) Update global variables if your bot uses them instead of env
+                if (targetNum === "2") global.antiDelete = newState;
+                if (targetNum === "6") global.autoStatus = newState;
+                if (targetNum === "1") global.antiCall = newState;
 
-                    let updatedDoc = await targetItem.model.findOneAndUpdate(
-                        targetItem.query,
-                        { $set: updateObject },
-                        { upsert: true, new: true }
-                    );
+                let successText = `${targetItem.name} ${action} success ✅`;
+                await conn.sendMessage(from, { text: successText }, { quoted: mekResponse });
+                await conn.sendMessage(from, { react: { text: "✅", key: mekResponse.key } });
 
-                    if (updatedDoc) {
-                        let successText = `${targetItem.name} ${action} success ✅`;
-                        await conn.sendMessage(from, { text: successText }, { quoted: mekResponse });
-                        await conn.sendMessage(from, { react: { text: "✅", key: mekResponse.key } });
-                    } else {
-                        await conn.sendMessage(from, { text: `*❌ Database update failed for ${targetItem.name}!*` }, { quoted: mekResponse });
-                    }
-                }
-            } catch (innerErr) {
-                console.log("Settings Upsert Inner Error: ", innerErr);
+                // Remove listener after success to keep bot fast
+                conn.ev.off("messages.upsert", conn.settingsListener);
             }
         };
 
-        // Attach listener securely
-        conn.ev.on("messages.upsert", upsertListener);
+        conn.ev.on("messages.upsert", conn.settingsListener);
 
     } catch (e) {
         console.log("Settings Menu Error: ", e);
