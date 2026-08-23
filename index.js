@@ -449,12 +449,12 @@ async function connectToWA() {
       // --- AutoRead and AutoReact Execution (Instant DB Check) ---
       try {
         if (!mek.key.fromMe) {
-          const reactDoc = await AutoReactModel.findOne({ _id: 'sachiyamd_autoreact_settings' });
+          const reactDoc = await AutoReactModel.findOne({ _id: 'sachiyamd_autoreact_settings' }) || await AutoReactModel.create({ _id: 'sachiyamd_autoreact_settings', ireact: true, greact: true });
           const readDoc = await AutoReadModel.findOne({ _id: 'autoread_config' });
 
           const isGroup = mek.key.remoteJid && mek.key.remoteJid.endsWith('@g.us');
-          const canInboxReact = reactDoc ? reactDoc.ireact : true;
-          const canGroupReact = reactDoc ? reactDoc.greact : true;
+          const canInboxReact = reactDoc.ireact !== undefined ? reactDoc.ireact : true;
+          const canGroupReact = reactDoc.greact !== undefined ? reactDoc.greact : true;
           const canReact = isGroup ? canGroupReact : canInboxReact;
 
           if (canReact && typeof handleAutoReact === 'function') {
