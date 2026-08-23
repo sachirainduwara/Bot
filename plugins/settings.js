@@ -15,7 +15,7 @@ const BotSettingsSchema = new mongoose.Schema({
 
 const BotSettings = mongoose.models.BotSettings || mongoose.model('BotSettings', BotSettingsSchema);
 
-// Helper function to get settings safely with plain object conversion
+// Helper function to get settings safely
 async function getBotSettings() {
   try {
     let settings = await BotSettings.findOne({ id: 'sachiyamd_main_settings' }).lean();
@@ -38,7 +38,7 @@ function isSelfChat(sachiya, from, mek) {
   return mek.key.fromMe || cleanFrom === cleanBotNum || (from.endsWith('@s.whatsapp.net') && cleanFrom === cleanBotNum);
 }
 
-// --- GLOBAL EXPORT FOR OTHER PLUGINS TO USE ---
+// Global Export for other plugins
 global.getBotConfig = getBotSettings;
 
 // --- COMMAND: .settings ---
@@ -126,12 +126,30 @@ cmd(
         let dbField = "";
 
         switch (featureNum) {
-          case '1': dbField = "anticall"; featureName = "📞 Anti-Call"; break;
-          case '2': dbField = "antidelete"; featureName = "🛡️ Anti-Delete"; break;
-          case '3': dbField = "ireact"; featureName = "💬 Inbox Auto-React"; break;
-          case '4': dbField = "greact"; featureName = "👥 Group Auto-React"; break;
-          case '5': dbField = "autoread"; featureName = "👁️‍🗨️ Auto-Read"; break;
-          case '6': dbField = "autostatus"; featureName = "💚 Auto-Status"; break;
+          case '1': 
+            dbField = "anticall"; 
+            featureName = "📞 Anti-Call"; 
+            break;
+          case '2': 
+            dbField = "antidelete"; 
+            featureName = "🛡️ Anti-Delete"; 
+            break;
+          case '3': 
+            dbField = "ireact"; 
+            featureName = "💬 Inbox Auto-React"; 
+            break;
+          case '4': 
+            dbField = "greact"; 
+            featureName = "👥 Group Auto-React"; 
+            break;
+          case '5': 
+            dbField = "autoread"; 
+            featureName = "👁️‍🗨️ Auto-Read"; 
+            break;
+          case '6': 
+            dbField = "autostatus"; 
+            featureName = "💚 Auto-Status"; 
+            break;
         }
 
         if (dbField && featureName) {
@@ -162,20 +180,3 @@ cmd(
     }
   }
 );
-
-// --- ANTI-CALL EVENT LISTENER (කෝල් එකක් ආවොත් කට් කරන්න) ---
-sachiya.ev.on("call", async (json) => {
-  try {
-    const settings = await getBotSettings();
-    if (!settings.anticall) return;
-
-    for (const call of json) {
-      if (call.status === "offer") {
-        await sachiya.rejectCall(call.id, call.from);
-        console.log(`📞 Anti-Call rejected incoming call from ${call.from}`);
-      }
-    }
-  } catch (e) {
-    console.error("Anti-Call error:", e);
-  }
-});
