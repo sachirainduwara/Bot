@@ -2,9 +2,9 @@ const { cmd } = require("../command");
 const mongoose = require('mongoose');
 const config = require('../config');
 
-// --- DATABASE SCHEMA ---
+// --- ROBUST DATABASE SCHEMA ---
 const BotSettingsSchema = new mongoose.Schema({
-  id: { type: String, required: true, unique: true, default: 'sachiyamd_main_settings' },
+  id: { type: String, required: true, unique: true, default: 'sachiyamd_master_config_v1' },
   anticall: { type: Boolean, default: false },
   antidelete: { type: Boolean, default: false },
   ireact: { type: Boolean, default: false },
@@ -15,29 +15,48 @@ const BotSettingsSchema = new mongoose.Schema({
 
 const BotSettings = mongoose.models.BotSettings || mongoose.model('BotSettings', BotSettingsSchema);
 
-// Helper function to get live settings directly
+// --- BULLETPROOF SETTINGS FETCH FUNCTION ---
 async function getBotSettings() {
   try {
-    let settings = await BotSettings.findOne({ id: 'sachiyamd_main_settings' });
+    let settings = await BotSettings.findOne({ id: 'sachiyamd_master_config_v1' });
     if (!settings) {
-      settings = await BotSettings.create({ id: 'sachiyamd_main_settings' });
+      settings = await BotSettings.create({ 
+        id: 'sachiyamd_master_config_v1',
+        anticall: false,
+        antidelete: false,
+        ireact: false,
+        greact: false,
+        autoread: false,
+        autostatus: false
+      });
     }
     return settings.toObject ? settings.toObject() : settings;
   } catch (err) {
-    console.error("Error fetching settings:", err);
-    return { anticall: false, antidelete: false, ireact: false, greact: false, autoread: false, autostatus: false };
+    console.error("Database Fetch Error:", err);
+    return { 
+      anticall: false, 
+      antidelete: false, 
+      ireact: false, 
+      greact: false, 
+      autoread: false, 
+      autostatus: false 
+    };
   }
 }
 
-// Helper to check owner self chat
+// --- OWNER VALIDATION HELPER ---
 function isSelfChat(sachiya, from, mek) {
-  const botNumber = String(sachiya.user?.id || '').split('@')[0];
-  const cleanFrom = String(from || '').replace(/[^0-9]/g, '');
-  const cleanBotNum = String(botNumber).replace(/[^0-9]/g, '');
-  return mek.key.fromMe || cleanFrom === cleanBotNum || (from.endsWith('@s.whatsapp.net') && cleanFrom === cleanBotNum);
+  try {
+    const botNumber = String(sachiya.user?.id || '').split('@')[0];
+    const cleanFrom = String(from || '').replace(/[^0-9]/g, '');
+    const cleanBotNum = String(botNumber).replace(/[^0-9]/g, '');
+    return mek.key.fromMe || cleanFrom === cleanBotNum || (from.endsWith('@s.whatsapp.net') && cleanFrom === cleanBotNum);
+  } catch (e) {
+    return mek.key.fromMe || false;
+  }
 }
 
-// Global Export for other plugins
+// Export global function for other plugins
 global.getBotConfig = getBotSettings;
 
 // --- COMMAND: .settings ---
@@ -45,7 +64,7 @@ cmd(
   {
     pattern: "settings",
     alias: ["setting", "botsettings"],
-    desc: "Manage all bot features and settings",
+    desc: "Manage all bot features and settings securely",
     category: "owner",
     react: "⚙️",
     filename: __filename,
@@ -56,7 +75,7 @@ cmd(
         return reply("❌ *Settings command can only be used in your Self Chat with the bot!*");
       }
 
-      // Fetch latest live settings from DB
+      // Fetch absolute latest configuration from database
       const settings = await getBotSettings();
 
       const anticallTxt = settings.anticall === true ? "🟢 Enabled" : "🔴 Disabled";
@@ -89,18 +108,19 @@ cmd(
       global.activeSettingsMenus = global.activeSettingsMenus || new Map();
       global.activeSettingsMenus.set(sentMsg.key.id, { from });
 
+      // Clean up memory map after 30 minutes
       setTimeout(() => {
         global.activeSettingsMenus.delete(sentMsg.key.id);
       }, 30 * 60 * 1000);
 
     } catch (e) {
-      console.error("Settings Error:", e);
+      console.error("Settings Command Error:", e);
       reply(`❌ *Error:* ${e.message}`);
     }
   }
 );
 
-// --- EVENT LISTENER FOR REPLIES ---
+// --- INTERACTIVE REPLY LISTENER FOR CONFIGURATION ---
 cmd(
   {
     on: "text",
@@ -116,7 +136,8 @@ cmd(
 
       if (!isSelfChat(sachiya, from, mek)) return;
 
-      const parts = body.trim().split(/ +/);
+      const cleanBody = body ? body.trim() : "";
+      const parts = cleanBody.split(/ +/);
       const featureNum = parts[0];
       const action = parts[1] ? parts[1].toLowerCase() : "";
 
@@ -153,11 +174,14 @@ cmd(
         }
 
         if (dbField && featureName) {
-          // Direct update with strict atomic operator
+          // Force atomic update to Mongo DB document directly
+          const updateObj = {};
+          updateObj[dbField] = stateBool;
+
           await BotSettings.findOneAndUpdate(
-            { id: 'sachiyamd_main_settings' },
-            { $set: { [dbField]: stateBool } },
-            { upsert: true, new: true, setDefaultsOnInsert: true }
+            { id: 'sachiyamd_master_config_v1' },
+            { $set: updateObj },
+            { upsert: true, new: true, runValidators: true }
           );
 
           const statusEmoji = stateBool ? "🟢 ENABLED" : "🔴 DISABLED";
@@ -177,7 +201,7 @@ cmd(
         }
       }
     } catch (err) {
-      console.error("Reply handler error:", err);
+      console.error("Settings Reply Handler Error:", err);
     }
   }
 );
