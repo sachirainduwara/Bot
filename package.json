@@ -16,6 +16,7 @@
     "abir-photo360-apis": "^1.0.2",
     "sadaslk-dlcore": "1.0.0",
     "yt-search": "^2.13.1",
+    "mathjs": "^15.2.0"
     "api-dylux": "^1.8.5",
     "axios": "^1.19.0",
     "browser-id3-writer": "^6.4.0",
