@@ -2,9 +2,9 @@ const { cmd } = require("../command");
 const mongoose = require('mongoose');
 const config = require('../config');
 
-// --- UNIFIED DATABASE SCHEMA FOR ALL SETTINGS ---
+// --- DATABASE SCHEMA ---
 const BotSettingsSchema = new mongoose.Schema({
-  _id: { type: String, required: true, default: 'sachiyamd_master_settings' },
+  id: { type: String, required: true, unique: true, default: 'sachiyamd_settings' },
   anticall: { type: Boolean, default: false },
   antidelete: { type: Boolean, default: false },
   ireact: { type: Boolean, default: false },
@@ -13,29 +13,18 @@ const BotSettingsSchema = new mongoose.Schema({
   autostatus: { type: Boolean, default: false }
 });
 
-const BotSettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', BotSettingsSchema);
+const BotSettings = mongoose.models.BotSettings || mongoose.model('BotSettings', BotSettingsSchema);
 
-// Async function to get current settings directly from DB
-async function getSettings() {
+// Helper function to get or create settings
+async function fetchSettings() {
   try {
-    if (mongoose.connection.readyState === 0) {
-      return { anticall: false, antidelete: false, ireact: false, greact: false, autoread: false, autostatus: false };
+    let settings = await BotSettings.findOne({ id: 'sachiyamd_settings' });
+    if (!settings) {
+      settings = await BotSettings.create({ id: 'sachiyamd_settings' });
     }
-    let doc = await BotSettingsModel.findOne({ _id: 'sachiyamd_master_settings' });
-    if (!doc) {
-      doc = await BotSettingsModel.create({
-        _id: 'sachiyamd_master_settings',
-        anticall: false,
-        antidelete: false,
-        ireact: false,
-        greact: false,
-        autoread: false,
-        autostatus: false
-      });
-    }
-    return doc;
-  } catch (e) {
-    console.error("Error fetching settings:", e);
+    return settings;
+  } catch (err) {
+    console.error("Error fetching settings:", err);
     return { anticall: false, antidelete: false, ireact: false, greact: false, autoread: false, autostatus: false };
   }
 }
@@ -48,7 +37,6 @@ function isSelfChat(sachiya, from, mek) {
   
   return mek.key.fromMe || cleanFrom === cleanBotNum || (from.endsWith('@s.whatsapp.net') && cleanFrom === cleanBotNum);
 }
-
 
 // --- COMMAND: .settings ---
 cmd(
@@ -66,7 +54,7 @@ cmd(
         return reply("❌ *Settings command can only be used in your Self Chat (Saved Messages) with the bot!*");
       }
 
-      const settings = await getSettings();
+      const settings = await fetchSettings();
 
       const anticallTxt = settings.anticall ? "🟢 Enabled" : "🔴 Disabled";
       const antidelTxt = settings.antidelete ? "🟢 Enabled" : "🔴 Disabled";
@@ -116,7 +104,6 @@ cmd(
     }
   }
 );
-
 
 // --- EVENT LISTENER FOR REPLIES ---
 cmd(
@@ -171,12 +158,9 @@ cmd(
         }
 
         if (dbField && featureName) {
-          // Strictly wait until MongoDB saves the setting
-          await BotSettingsModel.findOneAndUpdate(
-            { _id: 'sachiyamd_master_settings' },
-            { [dbField]: stateBool },
-            { upsert: true, new: true }
-          );
+          let settings = await fetchSettings();
+          settings[dbField] = stateBool;
+          await settings.save();
 
           const statusEmoji = stateBool ? "🟢 ENABLED" : "🔴 DISABLED";
           
