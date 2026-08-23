@@ -137,9 +137,15 @@ async function saveAutoStatusSettings(status) {
 }
 setTimeout(() => { loadAutoStatusSettings(); }, 3000);
 
-
-// Global storage for active menu IDs (30 minutes expiry)
 global.activeSettingsMenus = global.activeSettingsMenus || new Map();
+
+// --- Helper function to check Owner ---
+function checkIsOwner(sachiya, mek, sender, senderNumber) {
+  const ownerConfig = String(config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
+  const cleanSender = String(senderNumber || sender || '').replace(/[^0-9]/g, '');
+  const botNumber = String(sachiya.user?.id || '').split('@')[0].replace(/[^0-9]/g, '');
+  return mek.key.fromMe || cleanSender.includes(ownerConfig) || ownerConfig.includes(cleanSender) || cleanSender === botNumber;
+}
 
 
 // --- COMMAND: .settings ---
@@ -154,12 +160,7 @@ cmd(
   },
   async (sachiya, mek, m, { from, reply, senderNumber, sender }) => {
     try {
-      const ownerConfig = String(config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
-      const cleanSender = String(senderNumber || sender || '').replace(/[^0-9]/g, '');
-      const botNumber = String(sachiya.user?.id || '').split('@')[0].replace(/[^0-9]/g, '');
-      const isTrueOwner = mek.key.fromMe || cleanSender.includes(ownerConfig) || ownerConfig.includes(cleanSender) || cleanSender === botNumber;
-
-      if (!isTrueOwner) {
+      if (!checkIsOwner(sachiya, mek, sender, senderNumber)) {
         return reply("❌ *This command is only for the Owner!*");
       }
 
@@ -203,7 +204,6 @@ cmd(
         { quoted: mek }
       );
 
-      // Register message ID for 30 minutes reply tracking
       const messageID = sentMsg.key.id;
       global.activeSettingsMenus.set(messageID, { from });
 
@@ -219,19 +219,24 @@ cmd(
 );
 
 
-// --- EVENT LISTENER FOR REPLIES ---
+// --- EVENT LISTENER FOR REPLIES (ONLY FOR OWNER) ---
 cmd(
   {
     on: "text",
     filename: __filename
   },
-  async (sachiya, mek, m, { from, body }) => {
+  async (sachiya, mek, m, { from, body, sender, senderNumber }) => {
     try {
       const quoted = m.quoted;
       if (!quoted) return;
       
       const stanzaId = quoted.id;
       if (!stanzaId || !global.activeSettingsMenus || !global.activeSettingsMenus.has(stanzaId)) return;
+
+      // 🛡️ SECURITY CHECK: Only allow Owner to change via reply!
+      if (!checkIsOwner(sachiya, mek, sender, senderNumber)) {
+        return; // Ignore non-owner replies silently
+      }
 
       const parts = body.trim().split(/ +/);
       const featureNum = parts[0];
