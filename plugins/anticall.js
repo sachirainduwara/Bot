@@ -18,7 +18,7 @@ async function loadAntiCallStatus() {
     if (doc) {
       anticallStatus = doc.status;
     } else {
-      await AntiCallModel.create({ _id: 'sachiyamd_anticall_status', status: false });
+      await AntiCode = await AntiCallModel.create({ _id: 'sachiyamd_anticall_status', status: false });
       anticallStatus = false;
     }
   } catch (e) {
@@ -40,10 +40,12 @@ function handleAntiCall(sachiya) {
         if (call.status === 'offer') {
           const callerJid = call.from;
           
-          // 🛑 Group check: ගෘප් එකකින් එන call එකක් නම් සම්පූර්ණයෙන්ම මගහරියි (Ignore)
-          const isGroup = callerJid.endsWith('@g.us') || (call.isGroup === true) || (call.chatId && call.chatId.endsWith('@g.us'));
-          if (isGroup) continue;
+          // 🛑 දැඩි ලෙස ගෘප් කෝල් සහ ගෘප් හරහා එන දේවල් ඉ외ත් කිරීම
+          if (!callerJid || callerJid.endsWith('@g.us') || callerJid.includes('-') || call.isGroup === true || (call.chatId && call.chatId.endsWith('@g.us'))) {
+            continue;
+          }
 
+          // පුද්ගලික (Inbox) කෝල් වලට පමණක් ක්‍රියාත්මක වීම
           await sachiya.rejectCall(call.id, callerJid);
           await sachiya.sendMessage(callerJid, { 
             text: `⚠️ *Calls are not allowed! Please do not call me, drop a text instead.* 🚫` 
