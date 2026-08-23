@@ -8,7 +8,7 @@ const AutoReactModel = mongoose.models.AutoReact || mongoose.model('AutoReact', 
 const AutoReadModel = mongoose.models.AutoRead || mongoose.model('AutoRead', new mongoose.Schema({ _id: { type: String, required: true, default: 'autoread_config' }, enabled: { type: Boolean, default: false } }));
 const AutoStatusModel = mongoose.models.AutoStatus || mongoose.model('AutoStatus', new mongoose.Schema({ _id: { type: String, required: true }, status: { type: Boolean, default: false } }));
 
-// Global Session Map to track active settings menu per chat
+// Global Session Map to track active settings menu per chat JID
 const activeSettingsSessions = new Map();
 
 // 1. Settings Menu Command (.settings)
@@ -65,7 +65,7 @@ cmd({
             caption: menuText
         }, { quoted: mek });
 
-        // Save session state to chat JID tracker
+        // Save session state to chat JID tracker with message ID
         activeSettingsSessions.set(from, {
             msgId: sentMsg.key.id,
             settingsState
@@ -84,58 +84,56 @@ cmd({
     }
 });
 
-// 2. Text Listener to catch replies like "1 off" or "6 on" precisely matching keys
-cmd({
-    on: "text"
-}, async (conn, mek, m, { from, body, reply, quoted }) => {
-    try {
-        let session = activeSettingsSessions.get(from);
-        if (!session) return;
+// 2. Direct Event Listener for Catching Replies inside the plugin
+if (conn && conn.ev) {
+    conn.ev.on('messages.upsert', async (chatUpdate) => {
+        try {
+            const mek = chatUpdate.messages[0];
+            if (!mek || !mek.message) return;
 
-        // Verify user is replying to the settings message
-        let isQuotedSettings = quoted && (quoted.id === session.msgId || quoted.fromMe);
-        if (!isQuotedSettings) return;
+            const from = mek.key.remoteJid;
+            let session = activeSettingsSessions.get(from);
+            if (!session) return;
 
-        let args = body.trim().toLowerCase().split(/\s+/);
-        let targetNum = args[0];
-        let action = args[1];
+            // Check quoted stanza ID
+            const contextInfo = mek.message.extendedTextMessage && mek.message.extendedTextMessage.contextInfo;
+            if (!contextInfo || contextInfo.stanzaId !== session.msgId) return;
 
-        if (!session.settingsState[targetNum]) {
-            return await reply("*❌ Invalid number! Please reply with a valid number from 1 to 6.*");
+            const body = mek.message.conversation || mek.message.extendedTextMessage.text || "";
+            let args = body.trim().toLowerCase().split(/\s+/);
+            let targetNum = args[0];
+            let action = args[1];
+
+            if (!session.settingsState[targetNum]) return;
+            if (action !== "on" && action !== "off") return;
+
+            let newState = action === "on";
+            let targetItem = session.settingsState[targetNum];
+
+            let updateData = {};
+            updateData[targetItem.field] = newState;
+
+            await targetItem.model.findOneAndUpdate(
+                targetItem.idQuery,
+                { $set: updateData },
+                { upsert: true, new: true }
+            );
+
+            targetItem.status = newState;
+
+            let successText = `╭━━━〔 ✨ SETTINGS UPDATED 〕━━━\n` +
+                              `┃\n` +
+                              `┃ 📌 *Feature:* ${targetItem.name}\n` +
+                              `┃ ⚡ *New Status:* ${newState ? '🟢 ENABLED' : '🔴 DISABLED'}\n` +
+                              `┃ 💾 *Database:* Saved to MongoDB Atlas ✅\n` +
+                              `┃\n` +
+                              `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                              `> ⚡ Powered by SACHIYA-MD 💫`;
+
+            await conn.sendMessage(from, { text: successText }, { quoted: mek });
+
+        } catch (err) {
+            console.log("Settings Upsert Error: ", err);
         }
-
-        if (action !== "on" && action !== "off") {
-            return await reply("*❌ Invalid action! Please type 'on' or 'off' after the number (Example: `1 off` or `6 on`).*");
-        }
-
-        let newState = action === "on";
-        let targetItem = session.settingsState[targetNum];
-
-        // Update MongoDB Database directly
-        let updateData = {};
-        updateData[targetItem.field] = newState;
-
-        await targetItem.model.findOneAndUpdate(
-            targetItem.idQuery,
-            { $set: updateData },
-            { upsert: true, new: true }
-        );
-
-        // Update local session status
-        targetItem.status = newState;
-
-        let successText = `╭━━━〔 ✨ SETTINGS UPDATED 〕━━━\n` +
-                          `┃\n` +
-                          `┃ 📌 *Feature:* ${targetItem.name}\n` +
-                          `┃ ⚡ *New Status:* ${newState ? '🟢 ENABLED' : '🔴 DISABLED'}\n` +
-                          `┃ 💾 *Database:* Saved to MongoDB Atlas ✅\n` +
-                          `┃\n` +
-                          `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                          `> ⚡ Powered by SACHIYA-MD 💫`;
-
-        return await reply(successText);
-
-    } catch (e) {
-        console.log("Settings Response Error: ", e);
-    }
-});
+    });
+}
