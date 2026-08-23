@@ -39,18 +39,14 @@ const AntideleteSchema = new mongoose.Schema({
 const AntideleteModel = mongoose.models.Antidelete || mongoose.model('Antidelete', AntideleteSchema);
 
 async function loadAntideleteConfig() {
-    if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return { enabled: false };
     try {
-        if (mongoose.connection.readyState === 0) await mongoose.connect(config.SESSION_ID);
         let doc = await AntideleteModel.findOne({ _id: 'sachiyamd_antidelete_status' });
         if (!doc) doc = await AntideleteModel.create({ _id: 'sachiyamd_antidelete_status', enabled: false });
         return { enabled: doc.enabled };
     } catch (e) { return { enabled: false }; }
 }
 async function saveAntideleteConfig(isEnabled) {
-    if (!config.SESSION_ID || !config.SESSION_ID.startsWith('mongodb+srv://')) return;
     try {
-        if (mongoose.connection.readyState === 0) await mongoose.connect(config.SESSION_ID);
         await AntideleteModel.findOneAndUpdate({ _id: 'sachiyamd_antidelete_status' }, { enabled: isEnabled }, { upsert: true, new: true });
     } catch (e) {}
 }
@@ -95,14 +91,12 @@ setTimeout(() => { loadAutoReactSettings(); }, 3000);
 // --- 4. AutoRead Schema & Functions ---
 const AutoReadSchema = new mongoose.Schema({
     _id: { type: String, required: true, default: 'autoread_config' },
-    enabled: { type: Boolean, default: false },
-    updatedAt: { type: Date, default: Date.now }
+    enabled: { type: Boolean, default: false }
 });
 const AutoReadModel = mongoose.models.AutoRead || mongoose.model('AutoRead', AutoReadSchema);
 
 async function loadAutoReadConfig() {
     try {
-        if (mongoose.connection.readyState === 0 && config.SESSION_ID) await mongoose.connect(config.SESSION_ID);
         let doc = await AutoReadModel.findOne({ _id: 'autoread_config' });
         if (!doc) doc = await AutoReadModel.create({ _id: 'autoread_config', enabled: false });
         return { enabled: doc.enabled };
@@ -110,8 +104,7 @@ async function loadAutoReadConfig() {
 }
 async function saveAutoReadConfig(isEnabled) {
     try {
-        if (mongoose.connection.readyState === 0 && config.SESSION_ID) await mongoose.connect(config.SESSION_ID);
-        await AutoReadModel.findOneAndUpdate({ _id: 'autoread_config' }, { enabled: isEnabled, updatedAt: new Date() }, { upsert: true, new: true });
+        await AutoReadModel.findOneAndUpdate({ _id: 'autoread_config' }, { enabled: isEnabled }, { upsert: true, new: true });
     } catch (e) {}
 }
 
@@ -145,20 +138,11 @@ async function saveAutoStatusSettings(status) {
 setTimeout(() => { loadAutoStatusSettings(); }, 3000);
 
 
-// Global storage for active settings menu message IDs (valid for 30 minutes)
+// Global storage for active menu IDs (30 minutes expiry)
 global.activeSettingsMenus = global.activeSettingsMenus || new Map();
 
 
-// --- GLOBAL LISTENER FOR SETTINGS REPLIES (30 MINS ACTIVE) ---
-if (!global.isSettingsListenerInitialized) {
-  global.isSettingsListenerInitialized = true;
-  
-  // We attach this globally so it listens to replies anytime within 30 mins without re-triggering command
-  // Note: We need client reference, which is handled inside command or main file. 
-}
-
-
-// --- MASTER SETTINGS COMMAND (.settings) ---
+// --- COMMAND: .settings ---
 cmd(
   {
     pattern: "settings",
@@ -168,22 +152,22 @@ cmd(
     react: "⚙️",
     filename: __filename,
   },
-  async (sachiya, mek, m, { from, q, reply, senderNumber, sender }) => {
+  async (sachiya, mek, m, { from, reply, senderNumber, sender }) => {
     try {
-      // Owner Verification
       const ownerConfig = String(config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
       const cleanSender = String(senderNumber || sender || '').replace(/[^0-9]/g, '');
       const botNumber = String(sachiya.user?.id || '').split('@')[0].replace(/[^0-9]/g, '');
       const isTrueOwner = mek.key.fromMe || cleanSender.includes(ownerConfig) || ownerConfig.includes(cleanSender) || cleanSender === botNumber;
 
       if (!isTrueOwner) {
-        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } }).catch(() => {});
         return reply("❌ *This command is only for the Owner!*");
       }
 
-      // Load latest statuses
+      await loadAntiCallStatus();
+      await loadAutoReactSettings();
       const antidelCfg = await loadAntideleteConfig();
       const autoreadCfg = await loadAutoReadConfig();
+      await loadAutoStatusSettings();
 
       const anticallTxt = anticallStatus ? "🟢 Enabled" : "🔴 Disabled";
       const antidelTxt = antidelCfg.enabled ? "🟢 Enabled" : "🔴 Disabled";
@@ -210,8 +194,6 @@ cmd(
                      `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                      `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-      // 1. Send Preview Card with Menu (React with ⚙️ as requested)
-      await sachiya.sendMessage(from, { react: { text: "⚙️", key: mek.key } }).catch(() => {});
       const sentMsg = await sachiya.sendMessage(
         from,
         {
@@ -221,28 +203,88 @@ cmd(
         { quoted: mek }
       );
 
-      // 2. Register this message ID as active for 30 minutes
+      // Register message ID for 30 minutes reply tracking
       const messageID = sentMsg.key.id;
-      global.activeSettingsMenus.set(messageID, { from, sachiya });
+      global.activeSettingsMenus.set(messageID, { from });
 
-      // Automatically expire after 30 minutes
       setTimeout(() => {
         global.activeSettingsMenus.delete(messageID);
       }, 30 * 60 * 1000);
 
     } catch (e) {
       console.error("Settings Error:", e);
-      await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } }).catch(() => {});
-      reply(`❌ *Error:* ${e.message || "An unexpected error occurred!"}`);
+      reply(`❌ *Error:* ${e.message}`);
     }
   }
 );
 
 
-// --- GLOBAL 30-MINUTE PERSISTENT REPLY LISTENER ---
-if (!global.hasGlobalSettingsUpsert) {
-  global.hasGlobalSettingsUpsert = true;
+// --- EVENT LISTENER FOR REPLIES ---
+cmd(
+  {
+    on: "text",
+    filename: __filename
+  },
+  async (sachiya, mek, m, { from, body }) => {
+    try {
+      const quoted = m.quoted;
+      if (!quoted) return;
+      
+      const stanzaId = quoted.id;
+      if (!stanzaId || !global.activeSettingsMenus || !global.activeSettingsMenus.has(stanzaId)) return;
 
-  // We need access to the bot instance, so we listen globally via standard events if available or attached
-  // Let's hook into the connection if possible, or use a robust listener mechanism:
-}
+      const parts = body.trim().split(/ +/);
+      const featureNum = parts[0];
+      const action = parts[1] ? parts[1].toLowerCase() : "";
+
+      if (action === 'on' || action === 'off') {
+        const stateBool = (action === 'on');
+        let featureName = "";
+
+        switch (featureNum) {
+          case '1':
+            await saveAntiCallStatus(stateBool);
+            featureName = "📞 Anti-Call";
+            break;
+          case '2':
+            await saveAntideleteConfig(stateBool);
+            featureName = "🛡️ Anti-Delete";
+            break;
+          case '3':
+            await saveAutoReactSettings('ireact', stateBool);
+            featureName = "💬 Inbox Auto-React";
+            break;
+          case '4':
+            await saveAutoReactSettings('greact', stateBool);
+            featureName = "👥 Group Auto-React";
+            break;
+          case '5':
+            await saveAutoReadConfig(stateBool);
+            featureName = "👁️‍🗨️ Auto-Read";
+            break;
+          case '6':
+            await saveAutoStatusSettings(stateBool);
+            featureName = "💚 Auto-Status";
+            break;
+        }
+
+        if (featureName) {
+          const statusEmoji = stateBool ? "🟢 ENABLED" : "🔴 DISABLED";
+          
+          await sachiya.sendMessage(from, {
+            text: `╭━━━〔 *✨ SETTINGS UPDATED ✨* 〕━━━\n` +
+                  `┃\n` +
+                  `┃ 📌 *Feature:* ${featureName}\n` +
+                  `┃ ⚡ *New Status:* ${statusEmoji}\n` +
+                  `┃ 💾 *Database:* Saved to MongoDB Atlas ✅\n` +
+                  `┃\n` +
+                  `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                  `> *⚡ Powered by SACHIYA-MD 💫*`
+          }, { quoted: mek });
+
+          await sachiya.sendMessage(from, { react: { text: stateBool ? "✅" : "❌", key: mek.key } }).catch(() => {});
+        }
+      }
+    } catch (err) {}
+  }
+);
