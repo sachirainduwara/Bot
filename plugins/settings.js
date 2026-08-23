@@ -4,74 +4,41 @@ const config = require('../config');
 
 // --- UNIFIED DATABASE SCHEMA FOR ALL SETTINGS ---
 const BotSettingsSchema = new mongoose.Schema({
-  _id: { type: String, required: true },
+  _id: { type: String, required: true, default: 'sachiyamd_master_settings' },
   anticall: { type: Boolean, default: false },
   antidelete: { type: Boolean, default: false },
-  ireact: { type: Boolean, default: true },
-  greact: { type: Boolean, default: true },
+  ireact: { type: Boolean, default: false },
+  greact: { type: Boolean, default: false },
   autoread: { type: Boolean, default: false },
   autostatus: { type: Boolean, default: false }
 });
 
 const BotSettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', BotSettingsSchema);
 
-// Cache object to hold current status in memory for fast access
-let settingsCache = {
-  anticall: false,
-  antidelete: false,
-  ireact: true,
-  greact: true,
-  autoread: false,
-  autostatus: false
-};
-
-// Load settings from MongoDB on startup
-async function loadAllSettings() {
+// Async function to get current settings directly from DB
+async function getSettings() {
   try {
-    if (mongoose.connection.readyState === 0) return;
+    if (mongoose.connection.readyState === 0) {
+      return { anticall: false, antidelete: false, ireact: false, greact: false, autoread: false, autostatus: false };
+    }
     let doc = await BotSettingsModel.findOne({ _id: 'sachiyamd_master_settings' });
-    if (doc) {
-      settingsCache.anticall = doc.anticall ?? false;
-      settingsCache.antidelete = doc.antidelete ?? false;
-      settingsCache.ireact = doc.ireact ?? true;
-      settingsCache.greact = doc.greact ?? true;
-      settingsCache.autoread = doc.autoread ?? false;
-      settingsCache.autostatus = doc.autostatus ?? false;
-    } else {
-      await BotSettingsModel.create({
+    if (!doc) {
+      doc = await BotSettingsModel.create({
         _id: 'sachiyamd_master_settings',
         anticall: false,
         antidelete: false,
-        ireact: true,
-        greact: true,
+        ireact: false,
+        greact: false,
         autoread: false,
         autostatus: false
       });
     }
+    return doc;
   } catch (e) {
-    console.error("Error loading settings:", e);
+    console.error("Error fetching settings:", e);
+    return { anticall: false, antidelete: false, ireact: false, greact: false, autoread: false, autostatus: false };
   }
 }
-
-// Save specific setting update to MongoDB
-async function updateSettingInDb(field, value) {
-  try {
-    settingsCache[field] = value;
-    if (mongoose.connection.readyState === 0) return;
-    await BotSettingsModel.findOneAndUpdate(
-      { _id: 'sachiyamd_master_settings' },
-      { [field]: value },
-      { upsert: true, new: true }
-    );
-  } catch (e) {
-    console.error("Error saving setting:", e);
-  }
-}
-
-// Initial load after 3 seconds
-setTimeout(() => { loadAllSettings(); }, 3000);
-
-global.activeSettingsMenus = global.activeSettingsMenus || new Map();
 
 // Helper to check if it's the Owner's Self Chat
 function isSelfChat(sachiya, from, mek) {
@@ -99,15 +66,14 @@ cmd(
         return reply("❌ *Settings command can only be used in your Self Chat (Saved Messages) with the bot!*");
       }
 
-      // Ensure latest data is loaded
-      await loadAllSettings();
+      const settings = await getSettings();
 
-      const anticallTxt = settingsCache.anticall ? "🟢 Enabled" : "🔴 Disabled";
-      const antidelTxt = settingsCache.antidelete ? "🟢 Enabled" : "🔴 Disabled";
-      const ireactTxt = settingsCache.ireact ? "🟢 Enabled" : "🔴 Disabled";
-      const greactTxt = settingsCache.greact ? "🟢 Enabled" : "🔴 Disabled";
-      const autoreadTxt = settingsCache.autoread ? "🟢 Enabled" : "🔴 Disabled";
-      const autostatusTxt = settingsCache.autostatus ? "🟢 Enabled" : "🔴 Disabled";
+      const anticallTxt = settings.anticall ? "🟢 Enabled" : "🔴 Disabled";
+      const antidelTxt = settings.antidelete ? "🟢 Enabled" : "🔴 Disabled";
+      const ireactTxt = settings.ireact ? "🟢 Enabled" : "🔴 Disabled";
+      const greactTxt = settings.greact ? "🟢 Enabled" : "🔴 Disabled";
+      const autoreadTxt = settings.autoread ? "🟢 Enabled" : "🔴 Disabled";
+      const autostatusTxt = settings.autostatus ? "🟢 Enabled" : "🔴 Disabled";
 
       const settingsImg = config.ALIVE_IMG || "https://github.com/sachirainduwara/Bot/blob/main/images/SACHIYA%20MD.png?raw=true";
 
@@ -136,6 +102,7 @@ cmd(
         { quoted: mek }
       );
 
+      global.activeSettingsMenus = global.activeSettingsMenus || new Map();
       const messageID = sentMsg.key.id;
       global.activeSettingsMenus.set(messageID, { from });
 
@@ -204,7 +171,13 @@ cmd(
         }
 
         if (dbField && featureName) {
-          await updateSettingInDb(dbField, stateBool);
+          // Strictly wait until MongoDB saves the setting
+          await BotSettingsModel.findOneAndUpdate(
+            { _id: 'sachiyamd_master_settings' },
+            { [dbField]: stateBool },
+            { upsert: true, new: true }
+          );
+
           const statusEmoji = stateBool ? "🟢 ENABLED" : "🔴 DISABLED";
           
           await sachiya.sendMessage(from, {
