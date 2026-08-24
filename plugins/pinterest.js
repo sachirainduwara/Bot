@@ -14,7 +14,7 @@ cmd(
   },
   async (sachiya, mek, m, { from, q, reply }) => {
     try {
-      // 1. URL එකක් දීලා තියෙනවද කියලා චෙක් කිරීම (කලින් ආපු error එක මගහරින්න)
+      // 1. URL Validation
       if (!q || !q.startsWith("http")) {
         return reply(
           `╭━━━〔 *✨ SACHIYA-MD PINTEREST ✨* 〕━━━\n` +
@@ -32,7 +32,7 @@ cmd(
       await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
       reply("*⏳ Scraping media from Pinterest... Please wait!* 🔄");
 
-      // 2. Axios හරහා වෙබ් පිටුව ලබා ගැනීම (Anti-bot මගහරින්න User-Agent භාවිතා කිරීම)
+      // 2. Fetching HTML
       const { data: html } = await axios.get(q, {
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -42,14 +42,13 @@ cmd(
 
       const $ = cheerio.load(html);
       let mediaUrl = "";
-      let isVideo = false;
+      let mediaType = "image"; // image, video, gif
 
-      // 3. Video / GIF (MP4) Url එක සෙවීම (OpenGraph Data & HTML Tags)
+      // 3. Check for Video / MP4
       mediaUrl = $('meta[property="og:video:secure_url"]').attr("content") ||
                  $('meta[name="og:video"]').attr("content") ||
                  $("video").attr("src");
 
-      // JSON Data ඇතුළේ හැංගිලා තියෙන Video ලින්ක් එක හොයන විශේෂ ක්‍රමය (Cheerio Deep Scraping)
       if (!mediaUrl) {
         const scriptData = $("#__PWS_DATA__").html();
         if (scriptData) {
@@ -59,18 +58,23 @@ cmd(
       }
 
       if (mediaUrl) {
-        isVideo = true;
+        mediaType = "video";
       } else {
-        // 4. Video එකක් නැත්නම් Image Url එක සෙවීම
+        // 4. Check for Image or GIF
         mediaUrl = $('meta[property="og:image"]').attr("content") ||
                    $('meta[name="og:image"]').attr("content");
+
+        // URL එකේ .gif තියෙනවද බලලා GIF එකක් ලෙස හඳුනා ගැනීම
+        if (mediaUrl && mediaUrl.toLowerCase().includes(".gif")) {
+          mediaType = "gif";
+        }
       }
 
       if (!mediaUrl) {
         return reply("*❌ Failed to extract media! The link might be private or invalid.* ⚠️");
       }
 
-      // 5. Title එක සෙවීම
+      // 5. Title
       let title = $('meta[property="og:title"]').attr("content") || 
                   $("title").text().replace(" | Pinterest", "") || 
                   "Pinterest Media";
@@ -78,16 +82,23 @@ cmd(
       const caption = `╭━━━〔 *✨ SACHIYA-MD PINTEREST ✨* 〕━━━\n` +
                       `┃\n` +
                       `┃ 📝 *Title:* ${title}\n` +
-                      `┃ 🗂️ *Type:* ${isVideo ? "Video / GIF" : "Image"}\n` +
+                      `┃ 🗂️ *Type:* ${mediaType.toUpperCase()}\n` +
                       `┃\n` +
                       `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                       `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-      // 6. අදාළ Media එක (Image / Video) යැවීම
-      if (isVideo) {
+      // 6. Send Media according to the correct type
+      if (mediaType === "video") {
         await sachiya.sendMessage(
           from,
           { video: { url: mediaUrl }, caption: caption },
+          { quoted: mek }
+        );
+      } else if (mediaType === "gif") {
+        // WhatsApp වල GIF එකක් විදිහට (Loop වෙන විදිහට) යැවීම සඳහා video option එකේ gifPlayback: true පාවිච්චි කරයි
+        await sachiya.sendMessage(
+          from,
+          { video: { url: mediaUrl }, caption: caption, gifPlayback: true },
           { quoted: mek }
         );
       } else {
