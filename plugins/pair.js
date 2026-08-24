@@ -24,7 +24,7 @@ cmd(
     pattern: "pair",
     alias: ["code", "link"],
     react: "🔗",
-    desc: "Generate WhatsApp pairing code without linking errors",
+    desc: "Generate WhatsApp pairing code using Ubuntu Chrome browser",
     category: "owner",
     use: ".pair <phone number>",
     filename: __filename,
@@ -80,7 +80,7 @@ cmd(
 
       // Step 2: Initializing Connection UI
       await sachiya.sendMessage(from, { 
-        text: `*🔄 Initializing Connection & Generating Code...* ⏳`, 
+        text: `*🔄 Initializing Ubuntu Chrome Connection...* ⏳`, 
         edit: msg.key 
       });
 
@@ -96,13 +96,13 @@ cmd(
         auth: state,
         printQRInTerminal: false,
         logger: pino({ level: "fatal" }),
-        browser: Browsers.macOS("Chrome"), // Fixed browser profile to prevent linking errors
+        browser: Browsers.ubuntu("Chrome"), // Configured strictly as Ubuntu Chrome device
         syncFullHistory: false,
         markOnlineOnConnect: true
       });
 
       if (!sock.authState.creds.registered) {
-        await delay(1500);
+        await delay(2000);
         let pairCode = await sock.requestPairingCode(phoneNumber);
         pairCode = pairCode?.match(/.{1,4}/g)?.join("-") || pairCode;
 
@@ -150,7 +150,7 @@ cmd(
               );
 
               await sachiya.sendMessage(from, { 
-                text: `✅ *Successfully Connected & Saved securely to MongoDB!* 🎉\n📱 *User:* +${phoneNumber}` 
+                text: `✅ *Successfully Connected as Ubuntu Chrome & Saved to MongoDB!* 🎉\n📱 *User:* +${phoneNumber}` 
               });
             }
           } catch (dbErr) {
