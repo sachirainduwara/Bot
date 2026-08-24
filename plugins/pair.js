@@ -1,5 +1,5 @@
 const { cmd } = require("../command");
-const { default: makeWASocket, useMultiFileAuthState, delay, Browsers, makeCacheableSignalStore } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, delay, Browsers } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const fs = require("fs");
 const path = require("path");
@@ -12,7 +12,7 @@ try {
 } catch {
   const PairSchema = new mongoose.Schema({
     userId: { type: String, required: true, unique: true },
-    credsData: { type: Object, required: true }, // Complete session info safe storage
+    credsData: { type: Object, required: true },
     status: { type: String, default: "CONNECTED" },
     createdAt: { type: Date, default: Date.now }
   });
@@ -84,7 +84,7 @@ cmd(
         edit: msg.key 
       });
 
-      // Completely isolated temporary folder for this specific user to avoid overlap
+      // Isolated temporary folder for this specific user
       const sessionDir = path.join(__dirname, `../temp_pair_${phoneNumber}_${Date.now()}`);
       if (!fs.existsSync(sessionDir)) {
         fs.mkdirSync(sessionDir, { recursive: true });
@@ -93,10 +93,7 @@ cmd(
       const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
 
       const sock = makeWASocket({
-        auth: {
-          creds: state.creds,
-          keys: makeCacheableSignalStore(state.keys, pino({ level: "fatal" }))
-        },
+        auth: state,
         printQRInTerminal: false,
         logger: pino({ level: "fatal" }),
         browser: Browsers.macOS("Safari"),
@@ -130,23 +127,20 @@ cmd(
         });
       }
 
-      sock.ev.on("creds.update", async () => {
-        await saveCreds();
-      });
+      sock.ev.on("creds.update", saveCreds);
 
       sock.ev.on("connection.update", async (update) => {
         const { connection, lastDisconnect } = update;
         
         if (connection === "open") {
-          await delay(5000); // Wait for sync to completely finish logging in
+          await delay(5000); // Wait for connection stability
 
           try {
-            // Read creds file generated in the isolated session folder
             const credsPath = path.join(sessionDir, "creds.json");
             if (fs.existsSync(credsPath)) {
               const credsData = JSON.parse(fs.readFileSync(credsPath, "utf8"));
 
-              // Save encrypted/complete user session profile into MongoDB 'pair' collection safely
+              // Save session to MongoDB securely
               await PairDB.findOneAndUpdate(
                 { userId: phoneNumber },
                 { credsData: credsData, status: "CONNECTED" },
@@ -161,18 +155,12 @@ cmd(
             console.error("DB Save Error:", dbErr);
           }
 
-          // Clean up isolated temporary local folder safely after saving to DB
+          // Clean up local temp folder safely
           setTimeout(() => {
             if (fs.existsSync(sessionDir)) {
               fs.rmSync(sessionDir, { recursive: true, force: true });
             }
           }, 5000);
-        } else if (connection === "close") {
-          // Handle reconnection if disconnected prematurely before connection opens
-          const reason = lastDisconnect?.error?.output?.statusCode;
-          if (reason && reason !== 440 && reason !== 401) {
-            // Optional handling
-          }
         }
       });
 
