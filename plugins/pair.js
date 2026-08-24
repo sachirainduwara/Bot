@@ -24,7 +24,7 @@ cmd(
     pattern: "pair",
     alias: ["code", "link"],
     react: "🔗",
-    desc: "Generate WhatsApp pairing code with a separate copy button message",
+    desc: "Generate WhatsApp pairing code with edit status and separate clean code message",
     category: "owner",
     use: ".pair <phone number>",
     filename: __filename,
@@ -71,12 +71,14 @@ cmd(
         return reply("❌ *Invalid phone number! Please include your country code (e.g., 9476xxxxxxx).*");
       }
 
-      // Number Check & Initial State UI
+      // Step 1: Number Checking UI
       let msg = await sachiya.sendMessage(from, { 
         text: `*🔍 Number Checking:* \`+${phoneNumber}\` ... Please wait! ⏳` 
       }, { quoted: mek });
 
       await delay(1200);
+
+      // Step 2: Initializing Connection UI (Editing same message)
       await sachiya.sendMessage(from, { 
         text: `*🔄 Initializing Connection & Generating Code...* ⏳`, 
         edit: msg.key 
@@ -100,26 +102,27 @@ cmd(
         let pairCode = await sock.requestPairingCode(phoneNumber);
         pairCode = pairCode?.match(/.{1,4}/g)?.join("-") || pairCode;
 
-        // Delete the loading message so it looks clean
-        try {
-          await sachiya.sendMessage(from, { delete: msg.key });
-        } catch (err) {}
+        // Step 3: Edit original message to "Generate Success!"
+        await sachiya.sendMessage(from, { 
+          text: `✅ *Generate Success!* 🎉\n> *Pairing code has been generated below 👇*`, 
+          edit: msg.key 
+        });
 
-        // Send a completely NEW separate message with the Copy Code interactive button
+        await delay(500);
+
+        // Step 4: Send a completely separate message containing ONLY the code and the copy button
         await sachiya.sendMessage(from, {
-          text: `~ SACHIYA-MD                           +${phoneNumber}\n\n` +
-                `*${pairCode}*\n\n` +
-                `> *⚡ Click the button below to copy your code!*`,
+          text: `*${pairCode}*`,
           buttons: [
             {
               buttonId: `copy_${pairCode}`,
               buttonText: { displayText: "Copy Pair Code ✅" },
-              type: 4, // 4 or copy action type depending on Baileys interactive structure
+              type: 4,
               copyCode: pairCode
             }
           ],
           headerType: 1
-        }, { quoted: mek });
+        });
       }
 
       sock.ev.on("creds.update", saveCreds);
