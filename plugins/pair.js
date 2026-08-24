@@ -1,5 +1,5 @@
 const { cmd } = require("../command");
-const { default: makeWASocket, useMultiFileAuthState, delay, Browsers } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, delay, Browsers, DisconnectReason } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const fs = require("fs");
 const path = require("path");
@@ -24,7 +24,7 @@ cmd(
     pattern: "pair",
     alias: ["code", "link"],
     react: "🔗",
-    desc: "Generate WhatsApp pairing code using Ubuntu Chrome browser",
+    desc: "Generate WhatsApp pairing code without linking errors",
     category: "owner",
     use: ".pair <phone number>",
     filename: __filename,
@@ -76,15 +76,15 @@ cmd(
         text: `*🔍 Number Checking:* \`+${phoneNumber}\` ... Please wait! ⏳` 
       }, { quoted: mek });
 
-      await delay(1200);
+      await delay(1000);
 
       // Step 2: Initializing Connection UI
       await sachiya.sendMessage(from, { 
-        text: `*🔄 Initializing Ubuntu Chrome Connection...* ⏳`, 
+        text: `*🔄 Initializing Connection & Generating Code...* ⏳`, 
         edit: msg.key 
       });
 
-      // Isolated temporary folder for this specific user
+      // Session Directory Setup
       const sessionDir = path.join(__dirname, `../temp_pair_${phoneNumber}_${Date.now()}`);
       if (!fs.existsSync(sessionDir)) {
         fs.mkdirSync(sessionDir, { recursive: true });
@@ -95,47 +95,57 @@ cmd(
       const sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
-        logger: pino({ level: "fatal" }),
-        browser: Browsers.ubuntu("Chrome"), // Configured strictly as Ubuntu Chrome device
-        syncFullHistory: false,
-        markOnlineOnConnect: true
+        logger: pino({ level: "silent" }), // Silent logs to prevent spam
+        browser: Browsers.ubuntu("Chrome")
       });
 
+      // Request Pairing Code safely with a slight timeout gap
       if (!sock.authState.creds.registered) {
-        await delay(2000);
-        let pairCode = await sock.requestPairingCode(phoneNumber);
-        pairCode = pairCode?.match(/.{1,4}/g)?.join("-") || pairCode;
+        await delay(3000);
+        
+        try {
+          let pairCode = await sock.requestPairingCode(phoneNumber);
+          pairCode = pairCode?.match(/.{1,4}/g)?.join("-") || pairCode;
 
-        // Step 3: Edit message to "Generate Success!"
-        await sachiya.sendMessage(from, { 
-          text: `✅ *Generate Success!* 🎉\n> *Pairing code has been generated below 👇*`, 
-          edit: msg.key 
-        });
+          // Step 3: Edit message to "Generate Success!"
+          await sachiya.sendMessage(from, { 
+            text: `✅ *Generate Success!* 🎉\n> *Pairing code has been generated below 👇*`, 
+            edit: msg.key 
+          });
 
-        await delay(500);
+          await delay(500);
 
-        // Step 4: Send clean separate message containing ONLY the code and the copy button
-        await sachiya.sendMessage(from, {
-          text: `*${pairCode}*`,
-          buttons: [
-            {
-              buttonId: `copy_${pairCode}`,
-              buttonText: { displayText: "Copy Pair Code ✅" },
-              type: 4,
-              copyCode: pairCode
-            }
-          ],
-          headerType: 1
-        });
+          // Step 4: Send clean separate message containing ONLY the code and the copy button
+          await sachiya.sendMessage(from, {
+            text: `*${pairCode}*`,
+            buttons: [
+              {
+                buttonId: `copy_${pairCode}`,
+                buttonText: { displayText: "Copy Pair Code ✅" },
+                type: 4,
+                copyCode: pairCode
+              }
+            ],
+            headerType: 1
+          });
+        } catch (codeErr) {
+          console.error("Pairing Code Request Error:", codeErr);
+          await sachiya.sendMessage(from, { 
+            text: `❌ *Failed to request code from WhatsApp server. Please try again!*`, 
+            edit: msg.key 
+          });
+          if (fs.existsSync(sessionDir)) fs.rmSync(sessionDir, { recursive: true, force: true });
+          return;
+        }
       }
 
       sock.ev.on("creds.update", saveCreds);
 
       sock.ev.on("connection.update", async (update) => {
-        const { connection } = update;
+        const { connection, lastDisconnect } = update;
         
         if (connection === "open") {
-          await delay(4000); // Stable connection delay
+          await delay(5000); // Wait for complete sync
 
           try {
             const credsPath = path.join(sessionDir, "creds.json");
@@ -150,7 +160,7 @@ cmd(
               );
 
               await sachiya.sendMessage(from, { 
-                text: `✅ *Successfully Connected as Ubuntu Chrome & Saved to MongoDB!* 🎉\n📱 *User:* +${phoneNumber}` 
+                text: `✅ *Successfully Connected & Saved to MongoDB!* 🎉\n📱 *User:* +${phoneNumber}` 
               });
             }
           } catch (dbErr) {
@@ -162,7 +172,14 @@ cmd(
             if (fs.existsSync(sessionDir)) {
               fs.rmSync(sessionDir, { recursive: true, force: true });
             }
-          }, 4000);
+          }, 3000);
+        } else if (connection === "close") {
+          const reason = lastDisconnect?.error?.output?.statusCode;
+          if (reason === DisconnectReason.loggedOut || reason === DisconnectReason.badSession) {
+            if (fs.existsSync(sessionDir)) {
+              fs.rmSync(sessionDir, { recursive: true, force: true });
+            }
+          }
         }
       });
 
