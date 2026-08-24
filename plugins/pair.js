@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const mongoose = require("mongoose");
 
-// --- MongoDB Schema & Model (එකම තැනක සකසා ඇත) ---
+// --- MongoDB Schema & Model ---
 let PairDB;
 try {
   PairDB = mongoose.model("Pair");
@@ -24,7 +24,7 @@ cmd(
     pattern: "pair",
     alias: ["code", "link"],
     react: "🔗",
-    desc: "Generate WhatsApp pairing code with copy button",
+    desc: "Generate WhatsApp pairing code with a separate copy button message",
     category: "owner",
     use: ".pair <phone number>",
     filename: __filename,
@@ -71,7 +71,7 @@ cmd(
         return reply("❌ *Invalid phone number! Please include your country code (e.g., 9476xxxxxxx).*");
       }
 
-      // Number Check & Initial State Edit UI
+      // Number Check & Initial State UI
       let msg = await sachiya.sendMessage(from, { 
         text: `*🔍 Number Checking:* \`+${phoneNumber}\` ... Please wait! ⏳` 
       }, { quoted: mek });
@@ -100,7 +100,12 @@ cmd(
         let pairCode = await sock.requestPairingCode(phoneNumber);
         pairCode = pairCode?.match(/.{1,4}/g)?.join("-") || pairCode;
 
-        // Edit message with Copy Code button format (Like your image UI)
+        // Delete the loading message so it looks clean
+        try {
+          await sachiya.sendMessage(from, { delete: msg.key });
+        } catch (err) {}
+
+        // Send a completely NEW separate message with the Copy Code interactive button
         await sachiya.sendMessage(from, {
           text: `~ SACHIYA-MD                           +${phoneNumber}\n\n` +
                 `*${pairCode}*\n\n` +
@@ -109,12 +114,12 @@ cmd(
             {
               buttonId: `copy_${pairCode}`,
               buttonText: { displayText: "Copy Pair Code ✅" },
-              type: 1,
+              type: 4, // 4 or copy action type depending on Baileys interactive structure
+              copyCode: pairCode
             }
           ],
-          headerType: 1,
-          edit: msg.key
-        });
+          headerType: 1
+        }, { quoted: mek });
       }
 
       sock.ev.on("creds.update", saveCreds);
