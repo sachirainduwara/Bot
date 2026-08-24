@@ -6,15 +6,15 @@ cmd(
     pattern: "tiktok",
     alias: ["tt", "ttdl"],
     react: "📱",
-    desc: "Download TikTok video without watermark",
+    desc: "Download TikTok video without watermark using Siputzx API",
     category: "download",
     use: ".tiktok <TikTok URL>",
     filename: __filename,
   },
   async (sachiya, mek, m, { from, q, reply }) => {
     try {
-      // 1. URL Validation
-      if (!q || !q.startsWith("http")) {
+      // 1. URL Check
+      if (!q) {
         return await sachiya.sendMessage(from, {
           text: `╭━━━〔 *✨ SACHIYA-MD TIKTOK ✨* 〕━━━\n` +
                 `┃\n` +
@@ -26,44 +26,74 @@ cmd(
         }, { quoted: mek });
       }
 
-      await sachiya.sendMessage(from, { react: { text: "⏳", key: mek.key } });
-      reply("*⏳ Downloading TikTok video... Please wait!* 🔄");
+      // 2. TikTok URL Validation Patterns
+      const tiktokPatterns = [
+        /https?:\/\/(?:www\.)?tiktok\.com\//,
+        /https?:\/\/(?:vm\.)?tiktok\.com\//,
+        /https?:\/\/(?:vt\.)?tiktok\.com\//,
+        /https?:\/\/(?:www\.)?tiktok\.com\/@/,
+        /https?:\/\/(?:www\.)?tiktok\.com\/t\//,
+        /https?:\/\/pin\.it\// // just in case
+      ];
 
-      // 2. API Request (ඔයාගේ API එකට ලින්ක් එක යවන තැන)
-      // (මෙතන "YOUR_API_ENDPOINT_HERE" වෙනුවට ඔයා පාවිච්චි කරන සැබෑ API ලින්ක් එක දාන්න)
-      const apiEndpoint = `https://api.ominisave.store/api/tiktok?url=${encodeURIComponent(q)}`; // හෝ ඔයාගේ API ලින්ක් එක
-      
-      const apiRes = await axios.get(apiEndpoint);
-      const resData = apiRes.data;
-
-      // 3. Validation based on your JSON structure
-      if (!resData || !resData.status || !resData.downloads || !resData.downloads.video) {
-        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("*❌ Failed to fetch TikTok video from API! Please check the link.* 🚫");
+      const isValidUrl = tiktokPatterns.some(pattern => pattern.test(q));
+      if (!isValidUrl && !q.startsWith("http")) {
+        return reply("❌ *That is not a valid TikTok link. Please provide a valid TikTok video link.* 🚫");
       }
 
-      const videoUrl = resData.downloads.video;
-      const title = resData.title || "TikTok Video";
-      const author = resData.author || "Unknown";
+      await sachiya.sendMessage(from, { react: { text: "🔄", key: mek.key } });
+      reply("*⏳ Downloading TikTok video... Please wait!* 🔄");
+
+      // 3. API Request (Siputzx API)
+      const apiUrl = `https://api.siputzx.my.id/api/d/tiktok?url=${encodeURIComponent(q)}`;
       
-      const views = resData.stats?.views || 0;
-      const likes = resData.stats?.likes || 0;
-      const shares = resData.stats?.shares || 0;
+      let videoUrl = null;
+      let title = null;
+      let author = "Unknown";
+
+      const response = await axios.get(apiUrl, { 
+        timeout: 15000,
+        headers: {
+          'accept': '*/*',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+      
+      if (response.data && response.data.status) {
+        const resData = response.data.data;
+        if (resData) {
+          // Check for URL formats in response
+          if (resData.urls && Array.isArray(resData.urls) && resData.urls.length > 0) {
+            videoUrl = resData.urls[0];
+          } else if (resData.video_url) {
+            videoUrl = resData.video_url;
+          } else if (resData.url) {
+            videoUrl = resData.url;
+          } else if (resData.download_url) {
+            videoUrl = resData.download_url;
+          }
+
+          title = resData.metadata?.title || resData.title || "TikTok Video";
+          author = resData.metadata?.author || resData.author || "Unknown";
+        }
+      }
+
+      if (!videoUrl) {
+        await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
+        return reply("*❌ Failed to extract video URL from API response!* ⚠️");
+      }
 
       // 4. SACHIYA-MD TIKTOK UI CARD
       const caption = `╭━━━〔 *🎬 TIKTOK DOWNLOADER 🎵* 〕━━━\n` +
                       `┃\n` +
                       `┃ 📌 *Title:* ${title.length > 50 ? title.substring(0, 47) + '...' : title}\n` +
-                      `┃ 👤 *Author:* @${author}\n` +
-                      `┃ 👀 *Views:* ${views.toLocaleString()}\n` +
-                      `┃ ❤️ *Likes:* ${likes.toLocaleString()}\n` +
-                      `┃ 🔄 *Shares:* ${shares.toLocaleString()}\n` +
+                      `┃ 👤 *Author:* ${author}\n` +
                       `┃ 📥 *Status:* Successfully Downloaded! ✅\n` +
                       `┃\n` +
                       `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
                       `> *⚡ Powered by SACHIYA-MD 💫*`;
 
-      // 5. Send Video (No Watermark)
+      // 5. Send Video
       await sachiya.sendMessage(
         from,
         {
@@ -77,9 +107,9 @@ cmd(
       await sachiya.sendMessage(from, { react: { text: "✅", key: mek.key } });
 
     } catch (e) {
-      console.error("❌ TIKTOK ERROR:", e.message || e);
+      console.error("TIKTOK ERROR:", e.message || e);
       await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-      reply("*❌ An error occurred while downloading the TikTok video! Please try again.* ⚠️");
+      reply("*❌ An error occurred while downloading the TikTok video!* ⚠️");
     }
   }
 );
