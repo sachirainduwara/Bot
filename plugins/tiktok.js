@@ -6,7 +6,7 @@ cmd(
     pattern: "tiktok",
     alias: ["tt", "ttdl"],
     react: "📱",
-    desc: "Download TikTok video without watermark using Siputzx API",
+    desc: "Download TikTok video without watermark with multi-API fallback",
     category: "download",
     use: ".tiktok <TikTok URL>",
     filename: __filename,
@@ -32,8 +32,7 @@ cmd(
         /https?:\/\/(?:vm\.)?tiktok\.com\//,
         /https?:\/\/(?:vt\.)?tiktok\.com\//,
         /https?:\/\/(?:www\.)?tiktok\.com\/@/,
-        /https?:\/\/(?:www\.)?tiktok\.com\/t\//,
-        /https?:\/\/pin\.it\// // just in case
+        /https?:\/\/(?:www\.)?tiktok\.com\/t\//
       ];
 
       const isValidUrl = tiktokPatterns.some(pattern => pattern.test(q));
@@ -44,43 +43,44 @@ cmd(
       await sachiya.sendMessage(from, { react: { text: "🔄", key: mek.key } });
       reply("*⏳ Downloading TikTok video... Please wait!* 🔄");
 
-      // 3. API Request (Siputzx API)
-      const apiUrl = `https://api.siputzx.my.id/api/d/tiktok?url=${encodeURIComponent(q)}`;
-      
       let videoUrl = null;
-      let title = null;
+      let title = "TikTok Video";
       let author = "Unknown";
 
-      const response = await axios.get(apiUrl, { 
-        timeout: 15000,
-        headers: {
-          'accept': '*/*',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
+      // 3. Fallback API System (API 1: Siputzx -> API 2: TikWM)
       
-      if (response.data && response.data.status) {
-        const resData = response.data.data;
-        if (resData) {
-          // Check for URL formats in response
-          if (resData.urls && Array.isArray(resData.urls) && resData.urls.length > 0) {
-            videoUrl = resData.urls[0];
-          } else if (resData.video_url) {
-            videoUrl = resData.video_url;
-          } else if (resData.url) {
-            videoUrl = resData.url;
-          } else if (resData.download_url) {
-            videoUrl = resData.download_url;
-          }
+      // Try API 1 (Siputzx)
+      try {
+        const res1 = await axios.get(`https://api.siputzx.my.id/api/d/tiktok?url=${encodeURIComponent(q)}`, { timeout: 10000 });
+        if (res1.data && res1.data.status) {
+          const d = res1.data.data;
+          videoUrl = d?.urls?.[0] || d?.video_url || d?.url || d?.download_url;
+          title = d?.metadata?.title || d?.title || "TikTok Video";
+          author = d?.metadata?.author || d?.author || "Unknown";
+        }
+      } catch (err1) {
+        console.log("API 1 failed, trying fallback API...");
+      }
 
-          title = resData.metadata?.title || resData.title || "TikTok Video";
-          author = resData.metadata?.author || resData.author || "Unknown";
+      // If API 1 failed, Try API 2 (TikWM - Very stable)
+      if (!videoUrl) {
+        try {
+          const res2 = await axios.get(`https://tikwm.com/api/?url=${encodeURIComponent(q)}`, { timeout: 10000 });
+          if (res2.data && res2.data.code === 0) {
+            const d = res2.data.data;
+            videoUrl = d?.play || d?.hdplay;
+            title = d?.title || "TikTok Video";
+            author = d?.author?.nickname || "Unknown";
+          }
+        } catch (err2) {
+          console.log("API 2 failed as well.");
         }
       }
 
+      // If both APIs fail
       if (!videoUrl) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("*❌ Failed to extract video URL from API response!* ⚠️");
+        return reply("*❌ All download servers are currently busy or down (503). Please try again later!* ⚠️");
       }
 
       // 4. SACHIYA-MD TIKTOK UI CARD
