@@ -24,7 +24,7 @@ cmd(
     pattern: "pair",
     alias: ["code", "link"],
     react: "🔗",
-    desc: "Generate WhatsApp pairing code with isolated secure session handling",
+    desc: "Generate WhatsApp pairing code without linking errors",
     category: "owner",
     use: ".pair <phone number>",
     filename: __filename,
@@ -96,7 +96,9 @@ cmd(
         auth: state,
         printQRInTerminal: false,
         logger: pino({ level: "fatal" }),
-        browser: Browsers.macOS("Safari"),
+        browser: Browsers.macOS("Chrome"), // Fixed browser profile to prevent linking errors
+        syncFullHistory: false,
+        markOnlineOnConnect: true
       });
 
       if (!sock.authState.creds.registered) {
@@ -130,10 +132,10 @@ cmd(
       sock.ev.on("creds.update", saveCreds);
 
       sock.ev.on("connection.update", async (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection } = update;
         
         if (connection === "open") {
-          await delay(5000); // Wait for connection stability
+          await delay(4000); // Stable connection delay
 
           try {
             const credsPath = path.join(sessionDir, "creds.json");
@@ -160,7 +162,7 @@ cmd(
             if (fs.existsSync(sessionDir)) {
               fs.rmSync(sessionDir, { recursive: true, force: true });
             }
-          }, 5000);
+          }, 4000);
         }
       });
 
