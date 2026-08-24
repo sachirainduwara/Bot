@@ -132,7 +132,6 @@ const effects = {
     }
 };
 
-
 async function createLogo(effectUrl, text) {
     try {
         const generator = new Photo360(effectUrl);
@@ -140,23 +139,25 @@ async function createLogo(effectUrl, text) {
         
         const result = await generator.execute();
         
-        if (result.status && result.imageUrl) {
+        // Safely check if result exists and contains valid JSON/Data
+        if (result && result.status && result.imageUrl) {
             return {
                 success: true,
                 imageUrl: result.imageUrl,
-                sessionId: result.sessionId
+                sessionId: result.sessionId || null
             };
         } else {
             return {
                 success: false,
-                error: 'Failed to generate image'
+                error: 'Invalid response from logo API server'
             };
         }
     } catch (error) {
-        console.error('Photo360 Error:', error.message);
+        // Safe error logging without spamming console loops
+        console.error('Photo360 Safe Caught Error:', error.message || error);
         return {
             success: false,
-            error: error.message
+            error: 'API service is currently busy or returned invalid data.'
         };
     }
 }
@@ -210,9 +211,9 @@ for (const [effectName, effectInfo] of Object.entries(effects)) {
             await conn.sendMessage(from, { react: { text: "✅", key: mek.key } });
 
         } catch (e) {
-            console.error(e);
+            console.error("Command Execution Error:", e);
             await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
-            return reply(`❌ *Error:* ${e.message} ⚠️`);
+            return reply(`❌ *Error:* An unexpected error occurred. ⚠️`);
         }
     });
 }
