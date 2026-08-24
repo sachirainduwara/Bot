@@ -6,7 +6,7 @@ cmd(
     pattern: "tiktok",
     alias: ["tt", "ttdl"],
     react: "📱",
-    desc: "Download TikTok video without watermark with multi-API fallback",
+    desc: "Download TikTok video without watermark",
     category: "download",
     use: ".tiktok <TikTok URL>",
     filename: __filename,
@@ -47,40 +47,27 @@ cmd(
       let title = "TikTok Video";
       let author = "Unknown";
 
-      // 3. Fallback API System (API 1: Siputzx -> API 2: TikWM)
+      // 3. TikWM API Request
+      const response = await axios.get(`https://tikwm.com/api/?url=${encodeURIComponent(q)}`, { 
+        timeout: 15000,
+        headers: {
+          'accept': '*/*',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
       
-      // Try API 1 (Siputzx)
-      try {
-        const res1 = await axios.get(`https://api.siputzx.my.id/api/d/tiktok?url=${encodeURIComponent(q)}`, { timeout: 10000 });
-        if (res1.data && res1.data.status) {
-          const d = res1.data.data;
-          videoUrl = d?.urls?.[0] || d?.video_url || d?.url || d?.download_url;
-          title = d?.metadata?.title || d?.title || "TikTok Video";
-          author = d?.metadata?.author || d?.author || "Unknown";
-        }
-      } catch (err1) {
-        console.log("API 1 failed, trying fallback API...");
-      }
-
-      // If API 1 failed, Try API 2 (TikWM - Very stable)
-      if (!videoUrl) {
-        try {
-          const res2 = await axios.get(`https://tikwm.com/api/?url=${encodeURIComponent(q)}`, { timeout: 10000 });
-          if (res2.data && res2.data.code === 0) {
-            const d = res2.data.data;
-            videoUrl = d?.play || d?.hdplay;
-            title = d?.title || "TikTok Video";
-            author = d?.author?.nickname || "Unknown";
-          }
-        } catch (err2) {
-          console.log("API 2 failed as well.");
+      if (response.data && response.data.code === 0) {
+        const d = response.data.data;
+        if (d) {
+          videoUrl = d.play || d.hdplay;
+          title = d.title || "TikTok Video";
+          author = d.author?.nickname || d.author?.unique_id || "Unknown";
         }
       }
 
-      // If both APIs fail
       if (!videoUrl) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("*❌ All download servers are currently busy or down (503). Please try again later!* ⚠️");
+        return reply("*❌ Failed to extract video URL! Make sure the link is public.* ⚠️");
       }
 
       // 4. SACHIYA-MD TIKTOK UI CARD
