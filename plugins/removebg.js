@@ -1,5 +1,5 @@
 const { cmd } = require('../command');
-const { fetchJson } = require('../functions'); // ඔයාගේ බොට්ගේ api/fetch ෆන්ෂන් එක, නැත්නම් axios පාවිච්චි කරන්න පුළුවන්
+const { fetchJson } = require('../lib/functions.js'); // ඔයාගේ බොට්ගේ api/fetch ෆන්ෂන් එක, නැත්නම් axios පාවිච්චි කරන්න පුළුවන්
 const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('fs');
