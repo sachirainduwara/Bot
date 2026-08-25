@@ -1,5 +1,5 @@
 const { cmd } = require("../command");
-const { default: makeWASocket, useMultiFileAuthState, delay, makeCacheableSignalKeyStore, DisconnectReason } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, delay, makeCacheableSignalKeyStore } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const fs = require("fs");
 const path = require("path");
@@ -23,14 +23,13 @@ cmd(
     pattern: "pair",
     alias: ["code", "link"],
     react: "🔗",
-    desc: "Generate WhatsApp pairing code securely for users",
+    desc: "Generate WhatsApp pairing code and save directly to MongoDB",
     category: "owner",
     use: ".pair <phone number>",
     filename: __filename,
   },
   async (sachiya, mek, m, { from, q, reply, isGroup }) => {
     try {
-      // 🛡️ Security Check: Prevent group spamming, only allow in DM (Inbox)
       if (isGroup) {
         return reply("❌ *Please use this command in my Inbox (Direct Message) for security reasons!* 📩");
       }
@@ -125,7 +124,7 @@ cmd(
           }
 
           await sachiya.sendMessage(from, { 
-            text: `✅ *WhatsApp Account Linked Successfully!* 🎉\n📱 *Number:* +${phoneNumber}\n\n> *Your session is now safely stored in the database!*` 
+            text: `✅ *WhatsApp Account Linked Successfully!* 🎉\n📱 *Number:* +${phoneNumber}\n\n> *Your session is now safely stored in the MongoDB database!*` 
           });
 
           if (fs.existsSync(sessionDir)) {
