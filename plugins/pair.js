@@ -5,15 +5,6 @@ const fs = require("fs");
 const path = require("path");
 const mongoose = require("mongoose");
 
-const MONGO_URI = "mongodb+srv://sachirainduwara02_db_user:Sachi2010@cluster0.skykj4x.mongodb.net/?appName=Cluster0";
-
-if (mongoose.connection.readyState === 0) {
-  mongoose.connect(MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  }).catch(err => console.error("MongoDB Connection Error:", err));
-}
-
 let PairDB;
 try {
   PairDB = mongoose.model("PairSession");
@@ -32,37 +23,21 @@ cmd(
     pattern: "pair",
     alias: ["code", "link"],
     react: "🔗",
-    desc: "Generate WhatsApp pairing code securely with MongoDB sync",
+    desc: "Generate WhatsApp pairing code securely for users",
     category: "owner",
     use: ".pair <phone number>",
     filename: __filename,
   },
-  async (sachiya, mek, m, { from, q, reply, isOwner }) => {
+  async (sachiya, mek, m, { from, q, reply, isGroup }) => {
     try {
-      if (q === "list") {
-        if (!isOwner) return reply("❌ *This command is only for the Owner!* 🚫");
-        const allPairs = await PairDB.find({});
-        if (allPairs.length === 0) return reply("📭 *No paired sessions found in MongoDB.*");
-        
-        let listText = `╭━━━〔 *📋 MONGODB PAIRED SESSIONS* 〕━━━\n┃\n`;
-        allPairs.forEach((p, index) => {
-          listText += `┃ *${index + 1}.* 📱 wa.me/${p.userId} \n`;
-          listText += `┃ 📌 *Status:* ${p.status}\n┃\n`;
-        });
-        listText += `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-        return reply(listText);
-      }
-
-      if (q && q.startsWith("remove ")) {
-        if (!isOwner) return reply("❌ *This command is only for the Owner!* 🚫");
-        const targetNum = q.replace("remove ", "").trim();
-        await PairDB.deleteOne({ userId: targetNum });
-        return reply(`✅ *Successfully removed ${targetNum} from MongoDB Database!*`);
+      // 🛡️ Security Check: Prevent group spamming, only allow in DM (Inbox)
+      if (isGroup) {
+        return reply("❌ *Please use this command in my Inbox (Direct Message) for security reasons!* 📩");
       }
 
       if (!q) {
         return reply(
-          `╭━━━〔 *✨ SACHIYA-MD MONGODB PAIR ✨* 〕━━━\n` +
+          `╭━━━〔 *✨ SACHIYA-MD PAIR SYSTEM ✨* 〕━━━\n` +
           `┃\n` +
           `┃ ⚠️ *Please provide your WhatsApp number with country code!*\n` +
           `┃ 📌 *Example:* \`.pair 94762566232\`\n` +
@@ -87,7 +62,7 @@ cmd(
         edit: msg.key 
       });
 
-      const sessionDir = path.join(__dirname, `../temp_mongo_${phoneNumber}`);
+      const sessionDir = path.join(__dirname, `../temp_user_${phoneNumber}`);
       if (fs.existsSync(sessionDir)) {
         fs.rmSync(sessionDir, { recursive: true, force: true });
       }
@@ -95,7 +70,6 @@ cmd(
       const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
       const logger = pino({ level: "silent" });
 
-      // 🛠️ Highly stable socket config matching WhatsApp Web Desktop Multi-Device standard
       const sock = makeWASocket({
         auth: {
           creds: state.creds,
@@ -111,7 +85,6 @@ cmd(
       sock.ev.on("creds.update", saveCreds);
 
       if (!sock.authState.creds.registered) {
-        // 🛠️ Crucial Delay: Waiting 6 full seconds for the socket to fully bind to WhatsApp servers before requesting code
         await delay(6000);
         
         let pairCode = await sock.requestPairingCode(phoneNumber);
@@ -133,7 +106,7 @@ cmd(
         const { connection } = update;
         
         if (connection === "open") {
-          await delay(5000); // Give ample time for credential sync
+          await delay(5000);
           
           const credsPath = path.join(sessionDir, "creds.json");
           let parsedCreds = null;
@@ -152,7 +125,7 @@ cmd(
           }
 
           await sachiya.sendMessage(from, { 
-            text: `✅ *WhatsApp Account Linked & Saved to MongoDB!* 🎉\n📱 *Number:* +${phoneNumber}\n\n> *Session successfully stored in your MongoDB Cluster!*` 
+            text: `✅ *WhatsApp Account Linked Successfully!* 🎉\n📱 *Number:* +${phoneNumber}\n\n> *Your session is now safely stored in the database!*` 
           });
 
           if (fs.existsSync(sessionDir)) {
