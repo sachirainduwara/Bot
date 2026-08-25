@@ -12,7 +12,7 @@ try {
 } catch {
   const PairSchema = new mongoose.Schema({
     userId: { type: String, required: true, unique: true },
-    creds: { type: Object }, // Store full session creds for stable connection
+    creds: { type: Object },
     status: { type: String, default: "PENDING" },
     createdAt: { type: Date, default: Date.now }
   });
@@ -76,7 +76,7 @@ cmd(
         text: `*🔍 Number Checking:* \`+${phoneNumber}\` ... Please wait! ⏳` 
       }, { quoted: mek });
 
-      await delay(1200);
+      await delay(1000);
 
       // Step 2: Initializing Connection UI (Editing same message)
       await sachiya.sendMessage(from, { 
@@ -98,13 +98,13 @@ cmd(
         },
         printQRInTerminal: false,
         logger: logger,
-        browser: Browsers.macOS("Safari"),
+        browser: Browsers.ubuntu("Chrome"), // Changed browser config to prevent linking error
       });
 
       sock.ev.on("creds.update", saveCreds);
 
       if (!sock.authState.creds.registered) {
-        await delay(1500);
+        await delay(2000);
         let pairCode = await sock.requestPairingCode(phoneNumber);
         pairCode = pairCode?.match(/.{1,4}/g)?.join("-") || pairCode;
 
@@ -127,7 +127,6 @@ cmd(
         if (connection === "open") {
           await delay(3000);
           
-          // Read creds.json securely and save to MongoDB so bot can reuse it
           const credsPath = path.join(sessionDir, "creds.json");
           let parsedCreds = null;
           if (fs.existsSync(credsPath)) {
@@ -146,7 +145,6 @@ cmd(
             text: `✅ *Successfully Connected & Saved Session to MongoDB!* 🎉\n📱 *User:* +${phoneNumber}\n\n> *Restart your bot to activate this session.*` 
           });
 
-          // Clean up temp session files
           if (fs.existsSync(sessionDir)) {
             fs.rmSync(sessionDir, { recursive: true, force: true });
           }
