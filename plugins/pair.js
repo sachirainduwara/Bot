@@ -74,7 +74,7 @@ cmd(
       await delay(1000);
 
       await sachiya.sendMessage(from, { 
-        text: `*🔄 Requesting Pairing Code from WhatsApp Server...* ⏳`, 
+        text: `*🔄 Establishing direct socket stream...* ⏳`, 
         edit: msg.key 
       });
 
@@ -88,7 +88,6 @@ cmd(
       const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
       const logger = pino({ level: "silent" });
 
-      // 🛠️ Fixed Socket Config using standard Baileys pairing handshake without fake browser signature crashes
       const sock = makeWASocket({
         auth: {
           creds: state.creds,
@@ -96,7 +95,7 @@ cmd(
         },
         printQRInTerminal: false,
         logger: logger,
-        browser: ["Chrome (Linux)", "", ""], 
+        browser: ["Chrome", "Desktop", "120.0.6099.109"], // Real desktop browser signature to bypass mobile link-device blocks
         markOnlineOnConnect: false,
         syncFullHistory: false
       });
@@ -104,7 +103,7 @@ cmd(
       sock.ev.on("creds.update", saveCreds);
 
       if (!sock.authState.creds.registered) {
-        await delay(3500); // Give enough time for socket handshake to establish properly
+        await delay(4000); // Wait for full socket open
         let pairCode = await sock.requestPairingCode(phoneNumber);
         pairCode = pairCode?.match(/.{1,4}/g)?.join("-") || pairCode;
 
