@@ -45,15 +45,6 @@ const SessionSchema = new mongoose.Schema({
 });
 const SessionModel = mongoose.models.Session || mongoose.model('Session', SessionSchema);
 
-// --- Model for Paired Sessions from DB ---
-const PairSchema = new mongoose.Schema({
-  userId: { type: String },
-  creds: { type: Object },
-  status: { type: String },
-  createdAt: { type: Date }
-});
-const PairModel = mongoose.models.Pair || mongoose.model('Pair', PairSchema);
-
 const BlockSchema = new mongoose.Schema({
   _id: { type: String, required: true },
   blockedChats: { type: Array, default: [] }
@@ -73,8 +64,6 @@ async function loadSessionFromMongo() {
     if (mongoose.connection.readyState === 0) {
       await mongoose.connect(config.SESSION_ID, { serverSelectionTimeoutMS: 5000 });
     }
-    
-    // 1. Try loading main standard session
     const sessionDoc = await SessionModel.findOne({ _id: 'sachiyamd_creds' });
     if (sessionDoc && sessionDoc.data) {
       if (!fs.existsSync(authFolder)) {
@@ -84,21 +73,7 @@ async function loadSessionFromMongo() {
       if (!global.hasLoggedConsoleOnce) {
         console.log("✅ Session loaded successfully from MongoDB Atlas!");
       }
-      return;
     }
-
-    // 2. Fallback: Try loading from Pair Model if paired via .pair command
-    const pairedData = await PairModel.findOne({ status: "CONNECTED" }).sort({ createdAt: -1 }) || await PairModel.findOne({}).sort({ createdAt: -1 });
-    if (pairedData && pairedData.creds) {
-      if (!fs.existsSync(authFolder)) {
-        fs.mkdirSync(authFolder, { recursive: true });
-      }
-      fs.writeFileSync(path.join(authFolder, 'creds.json'), JSON.stringify(pairedData.creds, null, 2));
-      if (!global.hasLoggedConsoleOnce) {
-        console.log("✅ Paired session loaded successfully from MongoDB database!");
-      }
-    }
-
   } catch (e) {
     console.error("❌ MongoDB Session Load Error:", e);
   }
@@ -335,7 +310,7 @@ async function connectToWA() {
         global.hasLoggedConsoleOnce = true;
         console.log('\n╭─────────────────────────────────────╮');
         console.log('│ SACHIYA MD CONNECTED SUCCESSFULLY!  │');
-        console.log('╰─────────────────────────────────────⭞\n');
+        console.log('╰─────────────────────────────────────╯\n');
       }
 
       await saveSessionToMongo();
