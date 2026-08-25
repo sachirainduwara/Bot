@@ -109,13 +109,13 @@ cmd(
 );
 
 
-// --- 2. MEDIAFIRE UPLOADER PLUGIN (Reply to any File/Video/Audio/Image) ---
+// --- 2. MULTI-API CLOUD UPLOADER PLUGIN (Reply to any File/Video/Audio/Image) ---
 cmd(
   {
     pattern: "uploadmf",
     alias: ["mfupload", "mifu"],
     react: "☁️",
-    desc: "Upload media/documents to file sharing / mediafire supported cloud",
+    desc: "Upload media/documents to cloud sharing server with multi backups",
     category: "download",
     filename: __filename,
   },
@@ -127,7 +127,6 @@ cmd(
         return reply("❌ *Please reply to any video, audio, image, or document to upload!*");
       }
 
-      // Check media type
       let type = '';
       let messageContent = targetQuoted.message || targetQuoted;
       
@@ -143,7 +142,6 @@ cmd(
       await sachiya.sendMessage(from, { react: { text: "🔄", key: mek.key } });
       reply("⏳ *Uploading your file to the cloud server, please wait...*");
 
-      // Download media stream from whatsapp
       const stream = await downloadContentFromMessage(messageContent[type + 'Message'], type);
       let buffer = Buffer.from([]);
       for await (const chunk of stream) {
@@ -153,41 +151,64 @@ cmd(
       let originalFileName = messageContent[type + 'Message'].fileName || `SACHIYA_MD_${Date.now()}.${type === 'image' ? 'jpg' : type === 'video' ? 'mp4' : type === 'audio' ? 'mp3' : 'bin'}`;
       let fileSizeMb = (buffer.length / (1024 * 1024)).toFixed(2) + " MB";
 
-      // Upload via public file upload API (Telegraph / Catbox / Tmpfiles backup integration)
-      const formData = new FormData();
-      formData.append('file', buffer, { filename: originalFileName });
+      let fileUrl = null;
 
-      let uploadRes;
+      // --- BACKUP 1: Tmpfiles.org API ---
       try {
-        uploadRes = await axios.post("https://itzpire.com/tools/upload", formData, {
-          headers: { ...formData.getHeaders() },
+        const formData1 = new FormData();
+        formData1.append('file', buffer, { filename: originalFileName });
+        const res1 = await axios.post("https://tmpfiles.org/api/v1/upload", formData1, {
+          headers: { ...formData1.getHeaders() },
           maxBodyLength: Infinity,
           maxContentLength: Infinity
         });
-      } catch (err) {
-        // Backup Uploader
+        if (res1.data && res1.data.status === 'success' && res1.data.data?.url) {
+          let rawLink = res1.data.data.url;
+          fileUrl = rawLink.replace("tmpfiles.org/", "tmpfiles.org/dl/");
+        }
+      } catch (err1) {
+        console.log("Tmpfiles upload failed, trying backup 2...");
+      }
+
+      // --- BACKUP 2: File.io API ---
+      if (!fileUrl) {
         try {
-          const formAlt = new FormData();
-          formAlt.append('reqtype', 'fileupload');
-          formAlt.append('fileToUpload', buffer, { filename: originalFileName });
-          uploadRes = await axios.post("https://catbox.moe/user/api.php", formAlt, {
-            headers: { ...formAlt.getHeaders() },
+          const formData2 = new FormData();
+          formData2.append('file', buffer, { filename: originalFileName });
+          const res2 = await axios.post("https://file.io", formData2, {
+            headers: { ...formData2.getHeaders() },
             maxBodyLength: Infinity,
             maxContentLength: Infinity
           });
-          if (uploadRes.data) {
-            uploadRes = { data: { status: true, result: { url: uploadRes.data } } };
+          if (res2.data && res2.data.success && res2.data.link) {
+            fileUrl = res2.data.link;
           }
-        } catch (e2) {
-          throw new Error("Cloud upload service failed. Try again later.");
+        } catch (err2) {
+          console.log("File.io upload failed, trying backup 3...");
         }
       }
 
-      let fileUrl = uploadRes.data?.result?.url || uploadRes.data?.url || uploadRes.data?.link;
+      // --- BACKUP 3: Telegraph API ---
+      if (!fileUrl) {
+        try {
+          const formData3 = new FormData();
+          formData3.append('file', buffer, { filename: originalFileName });
+          const res3 = await axios.post("https://telegra.ph/upload", formData3, {
+            headers: { ...formData3.getHeaders() },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity
+          });
+          if (res3.data && res3.data[0] && res3.data[0].src) {
+            fileUrl = "https://telegra.ph" + res3.data[0].src;
+          }
+        } catch (err3) {
+          console.log("Telegraph upload failed too.");
+        }
+      }
 
       if (!fileUrl) {
         await sachiya.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("❌ *Failed to upload file to the server!*");
+        return reply("❌ *All cloud upload servers are currently busy or down! Please try again later.*");
       }
 
       let uploadSuccessDesc = `╭━━━〔 *☁️ FILE UPLOADED SUCCESS* 〕━━━\n` +
