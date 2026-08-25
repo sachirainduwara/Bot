@@ -1,5 +1,5 @@
 const { cmd } = require("../command");
-const { default: makeWASocket, useMultiFileAuthState, delay, Browsers, makeCacheableSignalKeyStore } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, delay, makeCacheableSignalKeyStore } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const fs = require("fs");
 const path = require("path");
@@ -74,7 +74,7 @@ cmd(
       await delay(1000);
 
       await sachiya.sendMessage(from, { 
-        text: `*🔄 Initializing secure socket connection...* ⏳`, 
+        text: `*🔄 Requesting Pairing Code from WhatsApp Server...* ⏳`, 
         edit: msg.key 
       });
 
@@ -88,6 +88,7 @@ cmd(
       const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
       const logger = pino({ level: "silent" });
 
+      // 🛠️ Fixed Socket Config using standard Baileys pairing handshake without fake browser signature crashes
       const sock = makeWASocket({
         auth: {
           creds: state.creds,
@@ -95,7 +96,7 @@ cmd(
         },
         printQRInTerminal: false,
         logger: logger,
-        browser: Browsers.macOS("Safari"), // Fixed browser signature to match stable iOS/Mac handshake
+        browser: ["Chrome (Linux)", "", ""], 
         markOnlineOnConnect: false,
         syncFullHistory: false
       });
@@ -103,7 +104,7 @@ cmd(
       sock.ev.on("creds.update", saveCreds);
 
       if (!sock.authState.creds.registered) {
-        await delay(3000);
+        await delay(3500); // Give enough time for socket handshake to establish properly
         let pairCode = await sock.requestPairingCode(phoneNumber);
         pairCode = pairCode?.match(/.{1,4}/g)?.join("-") || pairCode;
 
@@ -120,7 +121,7 @@ cmd(
       }
 
       sock.ev.on("connection.update", async (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection } = update;
         
         if (connection === "open") {
           await delay(4000);
@@ -145,11 +146,6 @@ cmd(
 
           if (fs.existsSync(sessionDir)) {
             fs.rmSync(sessionDir, { recursive: true, force: true });
-          }
-        } else if (connection === "close") {
-          const reason = lastDisconnect?.error?.output?.statusCode;
-          if (reason && reason !== 440 && reason !== 401) {
-            // handles minor reconnect drops if needed during pairing handshake
           }
         }
       });
