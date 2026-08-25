@@ -234,7 +234,9 @@ async function connectToWA() {
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const logger = P({ level: 'silent' });
 
-  // 🛠️ FIXED SOCKET OPTIONS TO PREVENT SYNC / PAUSE FREEZE ISSUES
+  // 🛠️ FIXED SOCKET OPTIONS & ROBUST MESSAGE STORE FOR SMOOTH DECRYPTION & REACTS
+  const messageInMemoryStore = new Map();
+
   const sachiya = makeWASocket({
     logger,
     printQRInTerminal: false,
@@ -247,7 +249,13 @@ async function connectToWA() {
     fireInitQueries: true, 
     markOnlineOnConnect: false,
     generateHighQualityLinkPreview: false,
-    getMessage: async () => { return undefined; }
+    getMessage: async (key) => {
+      const msgId = key.id;
+      if (messageInMemoryStore.has(msgId)) {
+        return messageInMemoryStore.get(msgId);
+      }
+      return { conversation: "Hello, I am SACHIYA-MD!" };
+    }
   });
 
   if (!sachiya.authState.creds.registered) {
@@ -353,7 +361,6 @@ async function connectToWA() {
           if (call.status === 'offer') {
             const callerJid = call.from;
             
-            // 🛑 ගෘප් වලින් හෝ ගෘප් කෝල් හරහා එන දේවල් සම්පූර්ණයෙන්ම මගහරියි (Inbox calls වලට පමණක් ක්‍රියාත්මක වේ)
             if (!callerJid || callerJid.endsWith('@g.us') || callerJid.includes('-') || call.isGroup === true || (call.chatId && call.chatId.endsWith('@g.us'))) {
               continue;
             }
@@ -371,6 +378,15 @@ async function connectToWA() {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
       if (!mek || !mek.message) return;
       
+      // Store message in memory for getMessage lookup fix (prevents decryption/waiting errors)
+      if (mek.key && mek.key.id && mek.message) {
+        messageInMemoryStore.set(mek.key.id, mek.message);
+        if (messageInMemoryStore.size > 500) {
+          const firstKey = messageInMemoryStore.keys().next().value;
+          messageInMemoryStore.delete(firstKey);
+        }
+      }
+
       // --- Handle Settings Menu Multi-Replies ---
       const quotedMsg = mek.message.extendedTextMessage?.contextInfo;
       const stanzaId = quotedMsg?.stanzaId;
