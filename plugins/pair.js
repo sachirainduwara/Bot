@@ -23,7 +23,7 @@ cmd(
     pattern: "pair",
     alias: ["code", "link"],
     react: "🔗",
-    desc: "Generate WhatsApp pairing code and save directly to MongoDB",
+    desc: "Generate WhatsApp pairing code securely",
     category: "owner",
     use: ".pair <phone number>",
     filename: __filename,
@@ -54,10 +54,10 @@ cmd(
         text: `*🔍 Checking number:* \`+${phoneNumber}\` ... Please wait! ⏳` 
       }, { quoted: mek });
 
-      await delay(1500);
+      await delay(2000);
 
       await sachiya.sendMessage(from, { 
-        text: `*🔄 Establishing Stable WhatsApp Handshake...* ⏳`, 
+        text: `*🔄 Initializing Mobile Safari Handshake...* ⏳`, 
         edit: msg.key 
       });
 
@@ -69,6 +69,7 @@ cmd(
       const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
       const logger = pino({ level: "silent" });
 
+      // 🛠️ Using Safari / Mac OS signature to bypass WhatsApp Web rejection errors
       const sock = makeWASocket({
         auth: {
           creds: state.creds,
@@ -76,15 +77,15 @@ cmd(
         },
         printQRInTerminal: false,
         logger: logger,
-        browser: ["Windows", "Chrome", "121.0.0.0"], 
-        markOnlineOnConnect: false,
+        browser: ["Mac OS", "Safari", "17.2.1"], 
+        markOnlineOnConnect: true,
         syncFullHistory: false
       });
 
       sock.ev.on("creds.update", saveCreds);
 
       if (!sock.authState.creds.registered) {
-        await delay(6000);
+        await delay(5000);
         
         let pairCode = await sock.requestPairingCode(phoneNumber);
         pairCode = pairCode?.match(/.{1,4}/g)?.join("-") || pairCode;
@@ -105,7 +106,7 @@ cmd(
         const { connection } = update;
         
         if (connection === "open") {
-          await delay(5000);
+          await delay(6000);
           
           const credsPath = path.join(sessionDir, "creds.json");
           let parsedCreds = null;
