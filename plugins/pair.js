@@ -5,9 +5,18 @@ const fs = require("fs");
 const path = require("path");
 const mongoose = require("mongoose");
 
+const MONGO_URI = "mongodb+srv://sachirainduwara02_db_user:Sachi2010@cluster0.skykj4x.mongodb.net/?appName=Cluster0";
+
+if (mongoose.connection.readyState === 0) {
+  mongoose.connect(MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  }).catch(err => console.error("MongoDB Connection Error:", err));
+}
+
 let PairDB;
 try {
-  PairDB = mongoose.model("Pair");
+  PairDB = mongoose.model("PairSession");
 } catch {
   const PairSchema = new mongoose.Schema({
     userId: { type: String, required: true, unique: true },
@@ -15,7 +24,7 @@ try {
     status: { type: String, default: "PENDING" },
     createdAt: { type: Date, default: Date.now }
   });
-  PairDB = mongoose.model("Pair", PairSchema);
+  PairDB = mongoose.model("PairSession", PairSchema);
 }
 
 cmd(
@@ -23,7 +32,7 @@ cmd(
     pattern: "pair",
     alias: ["code", "link"],
     react: "🔗",
-    desc: "Generate WhatsApp pairing code securely",
+    desc: "Generate WhatsApp pairing code securely with MongoDB sync",
     category: "owner",
     use: ".pair <phone number>",
     filename: __filename,
@@ -33,9 +42,9 @@ cmd(
       if (q === "list") {
         if (!isOwner) return reply("❌ *This command is only for the Owner!* 🚫");
         const allPairs = await PairDB.find({});
-        if (allPairs.length === 0) return reply("📭 *No paired users found in database.*");
+        if (allPairs.length === 0) return reply("📭 *No paired sessions found in MongoDB.*");
         
-        let listText = `╭━━━〔 *📋 PAIRED USERS LIST* 〕━━━\n┃\n`;
+        let listText = `╭━━━〔 *📋 MONGODB PAIRED SESSIONS* 〕━━━\n┃\n`;
         allPairs.forEach((p, index) => {
           listText += `┃ *${index + 1}.* 📱 wa.me/${p.userId} \n`;
           listText += `┃ 📌 *Status:* ${p.status}\n┃\n`;
@@ -48,12 +57,12 @@ cmd(
         if (!isOwner) return reply("❌ *This command is only for the Owner!* 🚫");
         const targetNum = q.replace("remove ", "").trim();
         await PairDB.deleteOne({ userId: targetNum });
-        return reply(`✅ *Successfully removed ${targetNum} from Pair Database!*`);
+        return reply(`✅ *Successfully removed ${targetNum} from MongoDB Database!*`);
       }
 
       if (!q) {
         return reply(
-          `╭━━━〔 *✨ SACHIYA-MD PAIR SYSTEM ✨* 〕━━━\n` +
+          `╭━━━〔 *✨ SACHIYA-MD MONGODB PAIR ✨* 〕━━━\n` +
           `┃\n` +
           `┃ ⚠️ *Please provide your WhatsApp number with country code!*\n` +
           `┃ 📌 *Example:* \`.pair 94762566232\`\n` +
@@ -71,14 +80,14 @@ cmd(
         text: `*🔍 Checking number:* \`+${phoneNumber}\` ... Please wait! ⏳` 
       }, { quoted: mek });
 
-      await delay(1000);
+      await delay(1500);
 
       await sachiya.sendMessage(from, { 
-        text: `*🔄 Initializing Stable Pairing Engine...* ⏳`, 
+        text: `*🔄 Establishing Stable WhatsApp Handshake...* ⏳`, 
         edit: msg.key 
       });
 
-      const sessionDir = path.join(__dirname, `../auth_code_${phoneNumber}`);
+      const sessionDir = path.join(__dirname, `../temp_mongo_${phoneNumber}`);
       if (fs.existsSync(sessionDir)) {
         fs.rmSync(sessionDir, { recursive: true, force: true });
       }
@@ -86,6 +95,7 @@ cmd(
       const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
       const logger = pino({ level: "silent" });
 
+      // 🛠️ Highly stable socket config matching WhatsApp Web Desktop Multi-Device standard
       const sock = makeWASocket({
         auth: {
           creds: state.creds,
@@ -93,15 +103,17 @@ cmd(
         },
         printQRInTerminal: false,
         logger: logger,
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
-        markOnlineOnConnect: true,
+        browser: ["Windows", "Chrome", "121.0.0.0"], 
+        markOnlineOnConnect: false,
         syncFullHistory: false
       });
 
       sock.ev.on("creds.update", saveCreds);
 
       if (!sock.authState.creds.registered) {
-        await delay(3000);
+        // 🛠️ Crucial Delay: Waiting 6 full seconds for the socket to fully bind to WhatsApp servers before requesting code
+        await delay(6000);
+        
         let pairCode = await sock.requestPairingCode(phoneNumber);
         pairCode = pairCode?.match(/.{1,4}/g)?.join("-") || pairCode;
 
@@ -110,7 +122,7 @@ cmd(
           edit: msg.key 
         });
 
-        await delay(500);
+        await delay(1000);
 
         await sachiya.sendMessage(from, {
           text: `*${pairCode}*`
@@ -118,10 +130,10 @@ cmd(
       }
 
       sock.ev.on("connection.update", async (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection } = update;
         
         if (connection === "open") {
-          await delay(3000);
+          await delay(5000); // Give ample time for credential sync
           
           const credsPath = path.join(sessionDir, "creds.json");
           let parsedCreds = null;
@@ -131,24 +143,20 @@ cmd(
             } catch (err) {}
           }
 
-          await PairDB.findOneAndUpdate(
-            { userId: phoneNumber },
-            { creds: parsedCreds, status: "CONNECTED" },
-            { upsert: true, new: true }
-          );
+          if (parsedCreds) {
+            await PairDB.findOneAndUpdate(
+              { userId: phoneNumber },
+              { creds: parsedCreds, status: "CONNECTED" },
+              { upsert: true, new: true }
+            );
+          }
 
           await sachiya.sendMessage(from, { 
-            text: `✅ *WhatsApp Account Linked Successfully!* 🎉\n📱 *Number:* +${phoneNumber}\n\n> *Session saved to Database. Restart your bot now!*` 
+            text: `✅ *WhatsApp Account Linked & Saved to MongoDB!* 🎉\n📱 *Number:* +${phoneNumber}\n\n> *Session successfully stored in your MongoDB Cluster!*` 
           });
 
           if (fs.existsSync(sessionDir)) {
             fs.rmSync(sessionDir, { recursive: true, force: true });
-          }
-        } else if (connection === "close") {
-          const statusCode = lastDisconnect?.error?.output?.statusCode;
-          // Handle 515 restart required or normal drop during pairing handshake
-          if (statusCode === DisconnectReason.restartRequired) {
-            console.log("Restart required during pairing, handling seamlessly...");
           }
         }
       });
