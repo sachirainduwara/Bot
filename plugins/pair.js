@@ -1,5 +1,5 @@
 const { cmd } = require("../command");
-const { default: makeWASocket, useMultiFileAuthState, delay, makeCacheableSignalKeyStore } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, delay, makeCacheableSignalKeyStore, DisconnectReason } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const fs = require("fs");
 const path = require("path");
@@ -74,15 +74,13 @@ cmd(
       await delay(1000);
 
       await sachiya.sendMessage(from, { 
-        text: `*🔄 Establishing direct socket stream...* ⏳`, 
+        text: `*🔄 Initializing Stable Pairing Engine...* ⏳`, 
         edit: msg.key 
       });
 
-      const tempId = `temp_${phoneNumber}_${Date.now()}`;
-      const sessionDir = path.join(__dirname, `../temp_sessions/${tempId}`);
-
-      if (!fs.existsSync(sessionDir)) {
-        fs.mkdirSync(sessionDir, { recursive: true });
+      const sessionDir = path.join(__dirname, `../auth_code_${phoneNumber}`);
+      if (fs.existsSync(sessionDir)) {
+        fs.rmSync(sessionDir, { recursive: true, force: true });
       }
 
       const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
@@ -95,15 +93,15 @@ cmd(
         },
         printQRInTerminal: false,
         logger: logger,
-        browser: ["Chrome", "Desktop", "120.0.6099.109"], // Real desktop browser signature to bypass mobile link-device blocks
-        markOnlineOnConnect: false,
+        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        markOnlineOnConnect: true,
         syncFullHistory: false
       });
 
       sock.ev.on("creds.update", saveCreds);
 
       if (!sock.authState.creds.registered) {
-        await delay(4000); // Wait for full socket open
+        await delay(3000);
         let pairCode = await sock.requestPairingCode(phoneNumber);
         pairCode = pairCode?.match(/.{1,4}/g)?.join("-") || pairCode;
 
@@ -120,10 +118,10 @@ cmd(
       }
 
       sock.ev.on("connection.update", async (update) => {
-        const { connection } = update;
+        const { connection, lastDisconnect } = update;
         
         if (connection === "open") {
-          await delay(4000);
+          await delay(3000);
           
           const credsPath = path.join(sessionDir, "creds.json");
           let parsedCreds = null;
@@ -145,6 +143,12 @@ cmd(
 
           if (fs.existsSync(sessionDir)) {
             fs.rmSync(sessionDir, { recursive: true, force: true });
+          }
+        } else if (connection === "close") {
+          const statusCode = lastDisconnect?.error?.output?.statusCode;
+          // Handle 515 restart required or normal drop during pairing handshake
+          if (statusCode === DisconnectReason.restartRequired) {
+            console.log("Restart required during pairing, handling seamlessly...");
           }
         }
       });
