@@ -26,6 +26,9 @@ const { handleAutoStatus } = require('./plugins/autostatus');
 
 global.activeSettingsMenus = global.activeSettingsMenus || new Map();
 
+// ⚡ Ultra Fast Bot Start Timestamp to Ignore Old Synced Messages
+const botStartTime = Date.now();
+
 const app = express();
 const port = process.env.PORT || 8000;
 
@@ -377,6 +380,10 @@ async function connectToWA() {
     try {
       const mek = chatUpdate.messages ? chatUpdate.messages[0] : chatUpdate[0];
       if (!mek || !mek.message) return;
+
+      // ⚡ ULTRA FAST FIX: Ignore old synced messages coming during bot startup loop (Prevents lag & double replies)
+      const messageTimestamp = (mek.messageTimestamp ? Number(mek.messageTimestamp) * 1000 : Date.now());
+      if (messageTimestamp < botStartTime - 10000) return;
       
       // Store message in memory for getMessage lookup fix (prevents decryption/waiting errors)
       if (mek.key && mek.key.id && mek.message) {
