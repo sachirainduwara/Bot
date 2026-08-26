@@ -1,5 +1,6 @@
 const { cmd } = require('../command');
 const mongoose = require('mongoose');
+const config = require('../config');
 
 // Mongoose Models
 const AntiCallModel = mongoose.models.AntiCall || mongoose.model('AntiCall', new mongoose.Schema({ _id: { type: String, required: true }, status: { type: Boolean, default: false } }));
@@ -24,10 +25,20 @@ cmd({
     category: "owner",
     react: "⚙️",
     filename: __filename
-}, async (conn, mek, m, { from, reply, isOwner }) => {
+}, async (conn, mek, m, { from, reply, sender, senderNumber }) => {
     try {
-        // Owner විතරක්ද බලන්න (isOwner පාවිච්චි කරමින්)
-        if (!isOwner) {
+        // 🔒 100% Accurate Owner Verification (Handles Self-Chat & Group/Inbox correctly)
+        const ownerNumConfig = (config.OWNER_NUM || '94760579211').replace(/[^0-9]/g, '');
+        const currentSenderClean = (senderNumber || sender || '').replace(/[^0-9]/g, '');
+        
+        const botJidNormalized = conn.user ? conn.user.id.split('@')[0].split(':')[0] : '';
+        
+        const isActuallyOwner = currentSenderClean.includes(ownerNumConfig) || 
+                                ownerNumConfig.includes(currentSenderClean) || 
+                                mek.key.fromMe || 
+                                currentSenderClean === botJidNormalized;
+
+        if (!isActuallyOwner) {
             return reply("*❌ This command is only for the Owner!*");
         }
 
@@ -80,15 +91,15 @@ cmd({
                 const isReplyToSent = mekResponse.message.extendedTextMessage?.contextInfo?.stanzaId === messageID;
 
                 if (isReplyToSent && senderID === from && responseMessage) {
-                    // රිප්ලයි කරන කෙනා Owner කෙනෙක්ද නැද්ද කියලා මෙතැනදීත් හරියටම චෙක් කරයි
-                    const remoteSender = mekResponse.key.participant || mekResponse.key.remoteJid;
-                    const botOwnerNumbers = config?.OWNER_NUM ? [config.OWNER_NUM] : ['94760579211']; // config එකෙන් හෝ ඔරිජිනල් නම්බර් එක
-                    
-                    // සෙමෙන් අදාළ sender ගේ නම්බර් එක විතරක් ගැලපීම
-                    const senderNumClean = (remoteSender || '').replace(/[^0-9]/g, '');
-                    const isSenderOwner = botOwnerNumbers.some(num => senderNumClean.includes(num)) || mekResponse.key.fromMe;
+                    // Reply karana kenath owner da kiyala balanna check eka
+                    const repSender = mekResponse.key.participant || mekResponse.key.remoteJid;
+                    const repSenderClean = (repSender || '').replace(/[^0-9]/g, '');
+                    const isRepOwner = repSenderClean.includes(ownerNumConfig) || 
+                                       ownerNumConfig.includes(repSenderClean) || 
+                                       mekResponse.key.fromMe || 
+                                       repSenderClean === botJidNormalized;
 
-                    if (!isSenderOwner) {
+                    if (!isRepOwner) {
                         await conn.sendMessage(from, { text: "*❌ Only the owner can change these settings!*" }, { quoted: mekResponse });
                         return;
                     }
