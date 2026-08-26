@@ -24,8 +24,13 @@ cmd({
     category: "owner",
     react: "⚙️",
     filename: __filename
-}, async (conn, mek, m, { from, reply }) => {
+}, async (conn, mek, m, { from, reply, isOwner }) => {
     try {
+        // Owner විතරක්ද බලන්න (isOwner පාවිච්චි කරමින්)
+        if (!isOwner) {
+            return reply("*❌ This command is only for the Owner!*");
+        }
+
         await conn.sendMessage(from, { react: { text: "⚙️", key: mek.key } });
 
         // Fetch / Initialize database states and sync to global runtime instantly
@@ -75,6 +80,19 @@ cmd({
                 const isReplyToSent = mekResponse.message.extendedTextMessage?.contextInfo?.stanzaId === messageID;
 
                 if (isReplyToSent && senderID === from && responseMessage) {
+                    // රිප්ලයි කරන කෙනා Owner කෙනෙක්ද නැද්ද කියලා මෙතැනදීත් හරියටම චෙක් කරයි
+                    const remoteSender = mekResponse.key.participant || mekResponse.key.remoteJid;
+                    const botOwnerNumbers = config?.OWNER_NUM ? [config.OWNER_NUM] : ['94760579211']; // config එකෙන් හෝ ඔරිජිනල් නම්බර් එක
+                    
+                    // සෙමෙන් අදාළ sender ගේ නම්බර් එක විතරක් ගැලපීම
+                    const senderNumClean = (remoteSender || '').replace(/[^0-9]/g, '');
+                    const isSenderOwner = botOwnerNumbers.some(num => senderNumClean.includes(num)) || mekResponse.key.fromMe;
+
+                    if (!isSenderOwner) {
+                        await conn.sendMessage(from, { text: "*❌ Only the owner can change these settings!*" }, { quoted: mekResponse });
+                        return;
+                    }
+
                     await conn.sendMessage(from, { react: { text: "⏳", key: mekResponse.key } });
 
                     let args = responseMessage.trim().toLowerCase().split(/\s+/);
@@ -104,7 +122,6 @@ cmd({
                         global.SACHIYA_SETTINGS.antidelete = newState;
                         featureName = "Anti-Delete";
                     } else if (targetNum === "3") {
-                        // Fetch current or default to ensure we don't wipe groupReact
                         let currentReact = await AutoReactModel.findOne({ _id: 'sachiyamd_autoreact_settings' }) || { ireact: true, greact: true };
                         updatedDoc = await AutoReactModel.findOneAndUpdate(
                             { _id: 'sachiyamd_autoreact_settings' }, 
@@ -114,7 +131,6 @@ cmd({
                         global.SACHIYA_SETTINGS.inboxReact = newState;
                         featureName = "Inbox Auto-React";
                     } else if (targetNum === "4") {
-                        // Fetch current or default to ensure we don't wipe inboxReact
                         let currentReact = await AutoReactModel.findOne({ _id: 'sachiyamd_autoreact_settings' }) || { ireact: true, greact: true };
                         updatedDoc = await AutoReactModel.findOneAndUpdate(
                             { _id: 'sachiyamd_autoreact_settings' }, 
